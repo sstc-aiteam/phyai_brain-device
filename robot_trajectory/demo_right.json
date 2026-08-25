@@ -1,0 +1,5431 @@
+{
+  "format_version": 4,
+  "type": "arm_gripper_trajectory",
+  "arm_name": "right",
+  "gripper_name": "right",
+  "interval": 0.1,
+  "freedrive": true,
+  "gripper_sampling": false,
+  "gripper_event_recording": true,
+  "sample_count": 225,
+  "gripper_event_count": 2,
+  "duration_seconds": 22.400488655010122,
+  "trajectory": [
+    {
+      "t": 0.0015153700078371912,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.273325443267822,
+          -1.5258153120623987,
+          1.3196425437927246,
+          -1.7684515158282679,
+          -1.4832051436053675,
+          -1.6774638334857386
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 0.10049629300192464,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.273325443267822,
+          -1.525144402180807,
+          1.3198580741882324,
+          -1.7684152762042444,
+          -1.4832170645343226,
+          -1.6774757544146937
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 0.2004869070078712,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.273325443267822,
+          -1.5239580313311976,
+          1.3198461532592773,
+          -1.7684271971331995,
+          -1.4832528273211878,
+          -1.6774275938617151
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 0.3004786090023117,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.273325443267822,
+          -1.5233710447894495,
+          1.3199896812438965,
+          -1.7663758436786097,
+          -1.483168903981344,
+          -1.6774757544146937
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 0.40047363900521304,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.273337364196777,
+          -1.521454159413473,
+          1.3201217651367188,
+          -1.7657278219806116,
+          -1.4831932226764124,
+          -1.6774519125567835
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 0.5004830050020246,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.273289203643799,
+          -1.5176799933062952,
+          1.3201932907104492,
+          -1.7656562964068812,
+          -1.4832170645343226,
+          -1.6774638334857386
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 0.6008649970026454,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.2732415199279785,
+          -1.5078428427325647,
+          1.320481300354004,
+          -1.7654760519610804,
+          -1.4832289854632776,
+          -1.6774757544146937
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 0.7008618840045528,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.273349285125732,
+          -1.4906004110919397,
+          1.3206124305725098,
+          -1.7654159704791468,
+          -1.4831932226764124,
+          -1.6774519125567835
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 0.8004715840070276,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.273205280303955,
+          -1.464503590260641,
+          1.3206725120544434,
+          -1.7654879728900355,
+          -1.4833372274981897,
+          -1.677535359059469
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 0.9004770150058903,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.2730255126953125,
+          -1.4358785788165491,
+          1.3207321166992188,
+          -1.7654998938189905,
+          -1.4837330023394983,
+          -1.6774876753436487
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 1.0004743190074805,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.272713661193848,
+          -1.4014547506915491,
+          1.3207440376281738,
+          -1.7655599753009241,
+          -1.4855087439166468,
+          -1.6774757544146937
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 1.1008639930078061,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.272330284118652,
+          -1.3678930441485804,
+          1.320779800415039,
+          -1.7656801382647913,
+          -1.490990940724508,
+          -1.6774876753436487
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 1.2008630570053356,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.270964622497559,
+          -1.3308213392840784,
+          1.320875644683838,
+          -1.7657159010516565,
+          -1.5147321859942835,
+          -1.677535359059469
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 1.300473495008191,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.268819332122803,
+          -1.2960856596576136,
+          1.32098388671875,
+          -1.7659919897662562,
+          -1.5650447050677698,
+          -1.6775596777545374
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 1.40045979100978,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267225742340088,
+          -1.2586191336261194,
+          1.3210077285766602,
+          -1.7661235968219202,
+          -1.6351102034198206,
+          -1.6774757544146937
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 1.5004783750046045,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267225742340088,
+          -1.2257054487811487,
+          1.3211874961853027,
+          -1.7661116758929651,
+          -1.6779678503619593,
+          -1.6774519125567835
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 1.6008658089995151,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267129898071289,
+          -1.1940372625934046,
+          1.321235179901123,
+          -1.7664240042315882,
+          -1.6823695341693323,
+          -1.6774519125567835
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 1.7004574629972922,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267093658447266,
+          -1.1667550245868128,
+          1.3212833404541016,
+          -1.7665556112872522,
+          -1.6823576132403772,
+          -1.6774638334857386
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 1.8004708310036222,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267153739929199,
+          -1.146613899861471,
+          1.3213310241699219,
+          -1.7668197790728968,
+          -1.682309929524557,
+          -1.6775115172015589
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 1.900476968003204,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267213821411133,
+          -1.1284855047809046,
+          1.32194185256958,
+          -1.766855541859762,
+          -1.6822856108294886,
+          -1.6774757544146937
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 2.000866804010002,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267201900482178,
+          -1.1116145292865198,
+          1.3236660957336426,
+          -1.7670119444476526,
+          -1.682214085255758,
+          -1.6775115172015589
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 2.1008628620038508,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267141819000244,
+          -1.0941575209247034,
+          1.3264212608337402,
+          -1.7671316305743616,
+          -1.6821897665606897,
+          -1.6774876753436487
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 2.2004755410016514,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267237663269043,
+          -1.0802348295794886,
+          1.3264570236206055,
+          -1.7675755659686487,
+          -1.6820820013629358,
+          -1.6774757544146937
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 2.3004755029978696,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267261505126953,
+          -1.0695470015155237,
+          1.3266487121582031,
+          -1.7679718176471155,
+          -1.6816981474505823,
+          -1.6774757544146937
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 2.4004769370076247,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267297744750977,
+          -1.0629809538470667,
+          1.326768398284912,
+          -1.7699273268329065,
+          -1.679587189351217,
+          -1.6774876753436487
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 2.5008676050056238,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267309665679932,
+          -1.0572059790240687,
+          1.3274626731872559,
+          -1.772698704396383,
+          -1.6754606405841272,
+          -1.677523438130514
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 2.600860942999134,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.2675251960754395,
+          -1.0508912245379847,
+          1.328516960144043,
+          -1.7738025824176233,
+          -1.6683724562274378,
+          -1.6775477568255823
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 2.7004768540064106,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267513275146484,
+          -1.0425880591021937,
+          1.3297863006591797,
+          -1.773982350026266,
+          -1.6640661398517054,
+          -1.677523438130514
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 2.8004741280019516,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.2675251960754395,
+          -1.0341890493976038,
+          1.3305888175964355,
+          -1.774210278187887,
+          -1.6638982931720179,
+          -1.677535359059469
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 2.900477258997853,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267549514770508,
+          -1.0264247099505823,
+          1.3307805061340332,
+          -1.7746060530291956,
+          -1.6632745901690882,
+          -1.6775115172015589
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 3.0008643129986012,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267501354217529,
+          -1.02177602449526,
+          1.3309121131896973,
+          -1.7746418158160608,
+          -1.6576131025897425,
+          -1.6775715986834925
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 3.100860949009075,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267621040344238,
+          -1.0196550528155726,
+          1.3310437202453613,
+          -1.7746060530291956,
+          -1.649564568196432,
+          -1.677535359059469
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 3.2004728940082714,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267632961273193,
+          -1.0174267927752894,
+          1.3312592506408691,
+          -1.7745221296893519,
+          -1.6387928167926233,
+          -1.677523438130514
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 3.3004822340008104,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267597198486328,
+          -1.0157368818866175,
+          1.3313307762145996,
+          -1.7745702902423304,
+          -1.6224072615252894,
+          -1.677535359059469
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 3.40086301600968,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267513275146484,
+          -1.0143235365497034,
+          1.331355094909668,
+          -1.7744982878314417,
+          -1.6168416182147425,
+          -1.6775835196124476
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 3.5008578590059187,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267585277557373,
+          -1.0143592993365687,
+          1.3312592506408691,
+          -1.7744863669024866,
+          -1.6171053091632288,
+          -1.6774395147906702
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 3.600479725006153,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.2675371170043945,
+          -1.0143349806415003,
+          1.3312950134277344,
+          -1.7744744459735315,
+          -1.6170695463763636,
+          -1.6774275938617151
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 3.700476551995962,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267513275146484,
+          -1.01428729692568,
+          1.3312830924987793,
+          -1.7744501272784632,
+          -1.617117706929342,
+          -1.6774395147906702
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 3.8004744040081277,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267501354217529,
+          -1.0143473784076136,
+          1.3313188552856445,
+          -1.7743538061725062,
+          -1.6170576254474085,
+          -1.6774519125567835
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 3.9004681299993536,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267501354217529,
+          -1.0143111387835901,
+          1.3313069343566895,
+          -1.7742942015277308,
+          -1.6170814673053187,
+          -1.6774519125567835
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 4.0004892779979855,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267453193664551,
+          -1.0142634550677698,
+          1.331343173980713,
+          -1.7742698828326624,
+          -1.6170814673053187,
+          -1.6774519125567835
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 4.100465501003782,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267489433288574,
+          -1.01428729692568,
+          1.3313188552856445,
+          -1.7742460409747522,
+          -1.6171053091632288,
+          -1.6774395147906702
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 4.2004832250095205,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267477512359619,
+          -1.0143235365497034,
+          1.3312830924987793,
+          -1.7742579619037073,
+          -1.6170337835894983,
+          -1.6774519125567835
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 4.30048917500244,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267465591430664,
+          -1.0143349806415003,
+          1.3312711715698242,
+          -1.7742579619037073,
+          -1.6170933882342737,
+          -1.6774638334857386
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 4.400488788000075,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267477512359619,
+          -1.0143111387835901,
+          1.331235408782959,
+          -1.7742460409747522,
+          -1.6170337835894983,
+          -1.6774395147906702
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 4.500483089999761,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267513275146484,
+          -1.0143473784076136,
+          1.331235408782959,
+          -1.7742942015277308,
+          -1.6170814673053187,
+          -1.6774395147906702
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 4.60048257499875,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267453193664551,
+          -1.0143349806415003,
+          1.3312592506408691,
+          -1.7742942015277308,
+          -1.6170457045184534,
+          -1.67741567293276
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 4.700475981007912,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267501354217529,
+          -1.0143235365497034,
+          1.331223487854004,
+          -1.7742460409747522,
+          -1.6170695463763636,
+          -1.6774275938617151
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 4.800484425999457,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267489433288574,
+          -1.0143592993365687,
+          1.3311877250671387,
+          -1.7742942015277308,
+          -1.617117706929342,
+          -1.6774519125567835
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 4.900483240999165,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267453193664551,
+          -1.0143712202655237,
+          1.3311753273010254,
+          -1.774329964314596,
+          -1.6170695463763636,
+          -1.6774395147906702
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 5.000480425005662,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267477512359619,
+          -1.0145390669452112,
+          1.3309955596923828,
+          -1.7743662039386194,
+          -1.6170933882342737,
+          -1.67739183107485
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 5.100476040010108,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.267393589019775,
+          -1.0150540510760706,
+          1.3306365013122559,
+          -1.7744019667254847,
+          -1.6170457045184534,
+          -1.67741567293276
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 5.20048672700068,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.266973972320557,
+          -1.0188043753253382,
+          1.3290915489196777,
+          -1.774557892476217,
+          -1.6180651823626917,
+          -1.6774275938617151
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 5.3004852540034335,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.266147613525391,
+          -1.0337098280536097,
+          1.3253068923950195,
+          -1.775085751210348,
+          -1.6181848684894007,
+          -1.677403752003805
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 5.400482406010269,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.2647929191589355,
+          -1.0590270201312464,
+          1.3242650032043457,
+          -1.775085751210348,
+          -1.6181848684894007,
+          -1.6774275938617151
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 5.500479460999486,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.262216567993164,
+          -1.094684902821676,
+          1.3242411613464355,
+          -1.7750499884234827,
+          -1.6182692686664026,
+          -1.6774395147906702
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 5.600477668005624,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.260431289672852,
+          -1.1331103483783167,
+          1.3242411613464355,
+          -1.7750499884234827,
+          -1.6183412710772913,
+          -1.677403752003805
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 5.700482436004677,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.2583699226379395,
+          -1.1805937925921839,
+          1.324193000793457,
+          -1.775097672139303,
+          -1.6191452185260218,
+          -1.67739183107485
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 5.800462660001358,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.253864288330078,
+          -1.229767147694723,
+          1.324193000793457,
+          -1.7751100699054163,
+          -1.6203444639789026,
+          -1.6773799101458948
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 5.900486244005151,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.246255397796631,
+          -1.2876866499530237,
+          1.324181079864502,
+          -1.775182072316305,
+          -1.621028248463766,
+          -1.6774519125567835
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 6.000476293003885,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.2379865646362305,
+          -1.344696346913473,
+          1.3241338729858398,
+          -1.7751582304583948,
+          -1.6209800879107874,
+          -1.6774395147906702
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 6.100484230002621,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.229765892028809,
+          -1.4087517897235315,
+          1.3241095542907715,
+          -1.775398079548971,
+          -1.6210163275348108,
+          -1.6774519125567835
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 6.2004822790040635,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.223570346832275,
+          -1.467642609273092,
+          1.3241095542907715,
+          -1.775410000477926,
+          -1.6210163275348108,
+          -1.6774519125567835
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 6.300475273004849,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.221017837524414,
+          -1.5278642813311976,
+          1.3241214752197266,
+          -1.7753499189959925,
+          -1.620932404194967,
+          -1.67741567293276
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 6.400475625996478,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.22056245803833,
+          -1.5805376211749476,
+          1.3241338729858398,
+          -1.7753379980670374,
+          -1.6208842436419886,
+          -1.6774275938617151
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 6.5004754990077345,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.220454692840576,
+          -1.6239851156817835,
+          1.3240976333618164,
+          -1.7753260771380823,
+          -1.6208842436419886,
+          -1.67741567293276
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 6.600484492009855,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.219891548156738,
+          -1.6679957548724573,
+          1.3241338729858398,
+          -1.7753379980670374,
+          -1.6208604017840784,
+          -1.6774638334857386
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 6.70048497300013,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.2193284034729,
+          -1.705177132283346,
+          1.3240976333618164,
+          -1.775301758443014,
+          -1.6208484808551233,
+          -1.677403752003805
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 6.8004886859998805,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.219364643096924,
+          -1.7390392462359827,
+          1.324145793914795,
+          -1.7752779165851038,
+          -1.6208365599261683,
+          -1.677403752003805
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 6.900475408998318,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.219376564025879,
+          -1.761446777974264,
+          1.324169635772705,
+          -1.77519399324526,
+          -1.6208365599261683,
+          -1.6774519125567835
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 7.0004767880018335,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.2193522453308105,
+          -1.7749984900103968,
+          1.3242650032043457,
+          -1.7750738302813929,
+          -1.6208961645709437,
+          -1.6774638334857386
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 7.100480951005011,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.219400405883789,
+          -1.7750585714923304,
+          1.3243131637573242,
+          -1.7749899069415491,
+          -1.6208604017840784,
+          -1.6774395147906702
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 7.200483866006834,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.2193403244018555,
+          -1.7749384085284632,
+          1.3243012428283691,
+          -1.7750256697284144,
+          -1.6210997740374964,
+          -1.6774395147906702
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 7.300486109001213,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.216943740844727,
+          -1.7728894392596644,
+          1.3243131637573242,
+          -1.7751339117633265,
+          -1.6217840353595179,
+          -1.67741567293276
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 7.400481024000328,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.2059550285339355,
+          -1.7727578322040003,
+          1.3242292404174805,
+          -1.7754700819598597,
+          -1.6340187231646937,
+          -1.6774519125567835
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 7.500483523006551,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.185319423675537,
+          -1.7727816740619105,
+          1.324169635772705,
+          -1.7763579527484339,
+          -1.6793230215655726,
+          -1.6774519125567835
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 7.600484998009051,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.151226043701172,
+          -1.7727578322040003,
+          1.3242292404174805,
+          -1.7771857420550745,
+          -1.7746031920062464,
+          -1.6774519125567835
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 7.700484936998691,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.115262508392334,
+          -1.772841755543844,
+          1.324145793914795,
+          -1.7771857420550745,
+          -1.8965676466571253,
+          -1.6774519125567835
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 7.800488395005232,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.076674461364746,
+          -1.772829834614889,
+          1.324181079864502,
+          -1.7770054976092737,
+          -2.03517991701235,
+          -1.6774519125567835
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 7.900482031996944,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.040531158447266,
+          -1.7731054464923304,
+          1.3241095542907715,
+          -1.77692157426943,
+          -2.147059742604391,
+          -1.6774395147906702
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 8.000477620997117,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          4.009791374206543,
+          -1.7829549948321741,
+          1.3233551979064941,
+          -1.7768614927874964,
+          -2.219714943562643,
+          -1.67741567293276
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 8.100479450004059,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          3.9717535972595215,
+          -1.7953808943377894,
+          1.322887897491455,
+          -1.7768257300006312,
+          -2.2680800596820276,
+          -1.6774519125567835
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 8.200486462999834,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          3.929687738418579,
+          -1.8122757116900843,
+          1.3211994171142578,
+          -1.7767294088946741,
+          -2.2782562414752405,
+          -1.6774275938617151
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 8.300486467007431,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          3.875852346420288,
+          -1.8338449637042444,
+          1.3191514015197754,
+          -1.7764537970172327,
+          -2.278184239064352,
+          -1.67741567293276
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 8.400479272007942,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          3.819895029067993,
+          -1.8568757216082972,
+          1.3171272277832031,
+          -1.7762616316424769,
+          -2.278184239064352,
+          -1.67741567293276
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 8.500481388997287,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          3.7539889812469482,
+          -1.8843396345721644,
+          1.3162894248962402,
+          -1.7761057058917444,
+          -2.2781603972064417,
+          -1.67739183107485
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 8.600490418000845,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          3.685216188430786,
+          -1.916166130696432,
+          1.315906047821045,
+          -1.775626007710592,
+          -2.2781603972064417,
+          -1.6773799101458948
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 8.700487766007427,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          3.618863821029663,
+          -1.949333969746725,
+          1.3151154518127441,
+          -1.77344257036318,
+          -2.2781479994403284,
+          -1.67739183107485
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 8.80046194800525,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          3.544790744781494,
+          -1.9863012472735804,
+          1.3143248558044434,
+          -1.7678516546832483,
+          -2.2781360785113733,
+          -1.6774395147906702
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 8.900473986010184,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          3.4769368171691895,
+          -2.0163782278644007,
+          1.3142409324645996,
+          -1.7598851362811487,
+          -2.278100315724508,
+          -1.6774395147906702
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 9.000486087999889,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          3.4047422409057617,
+          -2.043028179799215,
+          1.3141450881958008,
+          -1.7447918097125452,
+          -2.2780402342425745,
+          -1.6774638334857386
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 9.10048334300518,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          3.339858293533325,
+          -2.064993683491842,
+          1.3133549690246582,
+          -1.7186368147479456,
+          -2.2779324690448206,
+          -1.6774757544146937
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 9.200485781999305,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          3.2705984115600586,
+          -2.089654270802633,
+          1.3106966018676758,
+          -1.6854026953326624,
+          -2.277980629597799,
+          -1.67741567293276
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 9.30047801299952,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          3.207498073577881,
+          -2.1131656805621546,
+          1.3056902885437012,
+          -1.6579511801349085,
+          -2.2780044714557093,
+          -1.67739183107485
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 9.400480195006821,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          3.1390864849090576,
+          -2.138102356587545,
+          1.2992591857910156,
+          -1.6339429060565394,
+          -2.2780283133136194,
+          -1.67741567293276
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 9.500488681005663,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          3.0699427127838135,
+          -2.1599600950824183,
+          1.2943010330200195,
+          -1.6150696913348597,
+          -2.2780521551715296,
+          -1.6774519125567835
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 9.600483760004863,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          3.0055091381073,
+          -2.1760295073138636,
+          1.292588710784912,
+          -1.599220101033346,
+          -2.278208080922262,
+          -1.677403752003805
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 9.700481015010155,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.9338462352752686,
+          -2.1888402144061487,
+          1.2921090126037598,
+          -1.5854223410235804,
+          -2.278567616139547,
+          -1.6774395147906702
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 9.800486205000198,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.865550994873047,
+          -2.1965330282794397,
+          1.2915582656860352,
+          -1.5843308607684534,
+          -2.2801979223834437,
+          -1.6774757544146937
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 9.90046890200756,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.7913928031921387,
+          -2.1987741629229944,
+          1.2902288436889648,
+          -1.5843547026263636,
+          -2.281624142323629,
+          -1.6774757544146937
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 10.000488302001031,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.7227604389190674,
+          -2.198486630116598,
+          1.2900376319885254,
+          -1.5843785444842737,
+          -2.281719986592428,
+          -1.677535359059469
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 10.10047311100061,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.65476393699646,
+          -2.1972044149981897,
+          1.2902889251708984,
+          -1.584282700215475,
+          -2.2816479841815394,
+          -1.6775115172015589
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 10.200476607002201,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.6043291091918945,
+          -2.197012726460592,
+          1.290360450744629,
+          -1.5844023863421839,
+          -2.2816360632525843,
+          -1.6775115172015589
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 10.30047984799603,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.566134214401245,
+          -2.1968568007098597,
+          1.2904925346374512,
+          -1.5843308607684534,
+          -2.2815521399127405,
+          -1.6774876753436487
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 10.400488176004728,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.5461738109588623,
+          -2.1968448797809046,
+          1.2905044555664062,
+          -1.584306542073385,
+          -2.2815163771258753,
+          -1.6774395147906702
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 10.500483384996187,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.5442075729370117,
+          -2.1969645659076136,
+          1.290576457977295,
+          -1.5842707792865198,
+          -2.281503979359762,
+          -1.6774519125567835
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 10.600501888009603,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.544243574142456,
+          -2.197000805531637,
+          1.2905645370483398,
+          -1.5842469374286097,
+          -2.281480137501852,
+          -1.67739183107485
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 10.700481002000743,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.544219493865967,
+          -2.1969764868365687,
+          1.290600299835205,
+          -1.5842226187335413,
+          -2.281492058430807,
+          -1.6774275938617151
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 10.80047969800944,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.544255495071411,
+          -2.196988884602682,
+          1.2906122207641602,
+          -1.5842469374286097,
+          -2.2814562956439417,
+          -1.67741567293276
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 10.900461309007369,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.544267416000366,
+          -2.1970251242267054,
+          1.2905645370483398,
+          -1.5842226187335413,
+          -2.281468216572897,
+          -1.67739183107485
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 11.000483846000861,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.544255495071411,
+          -2.1970728079425257,
+          1.2906122207641602,
+          -1.5842345396624964,
+          -2.2814562956439417,
+          -1.67741567293276
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 11.100481841000146,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.5443274974823,
+          -2.1966407934771937,
+          1.2906956672668457,
+          -1.5841987768756312,
+          -2.281384293233053,
+          -1.677403752003805
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 11.200482458996703,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.544267416000366,
+          -2.196317497883932,
+          1.2907075881958008,
+          -1.58429462114443,
+          -2.2814443747149866,
+          -1.6774395147906702
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 11.300480645004427,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.544111728668213,
+          -2.193944756184713,
+          1.2907676696777344,
+          -1.5844023863421839,
+          -2.285003964100973,
+          -1.6773436705218714
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 11.400488847008091,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.5439558029174805,
+          -2.1838067213641565,
+          1.2910313606262207,
+          -1.5845468680011194,
+          -2.324603859578268,
+          -1.6773436705218714
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 11.500481690003653,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.5439319610595703,
+          -2.157886807118551,
+          1.2909832000732422,
+          -1.585278336201803,
+          -2.4412217775927942,
+          -1.6773799101458948
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 11.60048758800258,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.544015884399414,
+          -2.1239383856402796,
+          1.2909235954284668,
+          -1.5857704321490687,
+          -2.565728727971212,
+          -1.6773198286639612
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 11.700483310007257,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.5439679622650146,
+          -2.087557617818014,
+          1.2907557487487793,
+          -1.5903056303607386,
+          -2.65631348291506,
+          -1.6772239843951624
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 11.800483768005506,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.5437521934509277,
+          -2.055934254323141,
+          1.290576457977295,
+          -1.618561093007223,
+          -2.666197125111715,
+          -1.6772001425372522
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 11.900481445001788,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.5436203479766846,
+          -2.0307214895831507,
+          1.2903966903686523,
+          -1.6854265371905726,
+          -2.6643639246570032,
+          -1.677272144948141
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 12.000481041002786,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.542097568511963,
+          -2.005557362233297,
+          1.2903366088867188,
+          -1.7900350729571741,
+          -2.66423207918276,
+          -1.6772597471820276
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 12.10054121100984,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.533358097076416,
+          -1.9831493536578577,
+          1.29024076461792,
+          -1.8788755575763147,
+          -2.660302702580587,
+          -1.6773198286639612
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 12.200490664006793,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.5253379344940186,
+          -1.96987229982485,
+          1.2901930809020996,
+          -1.9217522780047815,
+          -2.645627562199728,
+          -1.677295986806051
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 12.300486901003751,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.5049338340759277,
+          -1.9482553640948694,
+          1.2901806831359863,
+          -1.96983510652651,
+          -2.561990801488058,
+          -1.6773555914508265
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 12.400485249003395,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.4755983352661133,
+          -1.9283159414874476,
+          1.2901453971862793,
+          -1.9872658888446253,
+          -2.40656549135317,
+          -1.6773317495929163
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 12.500488300996949,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.4449081420898438,
+          -1.913685146962301,
+          1.2901215553283691,
+          -1.9880812803851526,
+          -2.2425735632525843,
+          -1.6773079077350062
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 12.600483129004715,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.408787250518799,
+          -1.90208608308901,
+          1.2901453971862793,
+          -1.9887412230121058,
+          -2.079804245625631,
+          -1.6773679892169397
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 12.70047600500402,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.367032051086426,
+          -1.8958309332477015,
+          1.2901453971862793,
+          -1.9887412230121058,
+          -1.9672678152667444,
+          -1.6773436705218714
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 12.800489585002651,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.3085408210754395,
+          -1.893458668385641,
+          1.2901453971862793,
+          -1.9887531439410608,
+          -1.8809064070331019,
+          -1.6773799101458948
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 12.900478975003352,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.234285354614258,
+          -1.8932068983661097,
+          1.2900972366333008,
+          -1.9888132254229944,
+          -1.8273127714740198,
+          -1.6773436705218714
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 13.000481549010146,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.1555707454681396,
+          -1.893266503010885,
+          1.2901215553283691,
+          -1.988873306904928,
+          -1.7991293112384241,
+          -1.6773799101458948
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 13.100478811000357,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          2.06485652923584,
+          -1.8933146635638636,
+          1.2900853157043457,
+          -1.9891131559955042,
+          -1.7861889044391077,
+          -1.6773555914508265
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 13.200489384005778,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          1.9795864820480347,
+          -1.8933985869037073,
+          1.2901091575622559,
+          -1.990073029194967,
+          -1.7858412901507776,
+          -1.677403752003805
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 13.300489846005803,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          1.884954571723938,
+          -1.893146816884176,
+          1.2900972366333008,
+          -1.994307819996969,
+          -1.785877529774801,
+          -1.677403752003805
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 13.400447845997405,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          1.7917146682739258,
+          -1.8922718206988733,
+          1.2900853157043457,
+          -1.9965150992022913,
+          -1.785769287739889,
+          -1.6774638334857386
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 13.500476211003843,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          1.688839077949524,
+          -1.8877785841571253,
+          1.2900853157043457,
+          -2.0084031263934534,
+          -1.785781208668844,
+          -1.677535359059469
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 13.600479264001478,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          1.5925114154815674,
+          -1.8749092260943812,
+          1.2900972366333008,
+          -2.0453150908099573,
+          -1.7854936758624476,
+          -1.677523438130514
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 13.700482286003535,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          1.4928771257400513,
+          -1.8508241812335413,
+          1.289762020111084,
+          -2.113786522542135,
+          -1.7831066290484827,
+          -1.6775115172015589
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 13.800482812002883,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          1.409834384918213,
+          -1.824282471333639,
+          1.288468360900879,
+          -2.1864164511310022,
+          -1.774891201649801,
+          -1.677523438130514
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 13.900477611998213,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          1.3324514627456665,
+          -1.7946017424212855,
+          1.2829232215881348,
+          -2.2468565146075647,
+          -1.7496326605426233,
+          -1.6774876753436487
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 14.000483387004351,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          1.2667086124420166,
+          -1.7647174040423792,
+          1.2727313041687012,
+          -2.2679055372821253,
+          -1.6964872519122522,
+          -1.6775715986834925
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 14.100481867004419,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          1.2169321775436401,
+          -1.7383320967303675,
+          1.251533031463623,
+          -2.2680376211749476,
+          -1.6406400839435022,
+          -1.677631680165426
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 14.200489434006158,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          1.1720104217529297,
+          -1.7098024527179163,
+          1.2139735221862793,
+          -2.268097702656881,
+          -1.6114915052997034,
+          -1.6775596777545374
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 14.30048250600521,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          1.1382474899291992,
+          -1.680230442677633,
+          1.171250820159912,
+          -2.2679055372821253,
+          -1.6112993399249476,
+          -1.6775954405414026
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 14.40047810600663,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          1.1119039058685303,
+          -1.6426180044757288,
+          1.12367582321167,
+          -2.2676056067096155,
+          -1.6109517256366175,
+          -1.6776192823993128
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 14.500481866009068,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          1.098180890083313,
+          -1.6052210966693323,
+          1.082662582397461,
+          -2.267437760029928,
+          -1.6109398047076624,
+          -1.6775835196124476
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 14.600485336995916,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          1.091864824295044,
+          -1.5650690237628382,
+          1.0425944328308105,
+          -2.2673900763141077,
+          -1.610999886189596,
+          -1.6775596777545374
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 14.700484233006136,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          1.089036464691162,
+          -1.5262706915484827,
+          1.0050883293151855,
+          -2.2673657576190394,
+          -1.6110838095294397,
+          -1.6776073614703577
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 14.800486841006204,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          1.0883893966674805,
+          -1.493056599293844,
+          0.9728755950927734,
+          -2.2673657576190394,
+          -1.6112993399249476,
+          -1.6775835196124476
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 14.900483530000201,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          1.0822646617889404,
+          -1.4614480177508753,
+          0.9388775825500488,
+          -2.267341915761129,
+          -1.6123197714435022,
+          -1.6776436010943812
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 15.00048297199828,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          1.0640355348587036,
+          -1.4387067000018519,
+          0.9084720611572266,
+          -2.2673900763141077,
+          -1.6123316923724573,
+          -1.6775954405414026
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 15.100483372996678,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          1.0337375402450562,
+          -1.4203980604754847,
+          0.8769040107727051,
+          -2.267318073903219,
+          -1.6123197714435022,
+          -1.6776436010943812
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 15.200485855006264,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          1.0016303062438965,
+          -1.407205883656637,
+          0.8512535095214844,
+          -2.267329994832174,
+          -1.6121395269977015,
+          -1.6776192823993128
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 15.300477648997912,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9717641472816467,
+          -1.3920844236956995,
+          0.8293280601501465,
+          -2.2673900763141077,
+          -1.610351864491598,
+          -1.677631680165426
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 15.400517761008814,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9504557847976685,
+          -1.3730695883380335,
+          0.8121953010559082,
+          -2.2673900763141077,
+          -1.6060341040240687,
+          -1.6775596777545374
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 15.500479220005218,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9386146068572998,
+          -1.3541138807879847,
+          0.7967872619628906,
+          -2.2676900068866175,
+          -1.585473362599508,
+          -1.6775715986834925
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 15.600485925009707,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9358582496643066,
+          -1.3328822294818323,
+          0.779294490814209,
+          -2.2685774008380335,
+          -1.5514047781573694,
+          -1.677535359059469
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 15.70048370200675,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9356305599212646,
+          -1.3134477774249476,
+          0.7626276016235352,
+          -2.270724121724264,
+          -1.5409086386310022,
+          -1.677535359059469
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 15.800475944008213,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9350676536560059,
+          -1.2932704130755823,
+          0.7417430877685547,
+          -2.2756293455706995,
+          -1.5408485571490687,
+          -1.6774876753436487
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 15.900484411002253,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.935055673122406,
+          -1.2727215925799769,
+          0.7188568115234375,
+          -2.2824061552630823,
+          -1.5398405233966272,
+          -1.6775115172015589
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 16.000486990000354,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9349598288536072,
+          -1.2544854323016565,
+          0.6973128318786621,
+          -2.298441712056295,
+          -1.539600674306051,
+          -1.6774638334857386
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 16.100481122004567,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9349478483200073,
+          -1.233793083821432,
+          0.6756234169006348,
+          -2.3273218313800257,
+          -1.5395763556109827,
+          -1.6774638334857386
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 16.20048843699624,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9349358677864075,
+          -1.218384091054098,
+          0.6592674255371094,
+          -2.3431647459613245,
+          -1.5395286718951624,
+          -1.6774757544146937
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 16.300477737007895,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.934971809387207,
+          -1.2060907522784632,
+          0.6472840309143066,
+          -2.3432605902301233,
+          -1.539600674306051,
+          -1.6774638334857386
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 16.400483835997875,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9348759055137634,
+          -1.2000520865069788,
+          0.6462888717651367,
+          -2.343428913746969,
+          -1.5396130720721644,
+          -1.6774757544146937
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 16.50048449500173,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9348040223121643,
+          -1.1958344618426722,
+          0.6463732719421387,
+          -2.343536678944723,
+          -1.5396607557879847,
+          -1.6774876753436487
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 16.60048688200186,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.934827983379364,
+          -1.1932700316058558,
+          0.6464214324951172,
+          -2.3437045256244105,
+          -1.5396130720721644,
+          -1.6774757544146937
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 16.700483285996597,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9348160028457642,
+          -1.1931985060321253,
+          0.6464452743530273,
+          -2.343860451375143,
+          -1.5396130720721644,
+          -1.6774275938617151
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 16.80048272899876,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9348040223121643,
+          -1.189495865498678,
+          0.6464571952819824,
+          -2.3439205328570765,
+          -1.539600674306051,
+          -1.6774638334857386
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 16.900483550009085,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9348519444465637,
+          -1.1839607397662562,
+          0.6464571952819824,
+          -2.3445075193988245,
+          -1.5394566694842737,
+          -1.6774395147906702
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 17.0004892989964,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9348160028457642,
+          -1.1824386755572718,
+          0.6464214324951172,
+          -2.348753277455465,
+          -1.5394328276263636,
+          -1.67741567293276
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 17.100480328008416,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9348639249801636,
+          -1.179587189351217,
+          0.6464691162109375,
+          -2.3656156698810022,
+          -1.539384667073385,
+          -1.6774519125567835
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 17.200482589003514,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9349119067192078,
+          -1.173225227986471,
+          0.6464691162109375,
+          -2.395081345235006,
+          -1.5391810576068323,
+          -1.6774395147906702
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 17.300488690001657,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.934827983379364,
+          -1.1710203329669397,
+          0.6464810371398926,
+          -2.407001797352926,
+          -1.5388692061053675,
+          -1.6774638334857386
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 17.400484231009614,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9349478483200073,
+          -1.1690433661090296,
+          0.646540641784668,
+          -2.406893555318014,
+          -1.5359538237201136,
+          -1.6774275938617151
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 17.500481501003378,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9350317120552063,
+          -1.1663830916034144,
+          0.6465644836425781,
+          -2.4069302717791956,
+          -1.5281203428851526,
+          -1.6774519125567835
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 17.600482962006936,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9350077509880066,
+          -1.166096035634176,
+          0.6465644836425781,
+          -2.4069302717791956,
+          -1.5271003882037562,
+          -1.6774638334857386
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 17.700486087007448,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9350077509880066,
+          -1.1661561171161097,
+          0.6465768814086914,
+          -2.40676194826235,
+          -1.5271127859698694,
+          -1.6774638334857386
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 17.80048095600796,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9350077509880066,
+          -1.16620380083193,
+          0.6465888023376465,
+          -2.406630341206686,
+          -1.5271723906146448,
+          -1.6774275938617151
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 17.900479603005806,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9350317120552063,
+          -1.166191879902975,
+          0.6466364860534668,
+          -2.406329933797018,
+          -1.527196232472555,
+          -1.67741567293276
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 18.00086402799934,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.934971809387207,
+          -1.1661680380450647,
+          0.646876335144043,
+          -2.405982796345846,
+          -1.5271723906146448,
+          -1.67741567293276
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 18.10047904100793,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9349598288536072,
+          -1.1661680380450647,
+          0.6469240188598633,
+          -2.4059703985797327,
+          -1.527196232472555,
+          -1.6774275938617151
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 18.200479096005438,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9350077509880066,
+          -1.166191879902975,
+          0.6469240188598633,
+          -2.4059703985797327,
+          -1.5271843115436,
+          -1.67739183107485
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 18.30048260600597,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9349957704544067,
+          -1.1661680380450647,
+          0.6469240188598633,
+          -2.4058988730060022,
+          -1.5272086302386683,
+          -1.67741567293276
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 18.400902485998813,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9349957704544067,
+          -1.16620380083193,
+          0.6469483375549316,
+          -2.4059227148639124,
+          -1.5272205511676233,
+          -1.67739183107485
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 18.50048847599828,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9349837899208069,
+          -1.166191879902975,
+          0.6469120979309082,
+          -2.4058988730060022,
+          -1.5272329489337366,
+          -1.67739183107485
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 18.600488242998836,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9350197315216064,
+          -1.16620380083193,
+          0.6469483375549316,
+          -2.405862633381979,
+          -1.5272205511676233,
+          -1.677403752003805
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 18.70048625000345,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9349837899208069,
+          -1.1661799589740198,
+          0.6469602584838867,
+          -2.405874554310934,
+          -1.527196232472555,
+          -1.67739183107485
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 18.800883635005448,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9349837899208069,
+          -1.1661680380450647,
+          0.6469841003417969,
+          -2.405886952077047,
+          -1.527196232472555,
+          -1.6773679892169397
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 18.900879339009407,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9350077509880066,
+          -1.1661680380450647,
+          0.6469240188598633,
+          -2.4058988730060022,
+          -1.5272086302386683,
+          -1.6773436705218714
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 19.000479057998746,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9350077509880066,
+          -1.1661561171161097,
+          0.6469483375549316,
+          -2.4058988730060022,
+          -1.527196232472555,
+          -1.67739183107485
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 19.100477419007802,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9349598288536072,
+          -1.1661799589740198,
+          0.6469602584838867,
+          -2.4059107939349573,
+          -1.5272205511676233,
+          -1.67739183107485
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 19.20048410000163,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9349837899208069,
+          -1.1661680380450647,
+          0.6469120979309082,
+          -2.4059107939349573,
+          -1.5271723906146448,
+          -1.6773799101458948
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 19.300873070009402,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9349957704544067,
+          -1.1661799589740198,
+          0.6469240188598633,
+          -2.4059107939349573,
+          -1.5271604696856897,
+          -1.6773799101458948
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 19.400865767005598,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9349957704544067,
+          -1.1661680380450647,
+          0.6469602584838867,
+          -2.4058988730060022,
+          -1.527196232472555,
+          -1.67741567293276
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 19.50048494200746,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9350077509880066,
+          -1.1661799589740198,
+          0.6469240188598633,
+          -2.405874554310934,
+          -1.527196232472555,
+          -1.677403752003805
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 19.60046103100467,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9349957704544067,
+          -1.166191879902975,
+          0.646996021270752,
+          -2.4058988730060022,
+          -1.5271723906146448,
+          -1.677403752003805
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 19.700479678998818,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.934971809387207,
+          -1.166191879902975,
+          0.6469240188598633,
+          -2.4059107939349573,
+          -1.527196232472555,
+          -1.67741567293276
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 19.800867049998487,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9349837899208069,
+          -1.166191879902975,
+          0.6469001770019531,
+          -2.405874554310934,
+          -1.5272448698626917,
+          -1.6773679892169397
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 19.900481970005785,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.934971809387207,
+          -1.1661799589740198,
+          0.6469364166259766,
+          -2.4059227148639124,
+          -1.527196232472555,
+          -1.6773799101458948
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 20.00048180500744,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.934971809387207,
+          -1.1661680380450647,
+          0.6469721794128418,
+          -2.4059227148639124,
+          -1.5272205511676233,
+          -1.6773799101458948
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 20.10048256700975,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9350317120552063,
+          -1.1661437193499964,
+          0.6469364166259766,
+          -2.4059107939349573,
+          -1.527196232472555,
+          -1.677403752003805
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 20.200862740006414,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9349957704544067,
+          -1.166191879902975,
+          0.6469721794128418,
+          -2.4058988730060022,
+          -1.527196232472555,
+          -1.6773799101458948
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 20.300861359006376,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9349837899208069,
+          -1.166084114705221,
+          0.6472363471984863,
+          -2.405886952077047,
+          -1.5272086302386683,
+          -1.67739183107485
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 20.40048194299743,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9350197315216064,
+          -1.1663830916034144,
+          0.6471161842346191,
+          -2.4060185591327112,
+          -1.5272329489337366,
+          -1.6773679892169397
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 20.50048366500414,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9349837899208069,
+          -1.1667550245868128,
+          0.6471037864685059,
+          -2.4060543219195765,
+          -1.5271723906146448,
+          -1.6773679892169397
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 20.60048583500611,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9350916743278503,
+          -1.1718466917621058,
+          0.646888256072998,
+          -2.4061506430255335,
+          -1.5272086302386683,
+          -1.6773799101458948
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 20.700863480000407,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9351036548614502,
+          -1.1810248533831995,
+          0.6468043327331543,
+          -2.4061387220965784,
+          -1.5271723906146448,
+          -1.67739183107485
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 20.800774262010236,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9349837899208069,
+          -1.1964095274554651,
+          0.646888256072998,
+          -2.406078640614645,
+          -1.5272687117206019,
+          -1.67741567293276
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 20.900447325999266,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9347321391105652,
+          -1.2123091856585901,
+          0.6468644142150879,
+          -2.4060543219195765,
+          -1.527724568043844,
+          -1.677403752003805
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 21.000479705006,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9349957704544067,
+          -1.229790989552633,
+          0.646888256072998,
+          -2.4060543219195765,
+          -1.5276883284198206,
+          -1.677403752003805
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 21.100480660999892,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9349478483200073,
+          -1.2501004377948206,
+          0.6469602584838867,
+          -2.4059227148639124,
+          -1.5277965704547327,
+          -1.67739183107485
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 21.200881890996243,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9350317120552063,
+          -1.2745187918292444,
+          0.6470680236816406,
+          -2.405574623738424,
+          -1.5278084913836878,
+          -1.6774275938617151
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 21.300474414005294,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9350077509880066,
+          -1.300854508076803,
+          0.6472482681274414,
+          -2.402252976094381,
+          -1.5279048124896448,
+          -1.6774638334857386
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 21.400484810001217,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9351875185966492,
+          -1.3263762632953089,
+          0.6472482681274414,
+          -2.384540383015768,
+          -1.5279048124896448,
+          -1.677403752003805
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 21.500489765996463,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.935750424861908,
+          -1.359326187764303,
+          0.6471757888793945,
+          -2.346726719533102,
+          -1.527832333241598,
+          -1.6774275938617151
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 21.600875477000955,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9361938238143921,
+          -1.3951519171344202,
+          0.6472363471984863,
+          -2.3166115919696253,
+          -1.5277846495257776,
+          -1.6774275938617151
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 21.700870736996876,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9364698529243469,
+          -1.440143887196676,
+          0.6472001075744629,
+          -2.3113463560687464,
+          -1.5277364889727991,
+          -1.67741567293276
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 21.8004847310076,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.936541736125946,
+          -1.4865382353412073,
+          0.6471877098083496,
+          -2.3113225142108362,
+          -1.5277603308307093,
+          -1.6774519125567835
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 21.900482329001534,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9366016387939453,
+          -1.540553394948141,
+          0.6471519470214844,
+          -2.3111189047442835,
+          -1.5277603308307093,
+          -1.6774395147906702
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 22.00048815101036,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9366616010665894,
+          -1.5919211546527308,
+          0.6471519470214844,
+          -2.3109987417804163,
+          -1.527724568043844,
+          -1.6774519125567835
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 22.100874502997613,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9366375803947449,
+          -1.648404900227682,
+          0.6470799446105957,
+          -2.3109267393695276,
+          -1.527724568043844,
+          -1.6774876753436487
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 22.200863206002396,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.936625599861145,
+          -1.6994612852679651,
+          0.6470680236816406,
+          -2.31073505083193,
+          -1.5276883284198206,
+          -1.6775115172015589
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 22.300482129008742,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9366136193275452,
+          -1.7516444365130823,
+          0.6471400260925293,
+          -2.3102195898639124,
+          -1.5276644865619105,
+          -1.677535359059469
+        ]
+      },
+      "gripper": null
+    },
+    {
+      "t": 22.400488655010122,
+      "arm": {
+        "arm_name": "right",
+        "driver": "ur5",
+        "joint_names": [
+          "shoulder_pan_joint",
+          "shoulder_lift_joint",
+          "elbow_joint",
+          "wrist_1_joint",
+          "wrist_2_joint",
+          "wrist_3_joint"
+        ],
+        "joints": [
+          0.9366375803947449,
+          -1.7980292479144495,
+          0.6471638679504395,
+          -2.305362049733297,
+          -1.5276525656329554,
+          -1.6775596777545374
+        ]
+      },
+      "gripper": null
+    }
+  ],
+  "gripper_events": [
+    {
+      "t": 3.8884070260101,
+      "action": "close",
+      "position": 255,
+      "speed": null,
+      "force": null
+    },
+    {
+      "t": 18.32764256700466,
+      "action": "open",
+      "position": 0,
+      "speed": null,
+      "force": null
+    }
+  ]
+}

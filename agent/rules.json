@@ -1,0 +1,98 @@
+{
+  "destinations": {
+    "top_cabinet": {
+      "label_zh": "櫃子",
+      "suggested_action": "place_object_in_top_cabinet"
+    },
+    "second_drawer": {
+      "label_zh": "抽屜",
+      "suggested_action": "place_object_in_second_drawer"
+    },
+    "trash_can": {
+      "label_zh": "垃圾桶",
+      "suggested_action": "place_object_in_trash_can"
+    }
+  },
+  "objects": {
+    "bottle_alcohol_spray": {
+      "object_label": "酒精瓶",
+      "count_label": "酒精",
+      "count_unit": "瓶",
+      "destination": "top_cabinet",
+      "handling_guidance": "酒精瓶應集中收納於櫃子，避免散放；不可猜測瓶身是否密封或滲漏。",
+      "user_reason": "酒精瓶較高，推薦放入較高空間的櫃子，避免散放。"
+    },
+    "cotton_swabs_pp": {
+      "object_label": "棉花棒包裝",
+      "count_label": "棉花棒",
+      "count_unit": "包",
+      "destination": "second_drawer",
+      "handling_guidance": "包裝完整時適合收進抽屜保持乾淨；若沒有包裝狀態證據，只能用條件句說明。",
+      "user_reason": "棉花棒包裝完整，收進抽屜可供未來使用。"
+    },
+    "saline": {
+      "object_label": "生理食鹽水",
+      "count_label": "生理食鹽水",
+      "count_unit": "瓶",
+      "destination": "second_drawer",
+      "handling_guidance": "若生理食鹽水未拆封且包裝完整，可收進抽屜；目前資料未提供封裝狀態時，不可宣稱已確認未拆封。",
+      "user_reason": "生理食鹽水未拆封且包裝完整，可收進抽屜"
+    },
+    "cotton_swab": {
+      "object_label": "棉花棒",
+      "count_label": "棉花棒",
+      "count_unit": "支",
+      "destination": "trash_can",
+      "handling_guidance": "棉花棒屬單次使用物品，依目前場域規則丟入垃圾桶；不可猜測是否已使用或受污染。",
+      "user_reason": "棉花棒屬於單次使用物品，因此會丟入垃圾桶。"
+    },
+    "disposable_mask": {
+      "object_label": "口罩",
+      "count_label": "口罩",
+      "count_unit": "片",
+      "destination": "trash_can",
+      "handling_guidance": "口罩屬拋棄式用品，不建議重複使用，依目前場域規則丟入垃圾桶；不可猜測實際使用狀態。",
+      "user_reason": "口罩屬拋棄式用品，不建議重複使用，應該丟入垃圾桶"
+    },
+    "gauze_pp": {
+      "object_label": "紗布",
+      "count_label": "紗布",
+      "count_unit": "包",
+      "destination": "second_drawer",
+      "handling_guidance": "包裝完整時適合收進抽屜保持乾淨；沒有外觀證據時不可宣稱包裝完整。",
+      "user_reason": "包裝完整，收進抽屜以供後續使用。"
+    },
+    "square_striped_towel": {
+      "object_label": "條紋毛巾",
+      "count_label": "條紋毛巾",
+      "count_unit": "條",
+      "destination": "trash_can",
+      "handling_guidance": "依目前場域規則視為需清理的布料並丟入垃圾桶；只有視覺資料明確顯示污損時，才可直接說它已污損。",
+      "user_reason": "這是軟性布料，推薦丟入污衣垃圾桶，以供後續處理。"
+    },
+    "syringe_nipro": {
+      "object_label": "針筒",
+      "count_label": "針筒",
+      "count_unit": "支",
+      "destination": "trash_can",
+      "handling_guidance": "針筒依目前場域設定的目的地處理；不可猜測是否使用過、是否含針或是否受污染。",
+      "user_reason": "針筒應該丟入垃圾桶。"
+    },
+    "waterproof_bandages_ppb": {
+      "object_label": "防水繃帶",
+      "count_label": "防水繃帶",
+      "count_unit": "包",
+      "destination": "second_drawer",
+      "handling_guidance": "包裝完整時適合收進抽屜；沒有包裝狀態證據時只能用條件句說明。",
+      "user_reason": "包裝完整，可以收進抽屜保存。"
+    },
+    "ac_remotecontrol": {
+      "object_label": "遙控器",
+      "count_label": "遙控器",
+      "count_unit": "支",
+      "destination": "second_drawer",
+      "handling_guidance": "遙控器依目前場域規則收進抽屜，避免散放。",
+      "user_reason": "遙控器推薦收入抽屜，不可丟棄。"
+    }
+  }
+}

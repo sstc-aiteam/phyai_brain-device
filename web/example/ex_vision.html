@@ -1,0 +1,1528 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Robot Vision Demo</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 30px;
+
+            font-family:
+                Arial,
+                "Microsoft JhengHei",
+                sans-serif;
+
+            background: #f5f6f8;
+            color: #222;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: auto;
+        }
+
+        h1 {
+            margin-bottom: 24px;
+        }
+
+        h2 {
+            margin-top: 0;
+            font-size: 20px;
+        }
+
+        .card {
+            background: white;
+
+            border: 1px solid #ddd;
+            border-radius: 10px;
+
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .row {
+            display: flex;
+            gap: 12px;
+
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .grid {
+            display: grid;
+
+            grid-template-columns:
+                repeat(
+                    auto-fit,
+                    minmax(340px, 1fr)
+                );
+
+            gap: 20px;
+        }
+
+        label {
+            font-weight: bold;
+        }
+
+        select,
+        button {
+            font-size: 16px;
+        }
+
+        select {
+            padding: 9px;
+
+            border: 1px solid #bbb;
+            border-radius: 6px;
+        }
+
+        button {
+            padding: 10px 16px;
+
+            border: none;
+            border-radius: 6px;
+
+            cursor: pointer;
+
+            background: #333;
+            color: white;
+        }
+
+        button:hover {
+            opacity: 0.85;
+        }
+
+        button:disabled {
+            background: #aaa;
+            cursor: not-allowed;
+        }
+
+        .status-line {
+            margin-top: 12px;
+        }
+
+        .connected {
+            color: green;
+            font-weight: bold;
+        }
+
+        .disconnected {
+            color: red;
+            font-weight: bold;
+        }
+
+        .data-display {
+            margin-top: 15px;
+
+            padding: 15px;
+
+            background: #f6f6f6;
+
+            border-radius: 8px;
+
+            font-family: monospace;
+
+            white-space: pre-wrap;
+            word-break: break-word;
+
+            min-height: 80px;
+
+            max-height: 420px;
+            overflow-y: auto;
+        }
+
+        .image-box {
+            width: 100%;
+
+            min-height: 280px;
+
+            display: flex;
+
+            align-items: center;
+            justify-content: center;
+
+            background: #111;
+            border-radius: 8px;
+
+            overflow: hidden;
+        }
+
+        .image-box img {
+            display: block;
+
+            width: 100%;
+            height: auto;
+
+            object-fit: contain;
+        }
+
+        .muted {
+            color: #777;
+        }
+
+        .summary-grid {
+            display: grid;
+
+            grid-template-columns:
+                repeat(
+                    auto-fit,
+                    minmax(220px, 1fr)
+                );
+
+            gap: 12px;
+
+            margin-top: 15px;
+        }
+
+        .summary-item {
+            padding: 12px;
+
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+
+            background: #fafafa;
+        }
+
+        .summary-title {
+            font-weight: bold;
+            margin-bottom: 6px;
+        }
+
+        @media (
+            max-width: 600px
+        ) {
+            body {
+                padding: 15px;
+            }
+
+            .card {
+                padding: 16px;
+            }
+        }
+    </style>
+</head>
+
+
+<body>
+
+<div class="container">
+
+    <h1>
+        Robot Vision Demo
+    </h1>
+
+
+    <!-- =====================================================
+         Camera
+    ====================================================== -->
+
+    <div class="card">
+
+        <h2>
+            Camera
+        </h2>
+
+        <div class="row">
+
+            <button
+                type="button"
+                onclick="loadCameraStatus()"
+            >
+                更新相機狀態
+            </button>
+
+
+            <label for="cameraSelect">
+                選擇相機
+            </label>
+
+
+            <select
+                id="cameraSelect"
+                onchange="onCameraChanged()"
+            >
+                <option value="">
+                    讀取中...
+                </option>
+            </select>
+
+
+            <button
+                type="button"
+                onclick="startCamera()"
+            >
+                開啟相機
+            </button>
+
+
+            <button
+                type="button"
+                onclick="stopCamera()"
+            >
+                關閉相機
+            </button>
+
+        </div>
+
+
+        <div class="status-line">
+
+            目前相機：
+
+            <span id="currentCamera">
+                -
+            </span>
+
+        </div>
+
+
+        <div
+            id="cameraStatus"
+            class="data-display"
+        >
+            -
+        </div>
+
+    </div>
+
+
+    <!-- =====================================================
+         Images
+    ====================================================== -->
+
+    <div class="grid">
+
+        <div class="card">
+
+            <h2>
+                Camera RGB
+            </h2>
+
+            <div class="row">
+
+                <button
+                    type="button"
+                    onclick="refreshRgbImage()"
+                >
+                    更新 RGB
+                </button>
+
+            </div>
+
+            <div class="image-box">
+
+                <img
+                    id="rgbImage"
+                    alt="Camera RGB"
+                >
+
+            </div>
+
+        </div>
+
+
+        <div class="card">
+
+            <h2>
+                YOLO Detection Image
+            </h2>
+
+            <div class="row">
+
+                <button
+                    type="button"
+                    onclick="refreshYolo()"
+                >
+                    執行 YOLO
+                </button>
+
+            </div>
+
+            <div class="image-box">
+
+                <img
+                    id="yoloImage"
+                    alt="YOLO Detection"
+                >
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- =====================================================
+         Streams
+    ====================================================== -->
+
+    <div class="grid">
+
+        <div class="card">
+
+            <h2>
+                Camera Stream
+            </h2>
+
+            <div class="row">
+
+                <button
+                    type="button"
+                    onclick="startCameraStream()"
+                >
+                    開始影像串流
+                </button>
+
+
+                <button
+                    type="button"
+                    onclick="stopCameraStream()"
+                >
+                    停止影像串流
+                </button>
+
+            </div>
+
+            <div class="image-box">
+
+                <img
+                    id="cameraStreamImage"
+                    alt="Camera Stream"
+                >
+
+            </div>
+
+        </div>
+
+
+        <div class="card">
+
+            <h2>
+                YOLO Stream
+            </h2>
+
+            <div class="row">
+
+                <button
+                    type="button"
+                    onclick="startYoloStream()"
+                >
+                    開始 YOLO 串流
+                </button>
+
+
+                <button
+                    type="button"
+                    onclick="stopYoloStream()"
+                >
+                    停止 YOLO 串流
+                </button>
+
+            </div>
+
+            <div class="image-box">
+
+                <img
+                    id="yoloStreamImage"
+                    alt="YOLO Stream"
+                >
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- =====================================================
+         YOLO Results
+    ====================================================== -->
+
+    <div class="card">
+
+        <h2>
+            YOLO Detection Results
+        </h2>
+
+        <button
+            type="button"
+            onclick="loadDetections()"
+        >
+            取得物件辨識結果
+        </button>
+
+
+        <div
+            id="detectionDisplay"
+            class="data-display"
+        >
+            -
+        </div>
+
+    </div>
+
+
+    <!-- =====================================================
+         VLA Observation
+    ====================================================== -->
+
+    <div class="card">
+
+        <h2>
+            VLA Vision Observation
+        </h2>
+
+        <p class="muted">
+            Demo 頁面顯示 observation 摘要。
+            真正 VLA 在 Python 內部可直接取得完整 RGB ndarray
+            與 Point Cloud ndarray。
+        </p>
+
+
+        <button
+            type="button"
+            onclick="loadVlaObservation()"
+        >
+            取得 VLA 視覺資料
+        </button>
+
+
+        <div class="summary-grid">
+
+            <div class="summary-item">
+
+                <div class="summary-title">
+                    RGB
+                </div>
+
+                <div id="vlaRgb">
+                    -
+                </div>
+
+            </div>
+
+
+            <div class="summary-item">
+
+                <div class="summary-title">
+                    Intrinsics
+                </div>
+
+                <div id="vlaIntrinsicsStatus">
+                    -
+                </div>
+
+            </div>
+
+
+            <div class="summary-item">
+
+                <div class="summary-title">
+                    Point Cloud
+                </div>
+
+                <div id="vlaPointCloudStatus">
+                    -
+                </div>
+
+            </div>
+
+
+            <div class="summary-item">
+
+                <div class="summary-title">
+                    YOLO Objects
+                </div>
+
+                <div id="vlaObjectCount">
+                    -
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <div
+            id="vlaDisplay"
+            class="data-display"
+        >
+            -
+        </div>
+
+    </div>
+
+
+    <!-- =====================================================
+         API Response
+    ====================================================== -->
+
+    <div class="card">
+
+        <h2>
+            API Response
+        </h2>
+
+        <div
+            id="apiResponse"
+            class="data-display"
+        >
+            -
+        </div>
+
+    </div>
+
+</div>
+
+
+<script>
+
+    // ========================================================
+    // Config
+    // ========================================================
+
+    const CAMERA_API =
+        "/api/camera";
+
+    const VISION_API =
+        "/api/vision";
+
+
+    let cameras =
+        [];
+
+
+    // ========================================================
+    // HTTP
+    // ========================================================
+
+    async function apiGet(
+        base,
+        endpoint,
+        params = {}
+    ) {
+
+        const url =
+            new URL(
+                base + endpoint,
+                window.location.origin
+            );
+
+
+        for (
+            const [key, value]
+            of Object.entries(
+                params
+            )
+        ) {
+
+            if (
+                value !== null
+                &&
+                value !== undefined
+                &&
+                value !== ""
+            ) {
+
+                url.searchParams.set(
+                    key,
+                    value
+                );
+            }
+        }
+
+
+        const response =
+            await fetch(
+                url.toString(),
+                {
+                    method: "GET",
+                    cache: "no-store"
+                }
+            );
+
+
+        const data =
+            await response.json();
+
+
+        showApiResponse(
+            data
+        );
+
+
+        if (
+            !response.ok
+        ) {
+
+            throw new Error(
+                data.error
+                || `HTTP ${response.status}`
+            );
+        }
+
+
+        return data;
+    }
+
+
+    async function apiPost(
+        base,
+        endpoint,
+        body
+    ) {
+
+        const response =
+            await fetch(
+                base + endpoint,
+                {
+                    method:
+                        "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body:
+                        JSON.stringify(
+                            body
+                        )
+                }
+            );
+
+
+        const data =
+            await response.json();
+
+
+        showApiResponse(
+            data
+        );
+
+
+        if (
+            !response.ok
+        ) {
+
+            throw new Error(
+                data.error
+                || `HTTP ${response.status}`
+            );
+        }
+
+
+        return data;
+    }
+
+
+    function showApiResponse(
+        data
+    ) {
+
+        document
+            .getElementById(
+                "apiResponse"
+            )
+            .textContent =
+                JSON.stringify(
+                    data,
+                    null,
+                    2
+                );
+    }
+
+
+    // ========================================================
+    // Camera Selection
+    // ========================================================
+
+    function getSelectedCamera() {
+
+        const cameraName =
+            document
+                .getElementById(
+                    "cameraSelect"
+                )
+                .value;
+
+
+        if (
+            !cameraName
+        ) {
+
+            throw new Error(
+                "目前沒有可用相機"
+            );
+        }
+
+
+        return cameraName;
+    }
+
+
+    async function loadCameraStatus() {
+
+        const select =
+            document
+                .getElementById(
+                    "cameraSelect"
+                );
+
+
+        try {
+
+            select.innerHTML =
+                '<option value="">讀取中...</option>';
+
+
+            const result =
+                await apiGet(
+                    CAMERA_API,
+                    "/get_camera_status"
+                );
+
+
+            const list =
+                result
+                ?.data
+                ?.cameras;
+
+
+            if (
+                !Array.isArray(
+                    list
+                )
+            ) {
+
+                throw new Error(
+                    "Camera status response format invalid"
+                );
+            }
+
+
+            cameras =
+                list;
+
+
+            updateCameraSelect(
+                list
+            );
+
+
+            document
+                .getElementById(
+                    "cameraStatus"
+                )
+                .textContent =
+                    JSON.stringify(
+                        list,
+                        null,
+                        2
+                    );
+
+        }
+
+        catch (
+            error
+        ) {
+
+            select.innerHTML =
+                '<option value="">API 連線失敗</option>';
+
+
+            document
+                .getElementById(
+                    "cameraStatus"
+                )
+                .textContent =
+                    "讀取 Camera 狀態失敗：\n"
+                    + error.message;
+        }
+    }
+
+
+    function updateCameraSelect(
+        list
+    ) {
+
+        const select =
+            document
+                .getElementById(
+                    "cameraSelect"
+                );
+
+
+        const previous =
+            select.value;
+
+
+        select.innerHTML =
+            "";
+
+
+        if (
+            list.length === 0
+        ) {
+
+            const option =
+                document.createElement(
+                    "option"
+                );
+
+
+            option.value =
+                "";
+
+
+            option.textContent =
+                "沒有可用相機";
+
+
+            select.appendChild(
+                option
+            );
+
+
+            onCameraChanged();
+
+            return;
+        }
+
+
+        for (
+            const camera
+            of list
+        ) {
+
+            const option =
+                document.createElement(
+                    "option"
+                );
+
+
+            option.value =
+                camera.camera_name;
+
+
+            const running =
+                camera
+                ?.status
+                ?.running;
+
+
+            const state =
+                running
+                ? "ON"
+                : "OFF";
+
+
+            option.textContent =
+                `${camera.camera_name} `
+                + `(${camera.driver || "unknown"}) `
+                + `[${state}]`;
+
+
+            select.appendChild(
+                option
+            );
+        }
+
+
+        const previousExists =
+            list.some(
+                camera =>
+                    camera.camera_name
+                    === previous
+            );
+
+
+        if (
+            previousExists
+        ) {
+
+            select.value =
+                previous;
+        }
+
+
+        onCameraChanged();
+    }
+
+
+    function onCameraChanged() {
+
+        const name =
+            document
+                .getElementById(
+                    "cameraSelect"
+                )
+                .value;
+
+
+        document
+            .getElementById(
+                "currentCamera"
+            )
+            .textContent =
+                name || "-";
+
+
+        clearVisionDisplays();
+    }
+
+
+    // ========================================================
+    // Camera Lifecycle
+    // ========================================================
+
+    async function startCamera() {
+
+        try {
+
+            const cameraName =
+                getSelectedCamera();
+
+
+            await apiPost(
+                CAMERA_API,
+                "/start_camera",
+                {
+                    camera_name:
+                        cameraName
+                }
+            );
+
+
+            await loadCameraStatus();
+
+
+            refreshRgbImage();
+
+        }
+
+        catch (
+            error
+        ) {
+
+            alert(
+                "開啟相機失敗："
+                + error.message
+            );
+        }
+    }
+
+
+    async function stopCamera() {
+
+        try {
+
+            const cameraName =
+                getSelectedCamera();
+
+
+            await apiPost(
+                CAMERA_API,
+                "/stop_camera",
+                {
+                    camera_name:
+                        cameraName
+                }
+            );
+
+
+            await loadCameraStatus();
+
+
+            clearVisionDisplays();
+
+        }
+
+        catch (
+            error
+        ) {
+
+            alert(
+                "關閉相機失敗："
+                + error.message
+            );
+        }
+    }
+
+
+    // ========================================================
+    // Images
+    // ========================================================
+
+    function refreshRgbImage() {
+
+        try {
+
+            const cameraName =
+                getSelectedCamera();
+
+
+            document
+                .getElementById(
+                    "rgbImage"
+                )
+                .src =
+                    VISION_API
+                    + "/camera_rgb"
+                    + "?camera_name="
+                    + encodeURIComponent(
+                        cameraName
+                    )
+                    + "&_="
+                    + Date.now();
+
+        }
+
+        catch (
+            error
+        ) {
+
+            alert(
+                error.message
+            );
+        }
+    }
+
+
+    async function refreshYolo() {
+
+        try {
+
+            const cameraName =
+                getSelectedCamera();
+
+
+            document
+                .getElementById(
+                    "yoloImage"
+                )
+                .src =
+                    VISION_API
+                    + "/yolo_image"
+                    + "?camera_name="
+                    + encodeURIComponent(
+                        cameraName
+                    )
+                    + "&include_robot_xyz=true"
+                    + "&_="
+                    + Date.now();
+
+
+            await loadDetections();
+
+        }
+
+        catch (
+            error
+        ) {
+
+            alert(
+                "YOLO 執行失敗："
+                + error.message
+            );
+        }
+    }
+
+
+    // ========================================================
+    // Streams
+    // ========================================================
+
+    function startCameraStream() {
+
+        try {
+
+            const cameraName =
+                getSelectedCamera();
+
+
+            document
+                .getElementById(
+                    "cameraStreamImage"
+                )
+                .src =
+                    VISION_API
+                    + "/camera_stream"
+                    + "?camera_name="
+                    + encodeURIComponent(
+                        cameraName
+                    )
+                    + "&_="
+                    + Date.now();
+
+        }
+
+        catch (
+            error
+        ) {
+
+            alert(
+                "啟動 Camera Stream 失敗："
+                + error.message
+            );
+        }
+    }
+
+
+    function stopCameraStream() {
+
+        document
+            .getElementById(
+                "cameraStreamImage"
+            )
+            .removeAttribute(
+                "src"
+            );
+    }
+
+
+    function startYoloStream() {
+
+        try {
+
+            const cameraName =
+                getSelectedCamera();
+
+
+            document
+                .getElementById(
+                    "yoloStreamImage"
+                )
+                .src =
+                    VISION_API
+                    + "/yolo_stream"
+                    + "?camera_name="
+                    + encodeURIComponent(
+                        cameraName
+                    )
+                    + "&include_robot_xyz=false"
+                    + "&_="
+                    + Date.now();
+
+        }
+
+        catch (
+            error
+        ) {
+
+            alert(
+                "啟動 YOLO Stream 失敗："
+                + error.message
+            );
+        }
+    }
+
+
+    function stopYoloStream() {
+
+        document
+            .getElementById(
+                "yoloStreamImage"
+            )
+            .removeAttribute(
+                "src"
+            );
+    }
+
+
+    // ========================================================
+    // Detections
+    // ========================================================
+
+    async function loadDetections() {
+
+        try {
+
+            const cameraName =
+                getSelectedCamera();
+
+
+            const result =
+                await apiGet(
+                    VISION_API,
+                    "/get_detections",
+                    {
+                        camera_name:
+                            cameraName,
+
+                        include_robot_xyz:
+                            true
+                    }
+                );
+
+
+            const detections =
+                result
+                ?.data
+                ?.detections
+                || [];
+
+
+            document
+                .getElementById(
+                    "detectionDisplay"
+                )
+                .textContent =
+                    detections.length === 0
+                    ? "沒有偵測到物件"
+                    : JSON.stringify(
+                        detections,
+                        null,
+                        2
+                    );
+
+        }
+
+        catch (
+            error
+        ) {
+
+            document
+                .getElementById(
+                    "detectionDisplay"
+                )
+                .textContent =
+                    "取得 Detection 失敗：\n"
+                    + error.message;
+        }
+    }
+
+
+    // ========================================================
+    // VLA
+    // ========================================================
+
+    async function loadVlaObservation() {
+
+        try {
+
+            const cameraName =
+                getSelectedCamera();
+
+
+            const result =
+                await apiGet(
+                    VISION_API,
+                    "/get_vla_observation",
+                    {
+                        camera_name:
+                            cameraName,
+
+                        run_yolo:
+                            true,
+
+                        include_point_cloud:
+                            true
+                    }
+                );
+
+
+            const data =
+                result.data
+                || {};
+
+
+            const rgb =
+                data.camera_rgb;
+
+
+            document
+                .getElementById(
+                    "vlaRgb"
+                )
+                .textContent =
+                    rgb
+                    ? (
+                        `shape: ${JSON.stringify(rgb.shape)}\n`
+                        + `dtype: ${rgb.dtype}`
+                    )
+                    : "unavailable";
+
+
+            document
+                .getElementById(
+                    "vlaIntrinsicsStatus"
+                )
+                .textContent =
+                    data.intrinsics_status
+                    || "-";
+
+
+            document
+                .getElementById(
+                    "vlaPointCloudStatus"
+                )
+                .textContent =
+                    data.point_cloud_status
+                    || "-";
+
+
+            const objects =
+                data.yolo_detections
+                || [];
+
+
+            document
+                .getElementById(
+                    "vlaObjectCount"
+                )
+                .textContent =
+                    String(
+                        objects.length
+                    );
+
+
+            document
+                .getElementById(
+                    "vlaDisplay"
+                )
+                .textContent =
+                    JSON.stringify(
+                        data,
+                        null,
+                        2
+                    );
+
+        }
+
+        catch (
+            error
+        ) {
+
+            document
+                .getElementById(
+                    "vlaDisplay"
+                )
+                .textContent =
+                    "取得 VLA Observation 失敗：\n"
+                    + error.message;
+        }
+    }
+
+
+    // ========================================================
+    // Clear
+    // ========================================================
+
+    function clearVisionDisplays() {
+
+        document
+            .getElementById(
+                "rgbImage"
+            )
+            .removeAttribute(
+                "src"
+            );
+
+
+        document
+            .getElementById(
+                "yoloImage"
+            )
+            .removeAttribute(
+                "src"
+            );
+
+
+        document
+            .getElementById(
+                "cameraStreamImage"
+            )
+            .removeAttribute(
+                "src"
+            );
+
+
+        document
+            .getElementById(
+                "yoloStreamImage"
+            )
+            .removeAttribute(
+                "src"
+            );
+
+
+        document
+            .getElementById(
+                "detectionDisplay"
+            )
+            .textContent =
+                "-";
+
+
+        document
+            .getElementById(
+                "vlaDisplay"
+            )
+            .textContent =
+                "-";
+
+
+        document
+            .getElementById(
+                "vlaRgb"
+            )
+            .textContent =
+                "-";
+
+
+        document
+            .getElementById(
+                "vlaIntrinsicsStatus"
+            )
+            .textContent =
+                "-";
+
+
+        document
+            .getElementById(
+                "vlaPointCloudStatus"
+            )
+            .textContent =
+                "-";
+
+
+        document
+            .getElementById(
+                "vlaObjectCount"
+            )
+            .textContent =
+                "-";
+    }
+
+
+    // ========================================================
+    // Init
+    // ========================================================
+
+    window.addEventListener(
+        "DOMContentLoaded",
+        () => {
+
+            loadCameraStatus();
+
+        }
+    );
+
+</script>
+
+</body>
+</html>
