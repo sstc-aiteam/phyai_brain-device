@@ -66,6 +66,24 @@ def start_robot_recording():
                     "freedrive",
                     False,
                 ),
+
+            record_video=
+                data.get(
+                    "record_video",
+                    False,
+                ),
+
+            task=
+                data.get(
+                    "task",
+                    "robot demonstration",
+                ),
+
+            initial_gripper_position=
+                data.get(
+                    "initial_gripper_position",
+                    0,
+                ),
         )
     )
 
@@ -102,6 +120,34 @@ def get_robot_recording_status():
     return jsonify(
         record_service
         .get_robot_recording_status()
+    )
+
+
+# ============================================================
+# GET TASK REGISTRY
+# ============================================================
+
+@record_bp.route(
+    "/get_task_registry",
+    methods=["GET"],
+)
+def get_task_registry():
+    return jsonify(
+        record_service.get_task_registry()
+    )
+
+
+# ============================================================
+# GET REPLAY CATALOG
+# ============================================================
+
+@record_bp.route(
+    "/get_replay_catalog",
+    methods=["GET"],
+)
+def get_replay_catalog():
+    return jsonify(
+        record_service.get_replay_catalog()
     )
 
 
@@ -216,6 +262,12 @@ def start_robot_playback():
             gripper_name=
                 data.get(
                     "gripper_name"
+                ),
+
+            episode_index=
+                data.get(
+                    "episode_index",
+                    0,
                 ),
 
             speed=

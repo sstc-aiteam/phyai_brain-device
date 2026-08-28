@@ -10,6 +10,18 @@ WEB_DIR = os.path.join(BASE_DIR, "web")
 def index():
     return send_from_directory(WEB_DIR, "index.html")
 
+@web_bp.route("/vision")
+def vision():
+    return send_from_directory(WEB_DIR, "example/ex_vision.html")
+
+@web_bp.route("/agent-test")
+def agent_test():
+    return send_from_directory(WEB_DIR, "agent_test.html")
+
+@web_bp.route("/record")
+def record():
+    return send_from_directory(WEB_DIR, "record.html")
+
 @web_bp.route("/web/<path:filename>")
 def web_static(filename):
     return send_from_directory(WEB_DIR, filename)

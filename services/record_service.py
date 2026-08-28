@@ -1,10 +1,15 @@
 import json
 import logging
 import os
+import re
 import threading
 import time
+from datetime import datetime, timezone
 
-from services import arm_service, gripper_service
+import numpy as np
+
+import config
+from services import arm_service, camera_service, gripper_service
 from utils.response import success, error
 
 
@@ -23,15 +28,49 @@ DEFAULT_ARM_JOINT_NAMES = [
 
 
 DEFAULT_RECORD_INTERVAL = 0.1
-
-
-DEFAULT_TRAJECTORY_DIR = os.path.abspath(
+DEFAULT_DATASET_DIR = os.path.abspath(
     os.path.join(
         os.path.dirname(__file__),
         os.pardir,
-        "robot_trajectory",
+        "lerobot_datasets",
     )
 )
+TASK_REGISTRY_PATH = os.path.join(DEFAULT_DATASET_DIR, "task_registry.json")
+
+LEROBOT_STATE_NAMES = [
+    "shoulder_pan",
+    "shoulder_lift",
+    "elbow",
+    "wrist_1",
+    "wrist_2",
+    "wrist_3",
+    "gripper",
+]
+
+LEROBOT_TCP_POSE_NAMES = [
+    "x", "y", "z", "rx", "ry", "rz", "gripper",
+]
+
+LEROBOT_TCP_ACTION_NAMES = [
+    "tcp_local_delta_x", "tcp_local_delta_y", "tcp_local_delta_z",
+    "tcp_local_delta_rx", "tcp_local_delta_ry", "tcp_local_delta_rz",
+    "gripper",
+]
+
+LEROBOT_JOINT_ACTION_NAMES = [
+    "shoulder_pan",
+    "shoulder_lift",
+    "elbow",
+    "wrist_1",
+    "wrist_2",
+    "wrist_3",
+    "gripper",
+]
+
+LEROBOT_ACTION_SPACES = {
+    "action_tcp": "tcp_local_delta",
+    "action_joints": "joint_absolute",
+}
 
 
 # ============================================================
@@ -43,8 +82,11 @@ _record_stop_event = threading.Event()
 
 _record_thread = None
 
-_record_trajectory = []
 _record_gripper_events = []
+_record_dataset = None
+_record_pending_sample = None
+_record_saved_frame_count = 0
+_record_gripper_position = 0
 
 _record_start_time = None
 _record_output_path = None
@@ -55,6 +97,11 @@ _record_arm_name = None
 _record_gripper_name = None
 
 _record_freedrive = False
+_record_camera_names = []
+_record_task = None
+_record_task_id = None
+
+_task_registry_lock = threading.RLock()
 
 
 # ============================================================
@@ -71,6 +118,9 @@ _playback_arm_name = None
 _playback_gripper_name = None
 
 _playback_start_time = None
+_playback_phase = "idle"
+_playback_error = None
+_playback_completed = False
 
 
 # ============================================================
@@ -117,19 +167,234 @@ def _relative_path(
     )
 
 
+def _utc_now():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _empty_task_registry():
+    return {
+        "version": 1,
+        "dataset_root": DEFAULT_DATASET_DIR,
+        "naming_rule": "task_NNNN_<task-slug>_<arm-name>",
+        "episode_label_rule": "episode_NNNNNN_<arm-name>_YYYYMMDD_HHMMSS",
+        "tasks": [],
+    }
+
+
+def _load_task_registry():
+    if not os.path.isfile(TASK_REGISTRY_PATH):
+        return _empty_task_registry()
+    with open(TASK_REGISTRY_PATH, "r", encoding="utf-8") as source:
+        registry = json.load(source)
+    if not isinstance(registry, dict) or not isinstance(registry.get("tasks"), list):
+        raise ValueError(f"Invalid task registry: {TASK_REGISTRY_PATH}")
+    registry.setdefault("version", 1)
+    registry["dataset_root"] = DEFAULT_DATASET_DIR
+    registry["naming_rule"] = "task_NNNN_<task-slug>_<arm-name>"
+    registry["episode_label_rule"] = "episode_NNNNNN_<arm-name>_YYYYMMDD_HHMMSS"
+    return registry
+
+
+def _save_task_registry(registry):
+    os.makedirs(DEFAULT_DATASET_DIR, exist_ok=True)
+    temporary_path = f"{TASK_REGISTRY_PATH}.tmp"
+    with open(temporary_path, "w", encoding="utf-8") as destination:
+        json.dump(registry, destination, ensure_ascii=False, indent=2)
+        destination.write("\n")
+    os.replace(temporary_path, TASK_REGISTRY_PATH)
+
+
+def _task_slug(task):
+    slug = re.sub(r"[^a-z0-9]+", "-", task.lower()).strip("-")
+    return slug[:48] or "task"
+
+
+def _resolve_task_dataset(task, arm_name, output_path=None):
+    normalized_task = " ".join(task.split())
+    normalized_arm = str(arm_name).strip().lower()
+    requested_path = (
+        _normalize_output_path(output_path)
+        if output_path is not None
+        else None
+    )
+    with _task_registry_lock:
+        registry = _load_task_registry()
+        entry = next(
+            (
+                item for item in registry["tasks"]
+                if str(item.get("task", "")).casefold() == normalized_task.casefold()
+                and str(item.get("arm_name", "")).lower() == normalized_arm
+                and (
+                    requested_path is None
+                    or os.path.abspath(item.get("dataset_path", ""))
+                    == os.path.abspath(requested_path)
+                )
+            ),
+            None,
+        )
+        if entry is None:
+            same_task_ids = [
+                str(item.get("task_id"))
+                for item in registry["tasks"]
+                if str(item.get("task", "")).casefold() == normalized_task.casefold()
+                and re.fullmatch(r"task_\d+", str(item.get("task_id", "")))
+            ]
+            used_numbers = []
+            for item in registry["tasks"]:
+                match = re.fullmatch(r"task_(\d+)", str(item.get("task_id", "")))
+                if match:
+                    used_numbers.append(int(match.group(1)))
+            task_id = (
+                same_task_ids[0]
+                if same_task_ids
+                else f"task_{max(used_numbers, default=0) + 1:04d}"
+            )
+            folder_name = f"{task_id}_{_task_slug(normalized_task)}_{normalized_arm}"
+            dataset_path = os.path.join(DEFAULT_DATASET_DIR, folder_name)
+            if requested_path is not None:
+                folder_name = os.path.basename(os.path.normpath(requested_path))
+                dataset_path = requested_path
+            now = _utc_now()
+            entry = {
+                "task_id": task_id,
+                "task": normalized_task,
+                "arm_name": normalized_arm,
+                "dataset_folder": folder_name,
+                "dataset_path": dataset_path,
+                "episode_count": 0,
+                "episodes": [],
+                "created_at": now,
+                "updated_at": now,
+            }
+            registry["tasks"].append(entry)
+            _save_task_registry(registry)
+        return dict(entry), registry
+
+
+def _episode_label(episode_index, arm_name, recorded_at):
+    timestamp = datetime.fromisoformat(recorded_at).strftime("%Y%m%d_%H%M%S")
+    return f"episode_{int(episode_index):06d}_{arm_name}_{timestamp}"
+
+
+def _write_episode_labels(dataset_path, episodes):
+    metadata_directory = os.path.join(dataset_path, "meta")
+    os.makedirs(metadata_directory, exist_ok=True)
+    path = os.path.join(metadata_directory, "episode_labels.json")
+    temporary_path = f"{path}.tmp"
+    with open(temporary_path, "w", encoding="utf-8") as destination:
+        json.dump({"version": 1, "episodes": episodes}, destination, ensure_ascii=False, indent=2)
+        destination.write("\n")
+    os.replace(temporary_path, path)
+    return path
+
+
+def _update_task_episode_count(task_id, arm_name, episode_count, episode_index=None):
+    with _task_registry_lock:
+        registry = _load_task_registry()
+        for entry in registry["tasks"]:
+            if (
+                entry.get("task_id") == task_id
+                and entry.get("arm_name") == arm_name
+            ):
+                entry["episode_count"] = int(episode_count)
+                recorded_at = datetime.now().astimezone().isoformat()
+                entry["updated_at"] = recorded_at
+                episodes = entry.setdefault("episodes", [])
+                if episode_index is not None and not any(
+                    int(item.get("episode_index", -1)) == int(episode_index)
+                    for item in episodes
+                ):
+                    episodes.append({
+                        "episode_index": int(episode_index),
+                        "arm_name": arm_name,
+                        "recorded_at": recorded_at,
+                        "label": _episode_label(episode_index, arm_name, recorded_at),
+                    })
+                _save_task_registry(registry)
+                _write_episode_labels(entry["dataset_path"], episodes)
+                return dict(entry)
+    raise ValueError(f"Unknown task dataset: task_id={task_id}, arm_name={arm_name}")
+
+
+def get_task_registry():
+    action = "get_task_registry"
+    try:
+        with _task_registry_lock:
+            registry = _load_task_registry()
+        return success(
+            MODULE,
+            action,
+            result=True,
+            data={
+                **registry,
+                "registry_path": TASK_REGISTRY_PATH,
+                "registry_relative_path": _relative_path(TASK_REGISTRY_PATH),
+            },
+        )
+    except Exception as exc:
+        return error(MODULE, action, error=exc, error_type=type(exc).__name__)
+
+
+def get_replay_catalog():
+    action = "get_replay_catalog"
+    try:
+        with _task_registry_lock:
+            registry = _load_task_registry()
+        registered = [
+            {**entry, "legacy": False}
+            for entry in registry.get("tasks", [])
+        ] + [
+            {**entry, "legacy": True}
+            for entry in registry.get("legacy_datasets", [])
+        ]
+        datasets = []
+        for entry in registered:
+            dataset_path = entry.get("dataset_path")
+            info = _read_dataset_info(dataset_path) if dataset_path else None
+            if info is None:
+                continue
+            total_episodes = int(info.get("total_episodes", 0))
+            robot_type = info.get("robot_type")
+            compatible_arms = [
+                arm_name
+                for arm_name, arm_config in config.ARMS.items()
+                if arm_config.get("driver") == robot_type
+            ]
+            datasets.append({
+                **entry,
+                "episode_details": entry.get("episodes", []),
+                "dataset_path": dataset_path,
+                "relative_path": _relative_path(dataset_path),
+                "robot_type": robot_type,
+                "compatible_arms": compatible_arms,
+                "fps": info.get("fps"),
+                "total_episodes": total_episodes,
+                "total_frames": info.get("total_frames"),
+                "episodes": list(range(total_episodes)),
+                "action_features": [
+                    key for key in info.get("features", {})
+                    if key == "action" or key.startswith("action_")
+                ],
+                "video_keys": [
+                    key for key, feature in info.get("features", {}).items()
+                    if feature.get("dtype") == "video"
+                ],
+            })
+        return success(
+            MODULE,
+            action,
+            result=True,
+            data={"datasets": datasets},
+        )
+    except Exception as exc:
+        return error(MODULE, action, error=exc, error_type=type(exc).__name__)
+
+
 def _normalize_output_path(
     output_path,
 ):
     if output_path is None:
-
-        filename = time.strftime(
-            "recorded_robot_trajectory_%Y%m%d_%H%M%S.json"
-        )
-
-        return os.path.join(
-            DEFAULT_TRAJECTORY_DIR,
-            filename,
-        )
+        raise ValueError("output_path 必須由 task registry 解析")
 
     if (
         not isinstance(
@@ -146,15 +411,237 @@ def _normalize_output_path(
         output_path.strip()
     )
 
+    if output_path.lower().endswith(".json"):
+        raise ValueError(
+            "output_path 必須是 LeRobot dataset 資料夾，不可使用 .json"
+        )
+
     if os.path.isabs(
         output_path
     ):
         return output_path
 
-    return os.path.join(
-        DEFAULT_TRAJECTORY_DIR,
-        output_path,
+    return os.path.join(DEFAULT_DATASET_DIR, output_path)
+
+
+def _camera_names_for_arm(arm_name):
+    return [
+        camera_name
+        for camera_name, camera_config in config.CAMERAS.items()
+        if camera_config.get("mount", {}).get("arm_name") == arm_name
+    ]
+
+
+def _prepare_video_cameras(arm_name, record_video):
+    if not isinstance(record_video, bool):
+        raise ValueError("record_video 必須是 bool")
+    if not record_video:
+        return {}
+
+    camera_names = _camera_names_for_arm(arm_name)
+    if not camera_names:
+        raise ValueError(
+            f"arm '{arm_name}' 沒有綁定相機；請在 config.CAMERAS 的 "
+            f"mount.arm_name 設為 '{arm_name}'"
+        )
+
+    frames = {}
+    for camera_name in camera_names:
+        response = camera_service.start_camera(camera_name)
+        _require_success(response, "camera_service.start_camera")
+        frame = camera_service.get_frame(camera_name)
+        color_image = frame.get("color_image")
+        if color_image is None:
+            raise RuntimeError(f"camera '{camera_name}' 沒有 color frame")
+        frames[camera_name] = color_image
+    return frames
+
+
+def _stop_video_cameras(camera_names):
+    stopped = []
+    failures = []
+    for camera_name in camera_names:
+        response = camera_service.stop_camera(camera_name)
+        try:
+            _require_success(response, "camera_service.stop_camera")
+            stopped.append(camera_name)
+        except Exception as exc:
+            failures.append(f"{camera_name}: {exc}")
+    if failures:
+        raise RuntimeError("停止錄製相機失敗：" + "; ".join(failures))
+    return stopped
+
+
+def _read_dataset_info(dataset_path):
+    info_path = os.path.join(dataset_path, "meta", "info.json")
+    if not os.path.isfile(info_path):
+        return None
+    with open(info_path, "r", encoding="utf-8") as source:
+        return json.load(source)
+
+
+def _dataset_repo_id(dataset_path):
+    name = os.path.basename(os.path.normpath(dataset_path)) or "ur7e_dataset"
+    safe_name = "".join(
+        character if character.isalnum() or character in "-_." else "-"
+        for character in name
     )
+    return f"local/{safe_name}"
+
+
+def _lerobot_features(camera_frames):
+    features = {
+        "observation.state": {
+            "dtype": "float32",
+            "shape": (7,),
+            "names": LEROBOT_STATE_NAMES,
+        },
+        "observation.tcp_pose": {
+            "dtype": "float32",
+            "shape": (7,),
+            "names": LEROBOT_TCP_POSE_NAMES,
+        },
+        "action_tcp": {
+            "dtype": "float32",
+            "shape": (7,),
+            "names": LEROBOT_TCP_ACTION_NAMES,
+        },
+        "action_joints": {
+            "dtype": "float32",
+            "shape": (7,),
+            "names": LEROBOT_JOINT_ACTION_NAMES,
+        },
+        "next.done": {
+            "dtype": "bool",
+            "shape": (1,),
+            "names": None,
+        },
+    }
+    for camera_name, image in camera_frames.items():
+        height, width = image.shape[:2]
+        features[f"observation.images.{camera_name}"] = {
+            "dtype": "video",
+            "shape": (height, width, 3),
+            "names": ["height", "width", "channels"],
+        }
+    return features
+
+
+def _open_lerobot_dataset(dataset_path, fps, camera_frames, robot_type):
+    os.environ.setdefault(
+        "HF_DATASETS_CACHE",
+        os.path.join(_project_root(), ".cache", "huggingface", "datasets"),
+    )
+    try:
+        from lerobot.datasets.lerobot_dataset import LeRobotDataset
+    except ImportError as exc:
+        raise RuntimeError(
+            "LeRobot dataset dependencies unavailable; "
+            "run pip install -r requirements.txt"
+        ) from exc
+
+    info = _read_dataset_info(dataset_path)
+    record_video = bool(camera_frames)
+    repo_id = _dataset_repo_id(dataset_path)
+    common = {
+        "repo_id": repo_id,
+        "root": dataset_path,
+        "streaming_encoding": record_video,
+        "encoder_queue_maxsize": 30,
+        "video_backend": "pyav",
+    }
+
+    if info is not None:
+        if info.get("codebase_version") != "v3.0":
+            raise ValueError(
+                "output_path 已包含非 LeRobot v3 資料；請使用新的資料集名稱"
+            )
+        if int(info.get("fps", fps)) != fps:
+            raise ValueError("同一 LeRobot 資料集的 fps 必須一致")
+        if info.get("robot_type") != robot_type:
+            raise ValueError(
+                "同一 LeRobot 資料集不可混用不同手臂類型："
+                f"既有為 {info.get('robot_type')}，本次為 {robot_type}"
+            )
+        existing_features = info.get("features", {})
+        existing_tcp_action_names = existing_features.get("action_tcp", {}).get("names")
+        existing_joint_action_names = existing_features.get("action_joints", {}).get("names")
+        if (
+            existing_tcp_action_names != LEROBOT_TCP_ACTION_NAMES
+            or existing_joint_action_names != LEROBOT_JOINT_ACTION_NAMES
+        ):
+            raise ValueError(
+                "既有資料集的 action schema 與目前版本不相容；"
+                "請使用新的 output_path"
+            )
+        video_keys = [
+            key for key, feature in info.get("features", {}).items()
+            if feature.get("dtype") == "video"
+        ]
+        if bool(video_keys) != record_video:
+            raise ValueError(
+                "同一 LeRobot 資料集不可混用 record_video=true/false"
+            )
+        return LeRobotDataset.resume(**common)
+
+    if os.path.exists(dataset_path):
+        if os.listdir(dataset_path):
+            raise ValueError("output_path 已存在且不是 LeRobot v3 資料集")
+        os.rmdir(dataset_path)
+    os.makedirs(os.path.dirname(dataset_path), exist_ok=True)
+    return LeRobotDataset.create(
+        fps=fps,
+        features=_lerobot_features(camera_frames),
+        robot_type=robot_type,
+        use_videos=record_video,
+        **common,
+    )
+
+
+def _tcp_local_delta(current_pose, next_pose):
+    import cv2
+
+    current = np.asarray(current_pose, dtype=np.float64)
+    following = np.asarray(next_pose, dtype=np.float64)
+    current_rotation, _ = cv2.Rodrigues(current[3:6])
+    next_rotation, _ = cv2.Rodrigues(following[3:6])
+
+    # Express both translation and rotation in the current TCP/tool frame.
+    # Deployment must map local translation back with R_current @ delta_local.
+    base_translation = following[:3] - current[:3]
+    local_translation = current_rotation.T @ base_translation
+    relative_rotation = current_rotation.T @ next_rotation
+    rotation_delta, _ = cv2.Rodrigues(relative_rotation)
+    return np.concatenate([
+        local_translation,
+        rotation_delta.reshape(3),
+    ]).astype(np.float32)
+
+
+def _sample_to_lerobot_frame(sample, next_sample, task, done=False):
+    state = np.asarray(sample["joints"] + [sample["gripper"]], dtype=np.float32)
+    tcp_pose = np.asarray(sample["tcp_pose"] + [sample["gripper"]], dtype=np.float32)
+    delta = _tcp_local_delta(sample["tcp_pose"], next_sample["tcp_pose"])
+    action_tcp = np.concatenate([
+        delta,
+        np.asarray([next_sample["gripper"]], dtype=np.float32),
+    ])
+    action_joints = np.asarray(
+        next_sample["joints"] + [next_sample["gripper"]],
+        dtype=np.float32,
+    )
+    frame = {
+        "observation.state": state,
+        "observation.tcp_pose": tcp_pose,
+        "action_tcp": action_tcp,
+        "action_joints": action_joints,
+        "next.done": np.atleast_1d(np.bool_(done)),
+        "task": task,
+    }
+    for camera_name, image in sample["images"].items():
+        # Camera drivers expose BGR; LeRobot policies expect RGB.
+        frame[f"observation.images.{camera_name}"] = image[:, :, ::-1].copy()
+    return frame
 
 
 def _normalize_input_path(
@@ -175,28 +662,15 @@ def _normalize_input_path(
         input_path.strip()
     )
 
-    if os.path.isabs(
-        input_path
-    ):
-        full_path = (
-            input_path
-        )
+    full_path = input_path if os.path.isabs(input_path) else os.path.join(
+        DEFAULT_DATASET_DIR, input_path
+    )
 
-    else:
-        full_path = (
-            os.path.join(
-                DEFAULT_TRAJECTORY_DIR,
-                input_path,
-            )
-        )
+    if not os.path.isdir(full_path):
+        raise FileNotFoundError(f"LeRobot dataset not found: {full_path}")
 
-    if not os.path.isfile(
-        full_path
-    ):
-        raise FileNotFoundError(
-            f"trajectory file not found: "
-            f"{full_path}"
-        )
+    if not os.path.isfile(os.path.join(full_path, "meta", "info.json")):
+        raise ValueError(f"Invalid LeRobot v3 dataset: {full_path}")
 
     return full_path
 
@@ -321,6 +795,18 @@ def _get_arm_sample(
     }
 
 
+def _get_arm_pose_sample(arm_name):
+    response = arm_service.get_arm_pose(arm_name)
+    _require_success(response, "arm_service.get_arm_pose")
+    arms = (response.get("data") or {}).get("arms") or []
+    if not arms or arms[0].get("pose") is None:
+        raise RuntimeError(f"arm '{arm_name}' TCP pose unavailable")
+    pose = [float(value) for value in arms[0]["pose"]]
+    if len(pose) != 6:
+        raise RuntimeError(f"arm '{arm_name}' TCP pose 必須包含 6 個值")
+    return pose
+
+
 def _get_gripper_sample(
     gripper_name,
 ):
@@ -425,6 +911,11 @@ def _get_record_sample(
         "arm":
             arm,
 
+        "tcp_pose":
+            _get_arm_pose_sample(
+                arm_name
+            ),
+
         "gripper":
             gripper,
     }
@@ -442,6 +933,42 @@ def _is_recording():
         is not None
         and _record_thread.is_alive()
     )
+
+
+def _reset_record_state():
+    global _record_thread
+    global _record_start_time
+    global _record_output_path
+    global _record_interval
+    global _record_gripper_events
+    global _record_arm_name
+    global _record_gripper_name
+    global _record_freedrive
+    global _record_camera_names
+    global _record_task
+    global _record_task_id
+    global _record_dataset
+    global _record_pending_sample
+    global _record_saved_frame_count
+    global _record_gripper_position
+
+    with _record_lock:
+        _record_thread = None
+        _record_start_time = None
+        _record_output_path = None
+        _record_interval = DEFAULT_RECORD_INTERVAL
+        _record_gripper_events = []
+        _record_arm_name = None
+        _record_gripper_name = None
+        _record_freedrive = False
+        _record_camera_names = []
+        _record_task = None
+        _record_task_id = None
+        _record_dataset = None
+        _record_pending_sample = None
+        _record_saved_frame_count = 0
+        _record_gripper_position = 0
+    _record_stop_event.clear()
 
 
 def _get_record_elapsed():
@@ -471,6 +998,7 @@ def _append_gripper_event(
     event_time=None,
 ):
     global _record_gripper_events
+    global _record_gripper_position
 
     with _record_lock:
 
@@ -525,6 +1053,11 @@ def _append_gripper_event(
             event
         )
 
+        _record_gripper_position = max(
+            0.0,
+            min(1.0, float(position) / 255.0),
+        )
+
         return event
 
 def _restore_recording_freedrive(
@@ -567,126 +1100,80 @@ def _restore_recording_freedrive(
 # ============================================================
 
 def _record_loop():
-    global _record_trajectory
+    global _record_pending_sample
+    global _record_saved_frame_count
 
-    next_sample_time = (
-        time.perf_counter()
-    )
-
+    next_sample_time = time.perf_counter()
     while not _record_stop_event.is_set():
-
         with _record_lock:
+            start_time = _record_start_time
+            interval = _record_interval
+            arm_name = _record_arm_name
+            gripper_name = _record_gripper_name
+            freedrive = _record_freedrive
+            camera_names = list(_record_camera_names)
+            dataset = _record_dataset
+            task = _record_task
 
-            start_time = (
-                _record_start_time
-            )
-
-            interval = (
-                _record_interval
-            )
-
-            arm_name = (
-                _record_arm_name
-            )
-
-            gripper_name = (
-                _record_gripper_name
-            )
-
-            freedrive = (
-                _record_freedrive
-            )
-
-        if (
-            start_time is None
-            or arm_name is None
-            or gripper_name is None
-        ):
+        if start_time is None or arm_name is None or gripper_name is None or dataset is None:
             break
 
-        now = (
-            time.perf_counter()
-        )
-
-        if now < next_sample_time:
-
-            if _record_stop_event.wait(
-                next_sample_time
-                - now
-            ):
-                break
-
-        sample_time = (
-            time.perf_counter()
-        )
-
-        elapsed = (
-            sample_time
-            - start_time
-        )
+        now = time.perf_counter()
+        if now < next_sample_time and _record_stop_event.wait(next_sample_time - now):
+            break
 
         try:
-
-            # Freedrive=True：
-            # 不 polling e-Series gripper。
-            #
-            # Gripper 改用 event-based recording。
-            sample = (
-                _get_record_sample(
-                    arm_name=
-                        arm_name,
-
-                    gripper_name=
-                        gripper_name,
-
-                    include_gripper=
-                        not freedrive,
-                )
+            sample = _get_record_sample(
+                arm_name=arm_name,
+                gripper_name=gripper_name,
+                include_gripper=not freedrive,
             )
+            gripper_data = sample["gripper"]
+            if isinstance(gripper_data, dict):
+                position = gripper_data.get("requested_position")
+                if position is None:
+                    position = gripper_data.get("position")
+                gripper_position = (
+                    max(0.0, min(1.0, float(position) / 255.0))
+                    if position is not None
+                    else _record_gripper_position
+                )
+            else:
+                gripper_position = _record_gripper_position
 
-            entry = {
-                "t":
-                    elapsed,
+            images = {}
+            for camera_name in camera_names:
+                frame_data = camera_service.get_frame(camera_name)
+                color_image = frame_data.get("color_image")
+                if color_image is None:
+                    raise RuntimeError(f"camera '{camera_name}' color frame unavailable")
+                images[camera_name] = color_image
 
-                "arm":
-                    sample[
-                        "arm"
-                    ],
-
-                "gripper":
-                    sample[
-                        "gripper"
-                    ],
+            current_sample = {
+                "joints": list(sample["arm"]["joints"]),
+                "tcp_pose": list(sample["tcp_pose"]),
+                "gripper": float(gripper_position),
+                "images": images,
             }
 
             with _record_lock:
-                _record_trajectory.append(
-                    entry
-                )
+                previous_sample = _record_pending_sample
+                if previous_sample is not None:
+                    dataset.add_frame(
+                        _sample_to_lerobot_frame(
+                            previous_sample, current_sample, task, done=False
+                        )
+                    )
+                    _record_saved_frame_count += 1
+                _record_pending_sample = current_sample
 
         except Exception:
+            logger.exception("failed to sample robot state during recording")
 
-            logger.exception(
-                "failed to sample robot state "
-                "during recording"
-            )
-
-        next_sample_time += (
-            interval
-        )
-
-        current = (
-            time.perf_counter()
-        )
-
-        if (
-            next_sample_time
-            < current
-        ):
-            next_sample_time = (
-                current
-                + interval
-            )
+        next_sample_time += interval
+        current = time.perf_counter()
+        if next_sample_time < current:
+            next_sample_time = current + interval
 
 
 # ============================================================
@@ -695,20 +1182,23 @@ def _record_loop():
 
 def start_robot_recording(
     arm_name,
-    gripper_name,
+    gripper_name=None,
     output_path=None,
     interval=DEFAULT_RECORD_INTERVAL,
     freedrive=False,
+    record_video=False,
+    task="robot demonstration",
+    initial_gripper_position=0,
 ):
     action = (
         "start_robot_recording"
     )
 
     freedrive_started = False
+    dataset = None
 
     try:
         global _record_thread
-        global _record_trajectory
         global _record_gripper_events
         global _record_start_time
         global _record_output_path
@@ -716,6 +1206,13 @@ def start_robot_recording(
         global _record_arm_name
         global _record_gripper_name
         global _record_freedrive
+        global _record_dataset
+        global _record_pending_sample
+        global _record_saved_frame_count
+        global _record_gripper_position
+        global _record_camera_names
+        global _record_task
+        global _record_task_id
 
         with _record_lock:
 
@@ -771,6 +1268,17 @@ def start_robot_recording(
                     "freedrive 必須是 bool"
                 )
 
+            if not isinstance(task, str) or not task.strip():
+                raise ValueError("task 必須是非空字串")
+            task = task.strip()
+
+            try:
+                initial_gripper_position = int(initial_gripper_position)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("initial_gripper_position 必須是 0~255 的整數") from exc
+            if not 0 <= initial_gripper_position <= 255:
+                raise ValueError("initial_gripper_position 必須介於 0~255")
+
             # ==================================================
             # names
             # ==================================================
@@ -778,11 +1286,6 @@ def start_robot_recording(
             if arm_name is None:
                 raise ValueError(
                     "arm_name 不可為空"
-                )
-
-            if gripper_name is None:
-                raise ValueError(
-                    "gripper_name 不可為空"
                 )
 
             arm_name = (
@@ -793,13 +1296,10 @@ def start_robot_recording(
                 .lower()
             )
 
-            gripper_name = (
-                str(
-                    gripper_name
-                )
-                .strip()
-                .lower()
-            )
+            if gripper_name is None:
+                gripper_name = arm_name
+            else:
+                gripper_name = str(gripper_name).strip().lower()
 
             if not arm_name:
                 raise ValueError(
@@ -811,6 +1311,23 @@ def start_robot_recording(
                     "gripper_name 不可為空"
                 )
 
+            if arm_name not in config.ARMS:
+                raise ValueError(
+                    f"不支援的 arm_name: {arm_name}；"
+                    f"可用值為 {', '.join(sorted(config.ARMS))}"
+                )
+            if gripper_name not in config.GRIPPERS:
+                raise ValueError(f"不支援的 gripper_name: {gripper_name}")
+            expected_arm = config.GRIPPERS[gripper_name].get("arm_name")
+            if expected_arm != arm_name:
+                raise ValueError(
+                    f"gripper '{gripper_name}' 屬於 arm '{expected_arm}'，"
+                    f"不可搭配 arm '{arm_name}'"
+                )
+
+            camera_frames = _prepare_video_cameras(arm_name, record_video)
+            camera_names = list(camera_frames)
+
             # ==================================================
             # Hardware Validation
             # ==================================================
@@ -820,6 +1337,9 @@ def start_robot_recording(
             # 不先 polling e-Series gripper，
             # 避免 30002 URScript 干擾 freedrive。
             _get_arm_sample(
+                arm_name
+            )
+            _get_arm_pose_sample(
                 arm_name
             )
 
@@ -855,15 +1375,18 @@ def start_robot_recording(
             # Output
             # ==================================================
 
-            full_output_path = (
-                _normalize_output_path(
-                    output_path
-                )
-            )
+            task_entry, _ = _resolve_task_dataset(task, arm_name, output_path)
+            task_id = task_entry["task_id"]
+            full_output_path = task_entry["dataset_path"]
 
-            _ensure_directory(
-                full_output_path
+            fps = max(1, int(round(1.0 / interval)))
+            dataset = _open_lerobot_dataset(
+                full_output_path,
+                fps,
+                camera_frames,
+                config.ARMS[arm_name]["driver"],
             )
+            episode_index = int(dataset.meta.total_episodes)
 
             # ==================================================
             # State
@@ -889,9 +1412,21 @@ def start_robot_recording(
                 freedrive
             )
 
-            _record_trajectory = []
-
             _record_gripper_events = []
+
+            _record_camera_names = list(camera_names)
+
+            _record_dataset = dataset
+
+            _record_pending_sample = None
+
+            _record_saved_frame_count = 0
+
+            _record_gripper_position = initial_gripper_position / 255.0
+
+            _record_task = task
+
+            _record_task_id = task_id
 
             _record_start_time = (
                 time.perf_counter()
@@ -954,10 +1489,49 @@ def start_robot_recording(
 
                     "gripper_event_count":
                         0,
+
+                    "format":
+                        "lerobot_v3",
+
+                    "task":
+                        task,
+
+                    "task_id":
+                        task_id,
+
+                    "task_registry_path":
+                        TASK_REGISTRY_PATH,
+
+                    "record_video":
+                        record_video,
+
+                    "camera_names":
+                        camera_names,
+
+                    "episode_index":
+                        episode_index,
+
+                    "video_storage":
+                        "lerobot_streaming" if record_video else None,
+
+                    "codebase_version":
+                        "v3.0",
+
+                    "action_spaces":
+                        dict(LEROBOT_ACTION_SPACES),
+
+                    "initial_gripper_position":
+                        initial_gripper_position,
                 },
             )
 
     except Exception as exc:
+
+        if dataset is not None:
+            try:
+                dataset.finalize()
+            except Exception:
+                logger.exception("failed to finalize LeRobot dataset after start failure")
 
         # Freedrive 已成功但後續初始化失敗時 rollback。
         if freedrive_started:
@@ -1275,7 +1849,7 @@ def open_recording_gripper(
             )
         )
 
-        return success(
+        response = success(
             MODULE,
             action,
             result=True,
@@ -1299,6 +1873,7 @@ def open_recording_gripper(
                     event,
             },
         )
+        return response
 
     except Exception as exc:
 
@@ -1317,6 +1892,7 @@ def open_recording_gripper(
         )
 
 def close_recording_gripper(
+    gripper_name,
     speed=None,
     force=None,
     wait=False,
@@ -1466,258 +2042,140 @@ def close_recording_gripper(
 # ============================================================
 # STOP RECORDING
 # ============================================================
-def stop_robot_recording(
-    arm_name,
-    gripper_name,
-):
+def stop_robot_recording(arm_name, gripper_name=None):
     action = "stop_robot_recording"
+    should_cleanup = False
 
     try:
         global _record_thread
         global _record_start_time
         global _record_output_path
         global _record_interval
-        global _record_trajectory
         global _record_gripper_events
         global _record_arm_name
         global _record_gripper_name
         global _record_freedrive
+        global _record_camera_names
+        global _record_task
+        global _record_task_id
+        global _record_dataset
+        global _record_pending_sample
+        global _record_saved_frame_count
+        global _record_gripper_position
 
         if arm_name is None:
             raise ValueError("arm_name 不可為空")
-
-        if gripper_name is None:
-            raise ValueError("gripper_name 不可為空")
-
         arm_name = str(arm_name).strip().lower()
-        gripper_name = str(gripper_name).strip().lower()
-
-        if not arm_name:
-            raise ValueError("arm_name 不可為空")
-
-        if not gripper_name:
-            raise ValueError("gripper_name 不可為空")
+        gripper_name = (
+            arm_name if gripper_name is None
+            else str(gripper_name).strip().lower()
+        )
 
         with _record_lock:
-
             if not _is_recording():
-                raise RuntimeError(
-                    "目前沒有正在進行的記錄"
-                )
-
-            if arm_name != _record_arm_name:
-                raise ValueError(
-                    f"arm_name 不符合目前 recording："
-                    f"requested={arm_name}, "
-                    f"recording={_record_arm_name}"
-                )
-
-            if gripper_name != _record_gripper_name:
-                raise ValueError(
-                    f"gripper_name 不符合目前 recording："
-                    f"requested={gripper_name}, "
-                    f"recording={_record_gripper_name}"
-                )
-
+                raise RuntimeError("目前沒有正在進行的記錄")
+            if arm_name != _record_arm_name or gripper_name != _record_gripper_name:
+                raise ValueError("arm_name 或 gripper_name 不符合目前 recording")
             thread = _record_thread
             output_path = _record_output_path
-            interval = _record_interval
             freedrive = _record_freedrive
-            
-        # ======================================================
-        # Stop Sampling
-        # ======================================================
+            start_time = _record_start_time
+            camera_names = list(_record_camera_names)
+            task_id = _record_task_id
 
+        should_cleanup = True
         _record_stop_event.set()
-
-        thread.join(
-            timeout=10
-        )
-
+        thread.join(timeout=10)
         if thread.is_alive():
-
-            raise RuntimeError(
-                "錄製執行緒無法在 10 秒內停止"
-            )
-
-        # ======================================================
-        # Stop Freedrive
-        # ======================================================
+            raise RuntimeError("錄製執行緒無法在 10 秒內停止")
 
         if freedrive:
-
-            response = (
-                arm_service
-                .stop_arm_freedrive(
-                    arm_name
-                )
-            )
-
-            _require_success(
-                response,
-                "arm_service."
-                "stop_arm_freedrive",
-            )
-
-        # ======================================================
-        # Copy State
-        # ======================================================
+            response = arm_service.stop_arm_freedrive(arm_name)
+            _require_success(response, "arm_service.stop_arm_freedrive")
 
         with _record_lock:
-
-            trajectory = list(
-                _record_trajectory
+            dataset = _record_dataset
+            pending_sample = _record_pending_sample
+            episode_index = int(dataset.meta.total_episodes) if dataset else None
+            if dataset is None or pending_sample is None:
+                raise RuntimeError("沒有足夠的 sample 可建立 LeRobot episode")
+            # The final observation has no future command; use a zero TCP delta
+            # and preserve its current gripper state.
+            dataset.add_frame(
+                _sample_to_lerobot_frame(
+                    pending_sample, pending_sample, _record_task, done=True
+                )
             )
+            _record_saved_frame_count += 1
+            sample_count = _record_saved_frame_count
 
-            gripper_events = list(
-                _record_gripper_events
-            )
+        try:
+            dataset.save_episode()
+        finally:
+            dataset.finalize()
 
-            _record_thread = None
+        stopped_camera_names = _stop_video_cameras(camera_names)
 
-            _record_start_time = None
-
-            _record_output_path = None
-
-            _record_interval = (
-                DEFAULT_RECORD_INTERVAL
-            )
-
-            _record_trajectory = []
-
-            _record_gripper_events = []
-
-            _record_arm_name = None
-
-            _record_gripper_name = None
-
-            _record_freedrive = False
-
-        # ======================================================
-        # Build JSON
-        # ======================================================
-
-        duration_seconds = (
-            trajectory[-1][
-                "t"
-            ]
-            if trajectory
-            else 0.0
+        duration_seconds = max(0.0, time.perf_counter() - start_time)
+        info = _read_dataset_info(output_path) or {}
+        task_entry = _update_task_episode_count(
+            task_id,
+            arm_name,
+            info.get("total_episodes", 0),
+            episode_index=episode_index,
         )
+        video_keys = [
+            key for key, feature in info.get("features", {}).items()
+            if feature.get("dtype") == "video"
+        ]
 
-        payload = {
-            "format_version":
-                4,
-
-            "type":
-                "arm_gripper_trajectory",
-
-            "arm_name":
-                arm_name,
-
-            "gripper_name":
-                gripper_name,
-
-            "interval":
-                interval,
-
-            "freedrive":
-                freedrive,
-
-            "gripper_sampling":
-                not freedrive,
-
-            "gripper_event_recording":
-                True,
-
-            "sample_count":
-                len(
-                    trajectory
-                ),
-
-            "gripper_event_count":
-                len(
-                    gripper_events
-                ),
-
-            "duration_seconds":
-                duration_seconds,
-
-            "trajectory":
-                trajectory,
-
-            "gripper_events":
-                gripper_events,
-        }
-
-        # ======================================================
-        # Save
-        # ======================================================
-
-        with open(
-            output_path,
-            "w",
-            encoding="utf-8",
-        ) as output_file:
-
-            json.dump(
-                payload,
-                output_file,
-                ensure_ascii=False,
-                indent=2,
-            )
-
-        return success(
+        response = success(
             MODULE,
             action,
             result=True,
             data={
-                "arm_name":
-                    arm_name,
-
-                "gripper_name":
-                    gripper_name,
-
-                "output_path":
-                    _relative_path(
-                        output_path
+                "arm_name": arm_name,
+                "gripper_name": gripper_name,
+                "output_path": _relative_path(output_path),
+                "absolute_path": output_path,
+                "task_id": task_id,
+                "task": task_entry["task"],
+                "task_registry_path": TASK_REGISTRY_PATH,
+                "episode_label": next(
+                    (
+                        item.get("label")
+                        for item in task_entry.get("episodes", [])
+                        if item.get("episode_index") == episode_index
                     ),
-
-                "absolute_path":
-                    output_path,
-
-                "sample_count":
-                    len(
-                        trajectory
-                    ),
-
-                "gripper_event_count":
-                    len(
-                        gripper_events
-                    ),
-
-                "duration_seconds":
-                    duration_seconds,
-
-                "freedrive":
-                    freedrive,
+                    None,
+                ),
+                "sample_count": sample_count,
+                "duration_seconds": duration_seconds,
+                "freedrive": freedrive,
+                "format": "lerobot_v3",
+                "codebase_version": info.get("codebase_version"),
+                "episode_index": episode_index,
+                "fps": info.get("fps"),
+                "total_episodes": info.get("total_episodes"),
+                "total_frames": info.get("total_frames"),
+                "video_keys": video_keys,
+                "stopped_camera_names": stopped_camera_names,
+                "cameras_stopped": len(stopped_camera_names) == len(camera_names),
+                "action_spaces": dict(LEROBOT_ACTION_SPACES),
             },
         )
+        _reset_record_state()
+        return response
 
     except Exception as exc:
-
-        logger.exception(
-            "stop_robot_recording failed"
-        )
-
+        logger.exception("stop_robot_recording failed")
+        if should_cleanup:
+            _reset_record_state()
         return error(
             MODULE,
             action,
             error=exc,
-            error_type=
-                type(
-                    exc
-                ).__name__,
+            error_type=type(exc).__name__,
         )
 
 
@@ -1787,9 +2245,8 @@ def get_robot_recording_status():
                         True,
 
                     "sample_count":
-                        len(
-                            _record_trajectory
-                        ),
+                        _record_saved_frame_count
+                        + (1 if _record_pending_sample is not None else 0),
 
                     "gripper_event_count":
                         len(
@@ -1798,6 +2255,47 @@ def get_robot_recording_status():
 
                     "elapsed_seconds":
                         elapsed,
+
+                    "format":
+                        "lerobot_v3",
+
+                    "codebase_version":
+                        "v3.0",
+
+                    "episode_index":
+                        (
+                            int(_record_dataset.meta.total_episodes)
+                            if _record_dataset is not None
+                            else None
+                        ),
+
+                    "action_spaces":
+                        dict(LEROBOT_ACTION_SPACES),
+
+                    "task":
+                        _record_task,
+
+                    "task_id":
+                        _record_task_id,
+
+                    "task_registry_path":
+                        TASK_REGISTRY_PATH,
+
+                    "record_video":
+                        bool(_record_camera_names),
+
+                    "camera_names":
+                        list(_record_camera_names),
+
+                    "video_storage":
+                        "lerobot_streaming" if _record_camera_names else None,
+
+                    "video_frame_count":
+                        (
+                            _record_saved_frame_count
+                            if _record_camera_names
+                            else 0
+                        ),
                 },
             )
 
@@ -1819,317 +2317,54 @@ def get_robot_recording_status():
 
 
 # ============================================================
-# Trajectory Load / Parse
+# LeRobot v3 Episode Load
 # ============================================================
 
-def _load_trajectory(
-    input_path,
-):
-    full_path = (
-        _normalize_input_path(
-            input_path
-        )
+def _load_lerobot_episode(input_path, episode_index=0):
+    os.environ.setdefault(
+        "HF_DATASETS_CACHE",
+        os.path.join(_project_root(), ".cache", "huggingface", "datasets"),
     )
+    try:
+        from lerobot.datasets.lerobot_dataset import LeRobotDataset
+    except ImportError as exc:
+        raise RuntimeError("LeRobot dataset dependencies unavailable") from exc
 
-    with open(
-        full_path,
-        "r",
-        encoding="utf-8",
-    ) as input_file:
+    dataset_path = _normalize_input_path(input_path)
+    try:
+        episode_index = int(episode_index)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("episode_index 必須是整數") from exc
+    if episode_index < 0:
+        raise ValueError("episode_index 不可小於 0")
 
-        payload = (
-            json.load(
-                input_file
-            )
-        )
-
-    if not isinstance(
-        payload,
-        dict,
-    ):
-        raise ValueError(
-            "trajectory JSON 格式錯誤"
-        )
-
-    trajectory = (
-        payload.get(
-            "trajectory"
-        )
+    dataset = LeRobotDataset(
+        repo_id=_dataset_repo_id(dataset_path),
+        root=dataset_path,
+        episodes=[episode_index],
+        video_backend="pyav",
     )
+    if len(dataset) == 0:
+        raise ValueError(f"LeRobot episode {episode_index} 沒有 frame")
 
-    if (
-        not isinstance(
-            trajectory,
-            list,
-        )
-        or not trajectory
-    ):
-        raise ValueError(
-            "trajectory 不可為空"
-        )
+    raw = dataset.hf_dataset.select_columns([
+        "observation.state", "timestamp", "frame_index"
+    ])
+    rows = sorted(raw, key=lambda row: int(row["frame_index"]))
+    states = [list(map(float, row["observation.state"])) for row in rows]
+    if any(len(state) != 7 for state in states):
+        raise ValueError("observation.state 必須包含 6 joints + gripper")
 
-    return (
-        full_path,
-        payload,
-        trajectory,
-    )
+    joint_trajectory = [state[:6] for state in states]
+    gripper_events = []
+    previous_position = None
+    for row, state in zip(rows, states):
+        position = int(round(max(0.0, min(1.0, state[6])) * 255))
+        if previous_position is None or position != previous_position:
+            gripper_events.append({"t": float(row["timestamp"]), "position": position})
+            previous_position = position
 
-
-def _extract_joint_trajectory(
-    trajectory,
-):
-    result = []
-
-    for index, entry in enumerate(
-        trajectory
-    ):
-
-        try:
-
-            joints = (
-                entry[
-                    "arm"
-                ][
-                    "joints"
-                ]
-            )
-
-        except (
-            KeyError,
-            TypeError,
-        ) as exc:
-
-            raise ValueError(
-                f"trajectory[{index}] "
-                f"缺少 arm.joints"
-            ) from exc
-
-        if not isinstance(
-            joints,
-            list,
-        ):
-
-            raise ValueError(
-                f"trajectory[{index}]."
-                f"arm.joints 必須是 list"
-            )
-
-        result.append(
-            [
-                float(
-                    value
-                )
-                for value
-                in joints
-            ]
-        )
-
-    return result
-
-
-# ============================================================
-# Legacy Gripper Parse
-# ============================================================
-
-def _get_gripper_target(
-    gripper_data,
-):
-    if not isinstance(
-        gripper_data,
-        dict,
-    ):
-        return None
-
-    requested = (
-        gripper_data.get(
-            "requested_position"
-        )
-    )
-
-    if requested is not None:
-
-        return int(
-            requested
-        )
-
-    position = (
-        gripper_data.get(
-            "position"
-        )
-    )
-
-    if position is not None:
-
-        return int(
-            position
-        )
-
-    return None
-
-
-def _extract_legacy_gripper_events(
-    trajectory,
-    position_threshold=2,
-):
-    events = []
-
-    previous_target = None
-
-    for entry in trajectory:
-
-        gripper = (
-            entry.get(
-                "gripper"
-            )
-        )
-
-        target = (
-            _get_gripper_target(
-                gripper
-            )
-        )
-
-        if target is None:
-            continue
-
-        if (
-            previous_target is None
-            or abs(
-                target
-                - previous_target
-            )
-            >= position_threshold
-        ):
-
-            events.append({
-                "t":
-                    float(
-                        entry.get(
-                            "t",
-                            0.0,
-                        )
-                    ),
-
-                "action":
-                    "move",
-
-                "position":
-                    target,
-
-                "speed":
-                    gripper.get(
-                        "speed"
-                    ),
-
-                "force":
-                    gripper.get(
-                        "force"
-                    ),
-            })
-
-            previous_target = (
-                target
-            )
-
-    return events
-
-
-def _load_gripper_events(
-    payload,
-    trajectory,
-):
-    events = (
-        payload.get(
-            "gripper_events"
-        )
-    )
-
-    # ========================================================
-    # New Format v4
-    # ========================================================
-
-    if isinstance(
-        events,
-        list,
-    ):
-
-        result = []
-
-        for index, event in enumerate(
-            events
-        ):
-
-            if not isinstance(
-                event,
-                dict,
-            ):
-                continue
-
-            position = (
-                event.get(
-                    "position"
-                )
-            )
-
-            if position is None:
-
-                logger.warning(
-                    "gripper_events[%s] "
-                    "missing position",
-                    index,
-                )
-
-                continue
-
-            result.append({
-                "t":
-                    float(
-                        event.get(
-                            "t",
-                            0.0,
-                        )
-                    ),
-
-                "action":
-                    event.get(
-                        "action",
-                        "move",
-                    ),
-
-                "position":
-                    int(
-                        position
-                    ),
-
-                "speed":
-                    event.get(
-                        "speed"
-                    ),
-
-                "force":
-                    event.get(
-                        "force"
-                    ),
-            })
-
-        result.sort(
-            key=lambda item:
-                item[
-                    "t"
-                ]
-        )
-
-        return result
-
-    # ========================================================
-    # Legacy Format
-    # ========================================================
-
-    return (
-        _extract_legacy_gripper_events(
-            trajectory
-        )
-    )
+    return dataset_path, 1.0 / dataset.fps, joint_trajectory, gripper_events
 
 
 # ============================================================
@@ -2219,6 +2454,7 @@ def _play_gripper_events(
 
 def _playback_worker(
     input_path,
+    episode_index,
     arm_name,
     gripper_name,
     speed,
@@ -2234,42 +2470,17 @@ def _playback_worker(
     global _playback_arm_name
     global _playback_gripper_name
     global _playback_start_time
+    global _playback_phase
+    global _playback_error
+    global _playback_completed
 
     try:
 
-        (
-            _,
-            payload,
-            trajectory,
-        ) = (
-            _load_trajectory(
-                input_path
-            )
-        )
+        with _playback_lock:
+            _playback_phase = "loading"
 
-        recorded_interval = (
-            float(
-                payload.get(
-                    "interval",
-                    DEFAULT_RECORD_INTERVAL,
-                )
-            )
-        )
-
-        joint_trajectory = (
-            _extract_joint_trajectory(
-                trajectory
-            )
-        )
-
-        gripper_events = (
-            _load_gripper_events(
-                payload=
-                    payload,
-
-                trajectory=
-                    trajectory,
-            )
+        _, recorded_interval, joint_trajectory, gripper_events = (
+            _load_lerobot_episode(input_path, episode_index)
         )
 
         if not joint_trajectory:
@@ -2277,6 +2488,44 @@ def _playback_worker(
             raise RuntimeError(
                 "沒有可播放的 arm trajectory"
             )
+
+        if _playback_stop_event.is_set():
+            return
+
+        # t=0 的夾爪狀態是 episode 初始條件，必須在手臂 ServoJ
+        # 開始前設定。特別是 robotiq_eseries 會透過 port 30002 傳送
+        # URScript；若與 ServoJ 同時執行，該 script 會取代 RTDE
+        # control script，導致後續 servoJ 連續回傳 False。
+        initial_gripper_events = [
+            event for event in gripper_events
+            if float(event.get("t", 0.0)) <= 0.0
+        ]
+        gripper_events = [
+            event for event in gripper_events
+            if float(event.get("t", 0.0)) > 0.0
+        ]
+        if initial_gripper_events:
+            initial_event = initial_gripper_events[-1]
+            response = gripper_service.move_gripper(
+                gripper_name=gripper_name,
+                position=initial_event["position"],
+                speed=initial_event.get("speed"),
+                force=initial_event.get("force"),
+                wait=False,
+            )
+            _require_success(
+                response,
+                "gripper_service.move_gripper(initial)",
+            )
+            if (
+                config.GRIPPERS.get(gripper_name, {}).get("driver")
+                == "robotiq_eseries"
+            ):
+                response = arm_service.reconnect_arm(arm_name=arm_name)
+                _require_success(
+                    response,
+                    "arm_service.reconnect_arm(after initial gripper)",
+                )
 
         if _playback_stop_event.is_set():
             return
@@ -2292,6 +2541,9 @@ def _playback_worker(
         # ======================================================
 
         if move_to_start:
+
+            with _playback_lock:
+                _playback_phase = "moving_to_start"
 
             response = (
                 arm_service
@@ -2321,6 +2573,91 @@ def _playback_worker(
             )
 
         if _playback_stop_event.is_set():
+            return
+
+        # robotiq_eseries 透過 port 30002 執行 URScript，無法和 RTDE
+        # ServoJ control script 並行。依夾爪事件切開 arm trajectory：
+        # 每段 ServoJ 正常結束後才送夾爪命令，下一段會由 arm driver
+        # 自動確認並恢復 RTDE control script。
+        if (
+            config.GRIPPERS.get(gripper_name, {}).get("driver")
+            == "robotiq_eseries"
+            and gripper_events
+        ):
+            start_time = time.perf_counter()
+            with _playback_lock:
+                _playback_start_time = start_time
+                _playback_phase = "playing"
+
+            segment_start = 0
+            for event in gripper_events:
+                if _playback_stop_event.is_set():
+                    return
+                event_index = int(round(float(event["t"]) / recorded_interval))
+                event_index = max(
+                    segment_start + 1,
+                    min(event_index, len(joint_trajectory) - 1),
+                )
+                segment = joint_trajectory[segment_start:event_index + 1]
+                response = arm_service.move_arm_joint_trajectory(
+                    arm_name=arm_name,
+                    joint_trajectory=segment,
+                    dt=recorded_interval,
+                    speed=speed,
+                    acceleration=acceleration,
+                    lookahead_time=lookahead_time,
+                    gain=gain,
+                    wait=True,
+                    move_to_start=False,
+                    move_to_start_speed=None,
+                    move_to_start_acceleration=None,
+                )
+                _require_success(
+                    response,
+                    "arm_service.move_arm_joint_trajectory(segment)",
+                )
+                if _playback_stop_event.is_set():
+                    return
+                response = gripper_service.move_gripper(
+                    gripper_name=gripper_name,
+                    position=event["position"],
+                    speed=event.get("speed"),
+                    force=event.get("force"),
+                    wait=False,
+                )
+                _require_success(
+                    response,
+                    "gripper_service.move_gripper(segment boundary)",
+                )
+                response = arm_service.reconnect_arm(arm_name=arm_name)
+                _require_success(
+                    response,
+                    "arm_service.reconnect_arm(after gripper boundary)",
+                )
+                segment_start = event_index
+
+            if segment_start < len(joint_trajectory) - 1:
+                response = arm_service.move_arm_joint_trajectory(
+                    arm_name=arm_name,
+                    joint_trajectory=joint_trajectory[segment_start:],
+                    dt=recorded_interval,
+                    speed=speed,
+                    acceleration=acceleration,
+                    lookahead_time=lookahead_time,
+                    gain=gain,
+                    wait=True,
+                    move_to_start=False,
+                    move_to_start_speed=None,
+                    move_to_start_acceleration=None,
+                )
+                _require_success(
+                    response,
+                    "arm_service.move_arm_joint_trajectory(final segment)",
+                )
+
+            with _playback_lock:
+                _playback_completed = True
+                _playback_phase = "completed"
             return
 
         # ======================================================
@@ -2414,6 +2751,7 @@ def _playback_worker(
             _playback_start_time = (
                 start_time
             )
+            _playback_phase = "playing"
 
         arm_thread.start()
 
@@ -2456,7 +2794,15 @@ def _playback_worker(
             "move_arm_joint_trajectory",
         )
 
-    except Exception:
+        with _playback_lock:
+            _playback_completed = True
+            _playback_phase = "completed"
+
+    except Exception as exc:
+
+        with _playback_lock:
+            _playback_error = f"{type(exc).__name__}: {exc}"
+            _playback_phase = "failed"
 
         logger.exception(
             "robot trajectory playback failed"
@@ -2476,6 +2822,9 @@ def _playback_worker(
 
             _playback_start_time = None
 
+            if _playback_stop_event.is_set() and _playback_error is None:
+                _playback_phase = "stopped"
+
         _playback_stop_event.clear()
 
 
@@ -2487,6 +2836,7 @@ def start_robot_playback(
     input_path,
     arm_name,
     gripper_name,
+    episode_index=0,
     speed=None,
     acceleration=None,
     lookahead_time=0.1,
@@ -2506,6 +2856,9 @@ def start_robot_playback(
         global _playback_arm_name
         global _playback_gripper_name
         global _playback_start_time
+        global _playback_phase
+        global _playback_error
+        global _playback_completed
 
         with _playback_lock:
 
@@ -2521,14 +2874,9 @@ def start_robot_playback(
                     "recording is currently running"
                 )
 
-            (
-                full_path,
-                payload,
-                _,
-            ) = (
-                _load_trajectory(
-                    input_path
-                )
+            full_path, _, _, _ = _load_lerobot_episode(
+                input_path,
+                episode_index,
             )
 
             # ==================================================
@@ -2582,6 +2930,25 @@ def start_robot_playback(
                 .lower()
             )
 
+            if arm_name not in config.ARMS:
+                raise ValueError(f"不支援的 arm_name: {arm_name}")
+            if gripper_name not in config.GRIPPERS:
+                raise ValueError(f"不支援的 gripper_name: {gripper_name}")
+            expected_arm = config.GRIPPERS[gripper_name].get("arm_name")
+            if expected_arm != arm_name:
+                raise ValueError(
+                    f"gripper '{gripper_name}' 屬於 arm '{expected_arm}'，"
+                    f"不可搭配 arm '{arm_name}'"
+                )
+            info = _read_dataset_info(full_path) or {}
+            robot_type = info.get("robot_type")
+            configured_driver = config.ARMS[arm_name].get("driver")
+            if robot_type != configured_driver:
+                raise ValueError(
+                    f"dataset robot_type='{robot_type}' 不可播放到 "
+                    f"arm '{arm_name}'（driver='{configured_driver}'）"
+                )
+
             # ==================================================
             # Hardware Validation
             # ==================================================
@@ -2612,6 +2979,9 @@ def start_robot_playback(
             )
 
             _playback_start_time = None
+            _playback_phase = "starting"
+            _playback_error = None
+            _playback_completed = False
 
             _playback_stop_event.clear()
 
@@ -2627,6 +2997,9 @@ def start_robot_playback(
                     kwargs={
                         "input_path":
                             full_path,
+
+                        "episode_index":
+                            episode_index,
 
                         "arm_name":
                             arm_name,
@@ -2687,6 +3060,12 @@ def start_robot_playback(
 
                     "playing":
                         True,
+
+                    "format":
+                        "lerobot_v3",
+
+                    "episode_index":
+                        int(episode_index),
                 },
             )
 
@@ -2824,6 +3203,10 @@ def get_robot_playback_status():
 
     try:
 
+        global _playback_phase
+        global _playback_error
+        global _playback_completed
+
         with _playback_lock:
 
             playing = (
@@ -2864,6 +3247,15 @@ def get_robot_playback_status():
 
                     "elapsed_seconds":
                         elapsed,
+
+                    "phase":
+                        _playback_phase,
+
+                    "completed":
+                        _playback_completed,
+
+                    "error":
+                        _playback_error,
                 },
             )
 
