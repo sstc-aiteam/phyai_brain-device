@@ -55,7 +55,7 @@ ARMS = {
     
     "right": {
         "driver": "ur5",
-        "kwargs": {"ip": "192.168.50.50"},
+        "kwargs": {"ip": "192.168.50.51"},
         "motion": {
             "dt": 0.1,
             "dx": 0.01,
@@ -64,6 +64,16 @@ ARMS = {
             "acceleration": 0.1,
         },
         "poses": {
+            # Agent 可呼叫的 UR5 專用初始位置。
+            "initial_joints": [
+                3.213695526123047,
+                -2.06486159959902,
+                1.3513789176940918,
+                -1.7703469435321253,
+                -1.8406603972064417,
+                -1.4885686079608362,
+            ],
+
             "default_joints": [
                 -1.3208535353290003,
                 -1.674202104608053,
@@ -131,7 +141,7 @@ GRIPPERS = {
         "driver": "robotiq",
 
         "kwargs": {
-            "host": "192.168.50.50",
+            "host": "192.168.50.51",
             "port": 63352,
             "timeout": 1.0,
             "auto_activate": False,
@@ -153,11 +163,11 @@ GRIPPERS = {
 # ============================================================
 
 CAMERAS = {
-    "front": {
+    "left": {
         "driver": "d405",
 
         "kwargs": {
-            "serial_number": None,
+            "serial_number": "352122272901",
         },
 
         "stream": {
@@ -185,17 +195,50 @@ CAMERAS = {
         },
     },
 
-    "rear": {
-        "driver": "usb_camera",
+    "right": {
+        "driver": "d405",
 
         "kwargs": {
-            "device_index": 0,
+            "serial_number": "260422275184",
         },
 
         "stream": {
-            "width": 1280,
-            "height": 720,
+            "width": 640,
+            "height": 480,
             "fps": 30,
+            "enable_color": True,
+            "enable_depth": True,
+            "align_to": "color",
+            "frame_timeout_ms": 3000,
+        },
+
+
+        "mount": {
+            "mode": "wrist",
+
+            "T_matrix": [
+                [0.99977168, -0.01763005, -0.01207349, -0.00687425],
+                [0.02135767, 0.84198181, 0.53908300, -0.06019584],
+                [0.00066159, -0.53921778, 0.84216610, 0.08289779],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+
+            "arm_name": "right",
+        },
+    },
+
+    "middle": {
+        "driver": "logitech",
+
+        "kwargs": {
+            "device_path": "/dev/video12",
+        },
+
+        "stream": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frame_timeout_ms": 3000,
         },
 
         "mount": {

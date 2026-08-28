@@ -18,3 +18,10 @@ venv/
 
 # Logs
 *.log
+
+nohup.out
+*.mp4
+*.arrow
+*.parquet
+/lerobot_datasets
+.cache/
