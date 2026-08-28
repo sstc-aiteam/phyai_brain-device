@@ -1154,36 +1154,84 @@ class UR5Driver:
                     return False
                 self._set_motion_mode("servo_j")
 
-                first_sample_time = samples[0][0]
-                wall_start = time.monotonic()
-                stream_ready = bool(move_to_start)
+                # ServoJ 必須依 UR controller 的實際 control step 持續送點。
+                # 錄製資料通常只有 10 Hz，先線性插值到 CB-series 125 Hz
+                # 或 e-Series 500 Hz，並使用 ur_rtde 官方建議的
+                # initPeriod()/waitPeriod() 控制迴圈。
+                self._ensure_control_ready()
+                control_dt = float(self._call_control("getStepTime", ensure_ready=False))
+                if not math.isfinite(control_dt) or control_dt <= 0.0:
+                    # ur_rtde 文件規定 getStepTime() 發生錯誤時回傳 0。
+                    # 這台 UR5 使用 CB-series 的 125 Hz control period。
+                    logger.warning(
+                        "[UR5] getStepTime returned %r; fallback to CB-series 125 Hz",
+                        control_dt,
+                    )
+                    control_dt = 1.0 / 125.0
 
-                for sample_index, (sample_time, joints) in enumerate(samples):
+                first_sample_time = samples[0][0]
+                last_sample_time = samples[-1][0]
+                servo_samples = []
+                segment_index = 0
+                servo_time = first_sample_time
+                while servo_time < last_sample_time:
+                    while (
+                        segment_index + 1 < len(samples) - 1
+                        and samples[segment_index + 1][0] < servo_time
+                    ):
+                        segment_index += 1
+                    t0, q0 = samples[segment_index]
+                    t1, q1 = samples[min(segment_index + 1, len(samples) - 1)]
+                    ratio = 0.0 if t1 <= t0 else min(1.0, max(0.0, (servo_time - t0) / (t1 - t0)))
+                    servo_samples.append([
+                        start + (end - start) * ratio
+                        for start, end in zip(q0, q1)
+                    ])
+                    servo_time += control_dt
+                servo_samples.append(samples[-1][1])
+
+                logger.info(
+                    "[UR5] resampled ServoJ points=%s control_dt=%s duration=%s",
+                    len(servo_samples), control_dt, last_sample_time - first_sample_time,
+                )
+                stream_ready = False
+                consecutive_servo_failures = 0
+
+                for sample_index, joints in enumerate(servo_samples):
                     if not self._check_command_id(command_id):
                         logger.info("[UR5] ServoJ stream interrupted command_id=%s", command_id)
                         return False
 
-                    target_wall_time = wall_start + max(0.0, sample_time - first_sample_time)
-                    sleep_seconds = target_wall_time - time.monotonic()
-                    if sleep_seconds > 0.0:
-                        time.sleep(sleep_seconds)
-
+                    cycle_start = self._call_control("initPeriod", ensure_ready=not stream_ready)
                     result = bool(self._call_control(
                         "servoJ",
                         joints,
                         speed,
                         acceleration,
-                        dt,
+                        control_dt,
                         lookahead_time,
                         gain,
-                        ensure_ready=not stream_ready,
+                        ensure_ready=False,
                     ))
                     stream_ready = True
 
-                    if not result:
-                        raise RuntimeError(f"servoJ failed at sample index {sample_index}")
+                    if result:
+                        consecutive_servo_failures = 0
+                    else:
+                        consecutive_servo_failures += 1
+                        logger.warning(
+                            "[UR5] ServoJ transient failure sample=%s consecutive=%s",
+                            sample_index,
+                            consecutive_servo_failures,
+                        )
+                        if consecutive_servo_failures >= 3:
+                            raise RuntimeError(
+                                "servoJ failed for 3 consecutive control cycles "
+                                f"ending at sample index {sample_index}"
+                            )
+                    self._call_control("waitPeriod", cycle_start, ensure_ready=False)
 
-                time.sleep(max(dt, 0.03))
+                time.sleep(max(control_dt, 0.03))
                 logger.info("[UR5] ServoJ stream completed command_id=%s", command_id)
                 return True
             finally:
