@@ -117,586 +117,602 @@
     </style>
 </head>
 <body>
-<main class="container">
-    <header class="header">
-        <div>
-            <h1>LeRobot 示範錄製</h1>
-            <div class="hint">錄製手臂狀態、action_tcp、action_joints、夾爪事件與相機影像</div>
-        </div>
-        <a class="back-link" href="/">返回控制首頁</a>
-    </header>
+    <main class="container">
+        <header class="header">
+            <div>
+                <h1>LeRobot 示範錄製</h1>
+                <div class="hint">錄製手臂狀態、local/base TCP actions、action_joints、夾爪事件與相機影像</div>
+            </div>
+            <a class="back-link" href="/">返回控制首頁</a>
+        </header>
 
-    <section class="card">
-        <h2>錄製參數</h2>
-        <form id="recordForm">
+        <section class="card">
+            <h2>錄製參數</h2>
+            <form id="recordForm">
+                <div class="form-grid">
+                    <div class="field">
+                        <label for="datasetFormat">dataset format</label>
+                        <select id="datasetFormat" name="dataset_format">
+                            <option value="lerobot_v3">LeRobot v3</option>
+                            <option value="lerobot_v2">LeRobot v2（GR00T N1.5）</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="armName">arm_name</label>
+                        <select id="armName" name="arm_name">
+                            <option value="left">left（UR7e）</option>
+                            <option value="right">right（UR5）</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="gripperName">gripper_name</label>
+                        <select id="gripperName" name="gripper_name">
+                            <option value="left">left</option>
+                            <option value="right">right</option>
+                        </select>
+                    </div>
+                    <div class="field full">
+                        <label>output_path（依 task 自動決定）</label>
+                        <div class="status-item">
+                            <div class="status-label">資料集根目錄</div>
+                            <div id="datasetRoot" class="status-value">~/robot/lerobot_datasets</div>
+                            <div class="status-label" style="margin-top: 10px">本次輸出路徑</div>
+                            <div id="resolvedOutputPath" class="status-value">輸入 task 後自動配置</div>
+                        </div>
+                        <span class="hint">命名規則：task_NNNN_&lt;task-slug&gt;_&lt;arm&gt;。相同 task + arm 會新增
+                            episode，不會建立新資料夾。</span>
+                    </div>
+                    <div class="field">
+                        <label for="interval">interval（秒）</label>
+                        <input id="interval" name="interval" type="number" min="0.033" max="10" step="0.001" value="0.1"
+                            required>
+                        <span class="hint">0.1 秒約為 10 FPS。</span>
+                    </div>
+                    <div class="field">
+                        <label for="freedrive">freedrive</label>
+                        <select id="freedrive" name="freedrive">
+                            <option value="true">true（手動拖曳示範）</option>
+                            <option value="false">false</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="recordVideo">record_video</label>
+                        <select id="recordVideo" name="record_video">
+                            <option value="true">true（錄製相機）</option>
+                            <option value="false">false</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="initialGripperPosition">initial_gripper_position</label>
+                        <select id="initialGripperPosition" name="initial_gripper_position">
+                            <option value="0">0（全開）</option>
+                            <option value="64">64（約 25%）</option>
+                            <option value="128">128（約 50%）</option>
+                            <option value="192">192（約 75%）</option>
+                            <option value="255">255（全關）</option>
+                        </select>
+                    </div>
+                    <div class="field full">
+                        <label for="task">task</label>
+                        <input id="task" name="task" type="text" value="pick up object" maxlength="200" required>
+                    </div>
+                </div>
+                <div class="actions">
+                    <button id="startButton" type="submit">開始錄製</button>
+                    <button id="stopButton" class="danger" type="button" disabled>停止並儲存</button>
+                    <button id="refreshButton" class="secondary" type="button">更新狀態</button>
+                    <button id="openGripperButton" class="gripper" type="button" disabled>開啟夾爪</button>
+                    <button id="closeGripperButton" class="gripper" type="button" disabled>關閉夾爪</button>
+                </div>
+            </form>
+            <div id="message" aria-live="polite"></div>
+        </section>
+
+        <section class="card">
+            <h2>錄製相機畫面</h2>
+            <div class="preview-wrapper">
+                <img id="cameraPreview" alt="錄製中的相機即時畫面">
+                <div id="previewPlaceholder">開始錄製並啟用 record_video 後，這裡會顯示即時畫面。</div>
+                <div id="previewBadge" class="preview-badge">● REC</div>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>錄製狀態</h2>
+            <div class="status-grid">
+                <div class="status-item"><div class="status-label">狀態</div><div id="recordingStatus" class="status-value stopped">未錄製</div></div>
+                <div class="status-item"><div class="status-label">錄製時間</div><div id="elapsedStatus" class="status-value">0.0 秒</div></div>
+                <div class="status-item"><div class="status-label">Samples</div><div id="sampleStatus" class="status-value">0</div></div>
+                <div class="status-item"><div class="status-label">Episode</div><div id="episodeStatus" class="status-value">—</div></div>
+                <div class="status-item"><div class="status-label">手臂／夾爪</div><div id="hardwareStatus" class="status-value">—</div></div>
+                <div class="status-item"><div class="status-label">相機</div><div id="cameraStatus" class="status-value">—</div></div>
+                <div class="status-item" style="grid-column: span 2"><div class="status-label">輸出位置</div><div id="pathStatus" class="status-value">—</div></div>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>Replay 錄製軌跡</h2>
+            <div class="hint" style="margin-bottom: 14px">Replay 會讓實體手臂先移動到 episode 起點，再依原始 FPS 播放 joints與夾爪。開始前請清空工作區並準備急停。</div>
             <div class="form-grid">
+                <div class="field full">
+                    <label for="replayDataset">Task / Dataset</label>
+                    <select id="replayDataset"></select>
+                </div>
                 <div class="field">
-                    <label for="armName">arm_name</label>
-                    <select id="armName" name="arm_name">
-                        <option value="left">left（UR7e + D405）</option>
+                    <label for="replayEpisode">Episode</label>
+                    <select id="replayEpisode"></select>
+                </div>
+                <div class="field">
+                    <label for="replayArm">Arm</label>
+                    <select id="replayArm">
+                        <option value="left">left（UR7e）</option>
                         <option value="right">right（UR5）</option>
                     </select>
                 </div>
                 <div class="field">
-                    <label for="gripperName">gripper_name</label>
-                    <select id="gripperName" name="gripper_name">
+                    <label for="replayGripper">Gripper</label>
+                    <select id="replayGripper">
                         <option value="left">left</option>
                         <option value="right">right</option>
                     </select>
                 </div>
-                <div class="field full">
-                    <label>output_path（依 task 自動決定）</label>
-                    <div class="status-item">
-                        <div class="status-label">資料集根目錄</div>
-                        <div id="datasetRoot" class="status-value">~/robot/lerobot_datasets</div>
-                        <div class="status-label" style="margin-top: 10px">本次輸出路徑</div>
-                        <div id="resolvedOutputPath" class="status-value">輸入 task 後自動配置</div>
-                    </div>
-                    <span class="hint">命名規則：task_NNNN_&lt;task-slug&gt;_&lt;arm&gt;。相同 task + arm 會新增 episode，不會建立新資料夾。</span>
-                </div>
                 <div class="field">
-                    <label for="interval">interval（秒）</label>
-                    <input id="interval" name="interval" type="number" min="0.033" max="10" step="0.001" value="0.1" required>
-                    <span class="hint">0.1 秒約為 10 FPS。</span>
-                </div>
-                <div class="field">
-                    <label for="freedrive">freedrive</label>
-                    <select id="freedrive" name="freedrive">
-                        <option value="true">true（手動拖曳示範）</option>
+                    <label for="replayMoveToStart">Move to start</label>
+                    <select id="replayMoveToStart">
+                        <option value="true">true（建議）</option>
                         <option value="false">false</option>
                     </select>
                 </div>
                 <div class="field">
-                    <label for="recordVideo">record_video</label>
-                    <select id="recordVideo" name="record_video">
-                        <option value="true">true（錄製相機）</option>
-                        <option value="false">false</option>
+                    <label for="replaySpeed">Speed</label>
+                    <select id="replaySpeed">
+                        <option value="0.05">0.05（慢速）</option>
+                        <option value="0.1" selected>0.10（一般）</option>
+                        <option value="0.2">0.20</option>
                     </select>
                 </div>
                 <div class="field">
-                    <label for="initialGripperPosition">initial_gripper_position</label>
-                    <select id="initialGripperPosition" name="initial_gripper_position">
-                        <option value="0">0（全開）</option>
-                        <option value="64">64（約 25%）</option>
-                        <option value="128">128（約 50%）</option>
-                        <option value="192">192（約 75%）</option>
-                        <option value="255">255（全關）</option>
+                    <label for="replayAcceleration">Acceleration</label>
+                    <select id="replayAcceleration">
+                        <option value="0.05">0.05（慢速）</option>
+                        <option value="0.1" selected>0.10（一般）</option>
+                        <option value="0.2">0.20</option>
                     </select>
-                </div>
-                <div class="field full">
-                    <label for="task">task</label>
-                    <input id="task" name="task" type="text" value="pick up object" maxlength="200" required>
                 </div>
             </div>
             <div class="actions">
-                <button id="startButton" type="submit">開始錄製</button>
-                <button id="stopButton" class="danger" type="button" disabled>停止並儲存</button>
-                <button id="refreshButton" class="secondary" type="button">更新狀態</button>
-                <button id="openGripperButton" class="gripper" type="button" disabled>開啟夾爪</button>
-                <button id="closeGripperButton" class="gripper" type="button" disabled>關閉夾爪</button>
+                <button id="startReplayButton" type="button">開始 Replay</button>
+                <button id="stopReplayButton" class="danger" type="button" disabled>緊急停止 Replay</button>
+                <button id="refreshReplayButton" class="secondary" type="button">更新資料集</button>
             </div>
-        </form>
-        <div id="message" aria-live="polite"></div>
-    </section>
-
-    <section class="card">
-        <h2>錄製相機畫面</h2>
-        <div class="preview-wrapper">
-            <img id="cameraPreview" alt="錄製中的相機即時畫面">
-            <div id="previewPlaceholder">開始錄製並啟用 record_video 後，這裡會顯示即時畫面。</div>
-            <div id="previewBadge" class="preview-badge">● REC</div>
-        </div>
-    </section>
-
-    <section class="card">
-        <h2>錄製狀態</h2>
-        <div class="status-grid">
-            <div class="status-item"><div class="status-label">狀態</div><div id="recordingStatus" class="status-value stopped">未錄製</div></div>
-            <div class="status-item"><div class="status-label">錄製時間</div><div id="elapsedStatus" class="status-value">0.0 秒</div></div>
-            <div class="status-item"><div class="status-label">Samples</div><div id="sampleStatus" class="status-value">0</div></div>
-            <div class="status-item"><div class="status-label">Episode</div><div id="episodeStatus" class="status-value">—</div></div>
-            <div class="status-item"><div class="status-label">手臂／夾爪</div><div id="hardwareStatus" class="status-value">—</div></div>
-            <div class="status-item"><div class="status-label">相機</div><div id="cameraStatus" class="status-value">—</div></div>
-            <div class="status-item" style="grid-column: span 2"><div class="status-label">輸出位置</div><div id="pathStatus" class="status-value">—</div></div>
-        </div>
-    </section>
-
-    <section class="card">
-        <h2>Replay 錄製軌跡</h2>
-        <div class="hint" style="margin-bottom: 14px">Replay 會讓實體手臂先移動到 episode 起點，再依原始 FPS 播放 joints 與夾爪。開始前請清空工作區並準備急停。</div>
-        <div class="form-grid">
-            <div class="field full">
-                <label for="replayDataset">Task / Dataset</label>
-                <select id="replayDataset"></select>
+            <div class="status-grid" style="margin-top: 16px">
+                <div class="status-item"><div class="status-label">播放狀態</div><div id="playingStatus" class="status-value stopped">未播放</div></div>
+                <div class="status-item"><div class="status-label">經過時間</div><div id="playbackElapsed">0.0 秒</div></div>
+                <div class="status-item" style="grid-column: span 2"><div class="status-label">目前資料集</div><div id="playbackPath" class="status-value">—</div></div>
             </div>
-            <div class="field">
-                <label for="replayEpisode">Episode</label>
-                <select id="replayEpisode"></select>
-            </div>
-            <div class="field">
-                <label for="replayArm">Arm</label>
-                <select id="replayArm">
-                    <option value="left">left（UR7e）</option>
-                    <option value="right">right（UR5）</option>
-                </select>
-            </div>
-            <div class="field">
-                <label for="replayGripper">Gripper</label>
-                <select id="replayGripper">
-                    <option value="left">left</option>
-                    <option value="right">right</option>
-                </select>
-            </div>
-            <div class="field">
-                <label for="replayMoveToStart">Move to start</label>
-                <select id="replayMoveToStart">
-                    <option value="true">true（建議）</option>
-                    <option value="false">false</option>
-                </select>
-            </div>
-            <div class="field">
-                <label for="replaySpeed">Speed</label>
-                <select id="replaySpeed">
-                    <option value="0.05">0.05（慢速）</option>
-                    <option value="0.1" selected>0.10（一般）</option>
-                    <option value="0.2">0.20</option>
-                </select>
-            </div>
-            <div class="field">
-                <label for="replayAcceleration">Acceleration</label>
-                <select id="replayAcceleration">
-                    <option value="0.05">0.05（慢速）</option>
-                    <option value="0.1" selected>0.10（一般）</option>
-                    <option value="0.2">0.20</option>
-                </select>
-            </div>
-        </div>
-        <div class="actions">
-            <button id="startReplayButton" type="button">開始 Replay</button>
-            <button id="stopReplayButton" class="danger" type="button" disabled>緊急停止 Replay</button>
-            <button id="refreshReplayButton" class="secondary" type="button">更新資料集</button>
-        </div>
-        <div class="status-grid" style="margin-top: 16px">
-            <div class="status-item"><div class="status-label">播放狀態</div><div id="playingStatus" class="status-value stopped">未播放</div></div>
-            <div class="status-item"><div class="status-label">經過時間</div><div id="playbackElapsed">0.0 秒</div></div>
-            <div class="status-item" style="grid-column: span 2"><div class="status-label">目前資料集</div><div id="playbackPath" class="status-value">—</div></div>
-        </div>
-        <div id="playbackMessage" aria-live="polite"></div>
-    </section>
+            <div id="playbackMessage" aria-live="polite"></div>
+        </section>
 
-    <section class="card">
-        <h2>API 回應</h2>
-        <pre id="apiResponse">尚未呼叫 API</pre>
-    </section>
+        <section class="card">
+            <h2>API 回應</h2>
+            <pre id="apiResponse">尚未呼叫 API</pre>
+        </section>
 
-    <section class="card">
-        <h2>Task Registry</h2>
-        <div class="hint" style="margin-bottom: 10px">檔案：<span id="registryPath">~/robot/lerobot_datasets/task_registry.json</span></div>
-        <pre id="taskRegistry">尚無 task</pre>
-    </section>
-</main>
+        <section class="card">
+            <h2>Task Registry</h2>
+            <div class="hint" style="margin-bottom: 10px">檔案：<span id="registryPath">~/robot/lerobot_datasets/task_registry.json</span></div>
+            <pre id="taskRegistry">尚無 task</pre>
+        </section>
+    </main>
 
-<script type="module">
-    import { getJson, postJson } from "/web/includes/library/JSFile/modules/core.js";
+    <script type="module">
+        import { getJson, postJson } from "/web/includes/library/JSFile/modules/core.js";
 
-    const form = document.getElementById("recordForm");
-    const startButton = document.getElementById("startButton");
-    const stopButton = document.getElementById("stopButton");
-    const refreshButton = document.getElementById("refreshButton");
-    const openGripperButton = document.getElementById("openGripperButton");
-    const closeGripperButton = document.getElementById("closeGripperButton");
-    const message = document.getElementById("message");
-    const apiResponse = document.getElementById("apiResponse");
-    const cameraPreview = document.getElementById("cameraPreview");
-    const previewPlaceholder = document.getElementById("previewPlaceholder");
-    const previewBadge = document.getElementById("previewBadge");
-    let pollingTimer = null;
-    let playbackPollingTimer = null;
-    let replayCatalogTimer = null;
-    let replayCatalogSignature = "";
-    let previewCameraName = null;
-    let taskRegistryData = { tasks: [], dataset_root: "~/robot/lerobot_datasets" };
-    let replayDatasets = [];
+        const form = document.getElementById("recordForm");
+        const startButton = document.getElementById("startButton");
+        const stopButton = document.getElementById("stopButton");
+        const refreshButton = document.getElementById("refreshButton");
+        const openGripperButton = document.getElementById("openGripperButton");
+        const closeGripperButton = document.getElementById("closeGripperButton");
+        const message = document.getElementById("message");
+        const apiResponse = document.getElementById("apiResponse");
+        const cameraPreview = document.getElementById("cameraPreview");
+        const previewPlaceholder = document.getElementById("previewPlaceholder");
+        const previewBadge = document.getElementById("previewBadge");
+        let pollingTimer = null;
+        let playbackPollingTimer = null;
+        let replayCatalogTimer = null;
+        let replayCatalogSignature = "";
+        let previewCameraName = null;
+        let taskRegistryData = { tasks: [], dataset_root: "~/robot/lerobot_datasets" };
+        let replayDatasets = [];
 
-    function booleanValue(id) { return document.getElementById(id).value === "true"; }
-    function responseData(response) { return response?.data ?? {}; }
-    function responseSucceeded(response) { return response?.status === "success" && response?.result !== false; }
-    function responseError(response) { return response?.error?.message ?? response?.error ?? response?.message ?? "操作失敗"; }
+        function booleanValue(id) { return document.getElementById(id).value === "true"; }
+        function responseData(response) { return response?.data ?? {}; }
+        function responseSucceeded(response) { return response?.status === "success" && response?.result !== false; }
+        function responseError(response) { return response?.error?.message ?? response?.error ?? response?.message ?? "操作失敗"; }
 
-    function showMessage(text, isError = false) {
-        message.textContent = text;
-        message.className = isError ? "error" : "success";
-    }
-
-    function showResponse(response) {
-        apiResponse.textContent = JSON.stringify(response, null, 2);
-    }
-
-    function taskSlug(task) {
-        return task.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "task";
-    }
-
-    function renderResolvedOutputPath() {
-        const task = document.getElementById("task").value.trim();
-        const arm = document.getElementById("armName").value;
-        const existing = (taskRegistryData.tasks ?? []).find((item) =>
-            String(item.task ?? "").toLowerCase() === task.toLowerCase()
-            && String(item.arm_name ?? "").toLowerCase() === arm
-        );
-        if (existing) {
-            document.getElementById("resolvedOutputPath").textContent = `${existing.dataset_path}（下一個 episode：${existing.episode_count ?? 0}）`;
-            return;
+        function showMessage(text, isError = false) {
+            message.textContent = text;
+            message.className = isError ? "error" : "success";
         }
-        const sameTask = (taskRegistryData.tasks ?? []).find((item) => String(item.task ?? "").toLowerCase() === task.toLowerCase());
-        const numbers = (taskRegistryData.tasks ?? []).map((item) => Number(String(item.task_id ?? "").replace("task_", ""))).filter(Number.isFinite);
-        const taskId = sameTask?.task_id ?? `task_${String(Math.max(0, ...numbers) + 1).padStart(4, "0")}`;
-        document.getElementById("resolvedOutputPath").textContent = `${taskRegistryData.dataset_root}/${taskId}_${taskSlug(task)}_${arm}（新 task/arm dataset）`;
-    }
 
-    async function loadTaskRegistry() {
-        try {
-            const response = await getJson("/api/record/get_task_registry");
+        function showResponse(response) {
+            apiResponse.textContent = JSON.stringify(response, null, 2);
+        }
+
+        function taskSlug(task) {
+            return task.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "task";
+        }
+
+        function renderResolvedOutputPath() {
+            const task = document.getElementById("task").value.trim();
+            const arm = document.getElementById("armName").value;
+            const format = document.getElementById("datasetFormat").value;
+            const existing = (taskRegistryData.tasks ?? []).find((item) =>
+                String(item.task ?? "").toLowerCase() === task.toLowerCase()
+                && String(item.arm_name ?? "").toLowerCase() === arm
+                && String(item.dataset_path ?? "").includes(`/${format}/`)
+            );
+            if (existing) {
+                document.getElementById("resolvedOutputPath").textContent = `${existing.dataset_path}（下一個 episode：${existing.episode_count ?? 0}）`;
+                return;
+            }
+            const sameTask = (taskRegistryData.tasks ?? []).find((item) => String(item.task ?? "").toLowerCase() === task.toLowerCase());
+            const numbers = (taskRegistryData.tasks ?? []).map((item) => Number(String(item.task_id ?? "").replace("task_", ""))).filter(Number.isFinite);
+            const taskId = sameTask?.task_id ?? `task_${String(Math.max(0, ...numbers) + 1).padStart(4, "0")}`;
+            document.getElementById("resolvedOutputPath").textContent = `${taskRegistryData.dataset_root}/${format}/${taskSlug(task)}_${arm}（新 ${format} task/arm dataset）`;
+        }
+
+        async function loadTaskRegistry() {
+            try {
+                const response = await getJson("/api/record/get_task_registry");
+                if (!responseSucceeded(response)) throw new Error(responseError(response));
+                taskRegistryData = responseData(response);
+                document.getElementById("datasetRoot").textContent = taskRegistryData.dataset_root;
+                document.getElementById("registryPath").textContent = taskRegistryData.registry_path;
+                document.getElementById("taskRegistry").textContent = JSON.stringify({
+                    active_tasks: taskRegistryData.tasks ?? [],
+                    legacy_datasets: taskRegistryData.legacy_datasets ?? [],
+                }, null, 2);
+                renderResolvedOutputPath();
+            } catch (error) {
+                showMessage(`Task registry 載入失敗：${error.message}`, true);
+            }
+        }
+
+        function selectedReplayDataset() {
+            const index = Number(document.getElementById("replayDataset").value);
+            return replayDatasets[index] ?? null;
+        }
+
+        function updateReplaySelection() {
+            const dataset = selectedReplayDataset();
+            const episodeSelect = document.getElementById("replayEpisode");
+            episodeSelect.replaceChildren();
+            for (const episode of dataset?.episodes ?? []) {
+                const option = document.createElement("option");
+                option.value = String(episode);
+                const detail = (dataset.episode_details ?? []).find((item) => Number(item.episode_index) === Number(episode));
+                option.textContent = detail?.label ?? `episode_${String(episode).padStart(6, "0")}`;
+                episodeSelect.appendChild(option);
+            }
+            const arm = dataset?.compatible_arms?.[0];
+            if (arm) {
+                document.getElementById("replayArm").value = arm;
+                document.getElementById("replayGripper").value = arm;
+            }
+            document.getElementById("playbackPath").textContent = dataset?.dataset_path ?? "—";
+            document.getElementById("startReplayButton").disabled = !dataset || !(dataset.episodes ?? []).length || !(dataset.compatible_arms ?? []).length;
+        }
+
+        async function loadReplayCatalog(force = false) {
+            const response = await getJson("/api/record/get_replay_catalog");
             if (!responseSucceeded(response)) throw new Error(responseError(response));
-            taskRegistryData = responseData(response);
-            document.getElementById("datasetRoot").textContent = taskRegistryData.dataset_root;
-            document.getElementById("registryPath").textContent = taskRegistryData.registry_path;
-            document.getElementById("taskRegistry").textContent = JSON.stringify({
-                active_tasks: taskRegistryData.tasks ?? [],
-                legacy_datasets: taskRegistryData.legacy_datasets ?? [],
-            }, null, 2);
-            renderResolvedOutputPath();
-        } catch (error) {
-            showMessage(`Task registry 載入失敗：${error.message}`, true);
+            const nextDatasets = responseData(response).datasets ?? [];
+            const nextSignature = JSON.stringify(nextDatasets.map((dataset) => ({
+                dataset_path: dataset.dataset_path,
+                total_episodes: dataset.total_episodes,
+                total_frames: dataset.total_frames,
+                episodes: dataset.episodes,
+                episode_details: dataset.episode_details,
+            })));
+            if (!force && nextSignature === replayCatalogSignature) return false;
+
+            const select = document.getElementById("replayDataset");
+            const previousDataset = selectedReplayDataset()?.dataset_path;
+            const previousEpisode = document.getElementById("replayEpisode").value;
+            replayDatasets = nextDatasets;
+            replayCatalogSignature = nextSignature;
+            select.replaceChildren();
+            replayDatasets.forEach((dataset, index) => {
+                const option = document.createElement("option");
+                option.value = String(index);
+                const legacy = dataset.legacy ? " [legacy]" : "";
+                option.textContent = `${dataset.task_id ?? "legacy"} — ${dataset.task}${legacy} — ${dataset.total_episodes} episodes — ${dataset.robot_type}`;
+                select.appendChild(option);
+            });
+            if (!replayDatasets.length) {
+                const option = document.createElement("option");
+                option.textContent = "目前沒有可播放的 dataset";
+                option.value = "";
+                select.appendChild(option);
+            }
+            const previousIndex = replayDatasets.findIndex((dataset) => dataset.dataset_path === previousDataset);
+            if (previousIndex >= 0) select.value = String(previousIndex);
+            updateReplaySelection();
+            const episodeSelect = document.getElementById("replayEpisode");
+            if ([...episodeSelect.options].some((option) => option.value === previousEpisode)) {
+                episodeSelect.value = previousEpisode;
+            }
+            return true;
         }
-    }
 
-    function selectedReplayDataset() {
-        const index = Number(document.getElementById("replayDataset").value);
-        return replayDatasets[index] ?? null;
-    }
-
-    function updateReplaySelection() {
-        const dataset = selectedReplayDataset();
-        const episodeSelect = document.getElementById("replayEpisode");
-        episodeSelect.replaceChildren();
-        for (const episode of dataset?.episodes ?? []) {
-            const option = document.createElement("option");
-            option.value = String(episode);
-            const detail = (dataset.episode_details ?? []).find((item) => Number(item.episode_index) === Number(episode));
-            option.textContent = detail?.label ?? `episode_${String(episode).padStart(6, "0")}`;
-            episodeSelect.appendChild(option);
+        async function autoRefreshReplayCatalog() {
+            if (!document.getElementById("stopReplayButton").disabled) return;
+            try {
+                const changed = await loadReplayCatalog();
+                if (changed) showPlaybackMessage("偵測到新的錄製資料，Replay 清單已自動更新。");
+            } catch (error) {
+                console.warn("Replay catalog 自動更新失敗：", error);
+            }
         }
-        const arm = dataset?.compatible_arms?.[0];
-        if (arm) {
-            document.getElementById("replayArm").value = arm;
-            document.getElementById("replayGripper").value = arm;
+
+        function showPlaybackMessage(text, isError = false) {
+            const element = document.getElementById("playbackMessage");
+            element.textContent = text;
+            element.className = isError ? "error" : "success";
         }
-        document.getElementById("playbackPath").textContent = dataset?.dataset_path ?? "—";
-        document.getElementById("startReplayButton").disabled = !dataset || !(dataset.episodes ?? []).length || !(dataset.compatible_arms ?? []).length;
-    }
 
-    async function loadReplayCatalog(force = false) {
-        const response = await getJson("/api/record/get_replay_catalog");
-        if (!responseSucceeded(response)) throw new Error(responseError(response));
-        const nextDatasets = responseData(response).datasets ?? [];
-        const nextSignature = JSON.stringify(nextDatasets.map((dataset) => ({
-            dataset_path: dataset.dataset_path,
-            total_episodes: dataset.total_episodes,
-            total_frames: dataset.total_frames,
-            episodes: dataset.episodes,
-            episode_details: dataset.episode_details,
-        })));
-        if (!force && nextSignature === replayCatalogSignature) return false;
+        async function refreshPlaybackStatus() {
+            try {
+                const response = await getJson("/api/record/get_robot_playback_status");
+                if (!responseSucceeded(response)) throw new Error(responseError(response));
+                const data = responseData(response);
+                const playing = Boolean(data.playing);
+                const status = document.getElementById("playingStatus");
+                status.textContent = playing ? "播放中" : "未播放";
+                status.className = `status-value ${playing ? "recording" : "stopped"}`;
+                document.getElementById("playbackElapsed").textContent = `${Number(data.elapsed_seconds ?? 0).toFixed(1)} 秒`;
+                if (data.input_path) document.getElementById("playbackPath").textContent = data.input_path;
+                document.getElementById("startReplayButton").disabled = playing || !selectedReplayDataset();
+                document.getElementById("stopReplayButton").disabled = !playing;
+                document.getElementById("replayDataset").disabled = playing;
+                document.getElementById("replayEpisode").disabled = playing;
+                const phaseLabels = {
+                    starting: "Replay 正在啟動…",
+                    loading: "正在載入 episode…",
+                    moving_to_start: "手臂正在移動到 episode 起點…",
+                    playing: "正在播放 joints 與夾爪軌跡…",
+                    completed: "Replay 軌跡播放完成。",
+                    stopped: "Replay 已由使用者停止。",
+                    failed: "Replay 播放失敗。",
+                };
+                if (data.error) {
+                    showPlaybackMessage(`Replay 失敗：${data.error}`, true);
+                } else if (phaseLabels[data.phase]) {
+                    showPlaybackMessage(phaseLabels[data.phase]);
+                }
+                if (playing && playbackPollingTimer === null) playbackPollingTimer = window.setInterval(refreshPlaybackStatus, 500);
+                if (!playing && playbackPollingTimer !== null) {
+                    window.clearInterval(playbackPollingTimer);
+                    playbackPollingTimer = null;
+                    if (data.error) showPlaybackMessage(`Replay 失敗：${data.error}`, true);
+                    else if (data.completed) showPlaybackMessage("Replay 軌跡播放完成。");
+                    else showPlaybackMessage(phaseLabels[data.phase] ?? "Replay 已停止。");
+                }
+            } catch (error) {
+                showPlaybackMessage(`Replay 狀態更新失敗：${error.message}`, true);
+            }
+        }
 
-        const select = document.getElementById("replayDataset");
-        const previousDataset = selectedReplayDataset()?.dataset_path;
-        const previousEpisode = document.getElementById("replayEpisode").value;
-        replayDatasets = nextDatasets;
-        replayCatalogSignature = nextSignature;
-        select.replaceChildren();
-        replayDatasets.forEach((dataset, index) => {
-            const option = document.createElement("option");
-            option.value = String(index);
-            const legacy = dataset.legacy ? " [legacy]" : "";
-            option.textContent = `${dataset.task_id ?? "legacy"} — ${dataset.task}${legacy} — ${dataset.total_episodes} episodes — ${dataset.robot_type}`;
-            select.appendChild(option);
+        function setFormLocked(locked) {
+            form.querySelectorAll("select, input").forEach((element) => { element.disabled = locked; });
+            startButton.disabled = locked;
+            stopButton.disabled = !locked;
+            openGripperButton.disabled = !locked;
+            closeGripperButton.disabled = !locked;
+        }
+
+        function startPreview(cameraName) {
+            if (!cameraName || previewCameraName === cameraName) return;
+            previewCameraName = cameraName;
+            const params = new URLSearchParams({ camera_name: cameraName, t: String(Date.now()) });
+            cameraPreview.src = `/api/vision/camera_stream?${params.toString()}`;
+            cameraPreview.style.display = "block";
+            previewPlaceholder.style.display = "none";
+            previewBadge.style.display = "block";
+        }
+
+        function stopPreview(messageText = "開始錄製並啟用 record_video 後，這裡會顯示即時畫面。") {
+            previewCameraName = null;
+            cameraPreview.removeAttribute("src");
+            cameraPreview.style.display = "none";
+            previewBadge.style.display = "none";
+            previewPlaceholder.textContent = messageText;
+            previewPlaceholder.style.display = "block";
+        }
+
+        cameraPreview.addEventListener("error", () => {
+            if (previewCameraName) {
+                stopPreview("相機串流暫時無法顯示，請確認錄製與相機狀態。")
+            }
         });
-        if (!replayDatasets.length) {
-            const option = document.createElement("option");
-            option.textContent = "目前沒有可播放的 dataset";
-            option.value = "";
-            select.appendChild(option);
-        }
-        const previousIndex = replayDatasets.findIndex((dataset) => dataset.dataset_path === previousDataset);
-        if (previousIndex >= 0) select.value = String(previousIndex);
-        updateReplaySelection();
-        const episodeSelect = document.getElementById("replayEpisode");
-        if ([...episodeSelect.options].some((option) => option.value === previousEpisode)) {
-            episodeSelect.value = previousEpisode;
-        }
-        return true;
-    }
 
-    async function autoRefreshReplayCatalog() {
-        if (!document.getElementById("stopReplayButton").disabled) return;
-        try {
-            const changed = await loadReplayCatalog();
-            if (changed) showPlaybackMessage("偵測到新的錄製資料，Replay 清單已自動更新。");
-        } catch (error) {
-            console.warn("Replay catalog 自動更新失敗：", error);
-        }
-    }
-
-    function showPlaybackMessage(text, isError = false) {
-        const element = document.getElementById("playbackMessage");
-        element.textContent = text;
-        element.className = isError ? "error" : "success";
-    }
-
-    async function refreshPlaybackStatus() {
-        try {
-            const response = await getJson("/api/record/get_robot_playback_status");
-            if (!responseSucceeded(response)) throw new Error(responseError(response));
+        function renderStatus(response) {
             const data = responseData(response);
-            const playing = Boolean(data.playing);
-            const status = document.getElementById("playingStatus");
-            status.textContent = playing ? "播放中" : "未播放";
-            status.className = `status-value ${playing ? "recording" : "stopped"}`;
-            document.getElementById("playbackElapsed").textContent = `${Number(data.elapsed_seconds ?? 0).toFixed(1)} 秒`;
-            if (data.input_path) document.getElementById("playbackPath").textContent = data.input_path;
-            document.getElementById("startReplayButton").disabled = playing || !selectedReplayDataset();
-            document.getElementById("stopReplayButton").disabled = !playing;
-            document.getElementById("replayDataset").disabled = playing;
-            document.getElementById("replayEpisode").disabled = playing;
-            const phaseLabels = {
-                starting: "Replay 正在啟動…",
-                loading: "正在載入 episode…",
-                moving_to_start: "手臂正在移動到 episode 起點…",
-                playing: "正在播放 joints 與夾爪軌跡…",
-                completed: "Replay 軌跡播放完成。",
-                stopped: "Replay 已由使用者停止。",
-                failed: "Replay 播放失敗。",
-            };
-            if (data.error) {
-                showPlaybackMessage(`Replay 失敗：${data.error}`, true);
-            } else if (phaseLabels[data.phase]) {
-                showPlaybackMessage(phaseLabels[data.phase]);
+            const recording = Boolean(data.recording);
+            const status = document.getElementById("recordingStatus");
+            status.textContent = recording ? "錄製中" : "未錄製";
+            status.className = `status-value ${recording ? "recording" : "stopped"}`;
+            document.getElementById("elapsedStatus").textContent = `${Number(data.elapsed_seconds ?? 0).toFixed(1)} 秒`;
+            document.getElementById("sampleStatus").textContent = String(data.sample_count ?? 0);
+            document.getElementById("episodeStatus").textContent = data.episode_index ?? "—";
+            document.getElementById("hardwareStatus").textContent = data.arm_name ? `${data.arm_name} / ${data.gripper_name}` : "—";
+            document.getElementById("cameraStatus").textContent = (data.camera_names ?? []).join(", ") || "未錄影";
+            document.getElementById("pathStatus").textContent = data.output_path ?? "—";
+            const cameraName = (data.camera_names ?? [])[0];
+            if (recording && data.record_video && cameraName) startPreview(cameraName);
+            else if (!recording || !data.record_video) stopPreview();
+            setFormLocked(recording);
+            if (recording && pollingTimer === null) pollingTimer = window.setInterval(refreshStatus, 1000);
+            if (!recording && pollingTimer !== null) { window.clearInterval(pollingTimer); pollingTimer = null; }
+        }
+
+        async function refreshStatus() {
+            try {
+                const format = document.getElementById("datasetFormat").value;
+                const response = await getJson(`/api/record/get_robot_recording_status?dataset_format=${encodeURIComponent(format)}`);
+                if (!responseSucceeded(response)) throw new Error(responseError(response));
+                renderStatus(response);
+            } catch (error) {
+                showMessage(`狀態更新失敗：${error.message}`, true);
             }
-            if (playing && playbackPollingTimer === null) playbackPollingTimer = window.setInterval(refreshPlaybackStatus, 500);
-            if (!playing && playbackPollingTimer !== null) {
-                window.clearInterval(playbackPollingTimer);
-                playbackPollingTimer = null;
-                if (data.error) showPlaybackMessage(`Replay 失敗：${data.error}`, true);
-                else if (data.completed) showPlaybackMessage("Replay 軌跡播放完成。");
-                else showPlaybackMessage(phaseLabels[data.phase] ?? "Replay 已停止。");
-            }
-        } catch (error) {
-            showPlaybackMessage(`Replay 狀態更新失敗：${error.message}`, true);
         }
-    }
 
-    function setFormLocked(locked) {
-        form.querySelectorAll("select, input").forEach((element) => { element.disabled = locked; });
-        startButton.disabled = locked;
-        stopButton.disabled = !locked;
-        openGripperButton.disabled = !locked;
-        closeGripperButton.disabled = !locked;
-    }
-
-    function startPreview(cameraName) {
-        if (!cameraName || previewCameraName === cameraName) return;
-        previewCameraName = cameraName;
-        const params = new URLSearchParams({ camera_name: cameraName, t: String(Date.now()) });
-        cameraPreview.src = `/api/vision/camera_stream?${params.toString()}`;
-        cameraPreview.style.display = "block";
-        previewPlaceholder.style.display = "none";
-        previewBadge.style.display = "block";
-    }
-
-    function stopPreview(messageText = "開始錄製並啟用 record_video 後，這裡會顯示即時畫面。") {
-        previewCameraName = null;
-        cameraPreview.removeAttribute("src");
-        cameraPreview.style.display = "none";
-        previewBadge.style.display = "none";
-        previewPlaceholder.textContent = messageText;
-        previewPlaceholder.style.display = "block";
-    }
-
-    cameraPreview.addEventListener("error", () => {
-        if (previewCameraName) {
-            stopPreview("相機串流暫時無法顯示，請確認錄製與相機狀態。")
-        }
-    });
-
-    function renderStatus(response) {
-        const data = responseData(response);
-        const recording = Boolean(data.recording);
-        const status = document.getElementById("recordingStatus");
-        status.textContent = recording ? "錄製中" : "未錄製";
-        status.className = `status-value ${recording ? "recording" : "stopped"}`;
-        document.getElementById("elapsedStatus").textContent = `${Number(data.elapsed_seconds ?? 0).toFixed(1)} 秒`;
-        document.getElementById("sampleStatus").textContent = String(data.sample_count ?? 0);
-        document.getElementById("episodeStatus").textContent = data.episode_index ?? "—";
-        document.getElementById("hardwareStatus").textContent = data.arm_name ? `${data.arm_name} / ${data.gripper_name}` : "—";
-        document.getElementById("cameraStatus").textContent = (data.camera_names ?? []).join(", ") || "未錄影";
-        document.getElementById("pathStatus").textContent = data.output_path ?? "—";
-        const cameraName = (data.camera_names ?? [])[0];
-        if (recording && data.record_video && cameraName) startPreview(cameraName);
-        else if (!recording || !data.record_video) stopPreview();
-        setFormLocked(recording);
-        if (recording && pollingTimer === null) pollingTimer = window.setInterval(refreshStatus, 1000);
-        if (!recording && pollingTimer !== null) { window.clearInterval(pollingTimer); pollingTimer = null; }
-    }
-
-    async function refreshStatus() {
-        try {
-            const response = await getJson("/api/record/get_robot_recording_status");
-            if (!responseSucceeded(response)) throw new Error(responseError(response));
-            renderStatus(response);
-        } catch (error) {
-            showMessage(`狀態更新失敗：${error.message}`, true);
-        }
-    }
-
-    form.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        const interval = Number(document.getElementById("interval").value);
-        const task = document.getElementById("task").value.trim();
-        if (!Number.isFinite(interval) || interval <= 0) return showMessage("interval 必須大於 0。", true);
-        if (!task) return showMessage("task 不可為空。", true);
-        const payload = {
-            arm_name: document.getElementById("armName").value,
-            gripper_name: document.getElementById("gripperName").value,
-            output_path: null,
-            interval,
-            freedrive: booleanValue("freedrive"),
-            record_video: booleanValue("recordVideo"),
-            task,
-            initial_gripper_position: Number(document.getElementById("initialGripperPosition").value),
-        };
-        startButton.disabled = true;
-        showMessage("正在啟動錄製…");
-        try {
-            const response = await postJson("/api/record/start_robot_recording", payload);
-            showResponse(response);
-            if (!responseSucceeded(response)) throw new Error(responseError(response));
-            const startedData = responseData(response);
-            document.getElementById("resolvedOutputPath").textContent = startedData.absolute_path ?? startedData.output_path;
-            const cameraName = (startedData.camera_names ?? [])[0];
-            if (startedData.record_video && cameraName) startPreview(cameraName);
-            showMessage("錄製已開始。請完成示範後按「停止並儲存」。");
-            await refreshStatus();
-        } catch (error) {
-            showMessage(`開始失敗：${error.message}`, true);
-            startButton.disabled = false;
-        }
-    });
-
-    stopButton.addEventListener("click", async () => {
-        stopButton.disabled = true;
-        showMessage("正在停止並寫入 LeRobot episode…");
-        try {
-            const response = await postJson("/api/record/stop_robot_recording", {
+        form.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const interval = Number(document.getElementById("interval").value);
+            const task = document.getElementById("task").value.trim();
+            if (!Number.isFinite(interval) || interval <= 0) return showMessage("interval 必須大於 0。", true);
+            if (!task) return showMessage("task 不可為空。", true);
+            const payload = {
                 arm_name: document.getElementById("armName").value,
                 gripper_name: document.getElementById("gripperName").value,
-            });
-            showResponse(response);
-            if (!responseSucceeded(response)) throw new Error(responseError(response));
-            stopPreview("錄製已停止；相機預覽已關閉。")
-            showMessage(`錄製已儲存：${responseData(response).output_path ?? "完成"}`);
-            await loadTaskRegistry();
-            await loadReplayCatalog(true);
-            await refreshStatus();
-        } catch (error) {
-            showMessage(`停止失敗：${error.message}`, true);
-            stopButton.disabled = false;
-        }
-    });
+                output_path: null,
+                interval,
+                freedrive: booleanValue("freedrive"),
+                record_video: booleanValue("recordVideo"),
+                task,
+                initial_gripper_position: Number(document.getElementById("initialGripperPosition").value),
+                dataset_format: document.getElementById("datasetFormat").value,
+            };
+            startButton.disabled = true;
+            showMessage("正在啟動錄製…");
+            try {
+                const response = await postJson("/api/record/start_robot_recording", payload);
+                showResponse(response);
+                if (!responseSucceeded(response)) throw new Error(responseError(response));
+                const startedData = responseData(response);
+                document.getElementById("resolvedOutputPath").textContent = startedData.absolute_path ?? startedData.output_path;
+                const cameraName = (startedData.camera_names ?? [])[0];
+                if (startedData.record_video && cameraName) startPreview(cameraName);
+                showMessage("錄製已開始。請完成示範後按「停止並儲存」。");
+                await refreshStatus();
+            } catch (error) {
+                showMessage(`開始失敗：${error.message}`, true);
+                startButton.disabled = false;
+            }
+        });
 
-    async function moveGripper(action) {
-        const gripper = document.getElementById("gripperName").value;
-        const endpoint = action === "open" ? "open_recording_gripper" : "close_recording_gripper";
-        try {
-            const response = await postJson(`/api/record/${endpoint}`, { gripper_name: gripper, speed: 100, force: 100, wait: true });
-            showResponse(response);
-            if (!responseSucceeded(response)) throw new Error(responseError(response));
-            showMessage(action === "open" ? "夾爪已開啟。" : "夾爪已關閉。");
-        } catch (error) {
-            showMessage(`夾爪操作失敗：${error.message}`, true);
-        }
-    }
+        stopButton.addEventListener("click", async () => {
+            stopButton.disabled = true;
+            showMessage("正在停止並寫入 LeRobot episode…");
+            try {
+                const response = await postJson("/api/record/stop_robot_recording", {
+                    arm_name: document.getElementById("armName").value,
+                    gripper_name: document.getElementById("gripperName").value,
+                    dataset_format: document.getElementById("datasetFormat").value,
+                });
+                showResponse(response);
+                if (!responseSucceeded(response)) throw new Error(responseError(response));
+                stopPreview("錄製已停止；相機預覽已關閉。")
+                showMessage(`錄製已儲存：${responseData(response).output_path ?? "完成"}`);
+                await loadTaskRegistry();
+                await loadReplayCatalog(true);
+                await refreshStatus();
+            } catch (error) {
+                showMessage(`停止失敗：${error.message}`, true);
+                stopButton.disabled = false;
+            }
+        });
 
-    document.getElementById("armName").addEventListener("change", (event) => {
-        document.getElementById("gripperName").value = event.target.value;
-        renderResolvedOutputPath();
-    });
-    document.getElementById("task").addEventListener("input", renderResolvedOutputPath);
-    document.getElementById("replayDataset").addEventListener("change", updateReplaySelection);
-    document.getElementById("replayArm").addEventListener("change", (event) => {
-        document.getElementById("replayGripper").value = event.target.value;
-    });
-    document.getElementById("startReplayButton").addEventListener("click", async () => {
-        const dataset = selectedReplayDataset();
-        if (!dataset) return showPlaybackMessage("請先選擇 dataset。", true);
-        const arm = document.getElementById("replayArm").value;
-        if (!(dataset.compatible_arms ?? []).includes(arm)) return showPlaybackMessage(`此 dataset 的 robot_type=${dataset.robot_type}，不可使用 ${arm}。`, true);
-        const episode = Number(document.getElementById("replayEpisode").value);
-        if (!window.confirm(`即將移動實體 ${arm} 手臂並播放 episode ${episode}。\n\n請確認工作區無人、無障礙物且急停可用。\n\n確定開始嗎？`)) return;
-        showPlaybackMessage("正在載入 episode 並啟動 Replay…");
-        try {
-            const response = await postJson("/api/record/start_robot_playback", {
-                input_path: dataset.dataset_path,
-                arm_name: arm,
-                gripper_name: document.getElementById("replayGripper").value,
-                episode_index: episode,
-                speed: Number(document.getElementById("replaySpeed").value),
-                acceleration: Number(document.getElementById("replayAcceleration").value),
-                lookahead_time: 0.1,
-                gain: 300,
-                move_to_start: document.getElementById("replayMoveToStart").value === "true",
-                move_to_start_speed: 0.1,
-                move_to_start_acceleration: 0.1,
-            });
-            showResponse(response);
-            if (!responseSucceeded(response)) throw new Error(responseError(response));
-            showPlaybackMessage("Replay 已開始。需要立即停止時按紅色按鈕或實體急停。")
-            await refreshPlaybackStatus();
-        } catch (error) {
-            showPlaybackMessage(`Replay 啟動失敗：${error.message}`, true);
+        async function moveGripper(action) {
+            const gripper = document.getElementById("gripperName").value;
+            const endpoint = action === "open" ? "open_recording_gripper" : "close_recording_gripper";
+            try {
+                const response = await postJson(`/api/record/${endpoint}`, { gripper_name: gripper, speed: 100, force: 100, wait: true });
+                showResponse(response);
+                if (!responseSucceeded(response)) throw new Error(responseError(response));
+                showMessage(action === "open" ? "夾爪已開啟。" : "夾爪已關閉。");
+            } catch (error) {
+                showMessage(`夾爪操作失敗：${error.message}`, true);
+            }
         }
-    });
-    document.getElementById("stopReplayButton").addEventListener("click", async () => {
-        try {
-            const response = await postJson("/api/record/stop_robot_playback", {
-                arm_name: document.getElementById("replayArm").value,
-                gripper_name: document.getElementById("replayGripper").value,
-            });
-            showResponse(response);
-            if (!responseSucceeded(response)) throw new Error(responseError(response));
-            showPlaybackMessage("Replay 已停止。")
-            await refreshPlaybackStatus();
-        } catch (error) {
-            showPlaybackMessage(`停止 Replay 失敗：${error.message}`, true);
-        }
-    });
-    document.getElementById("refreshReplayButton").addEventListener("click", async () => {
-        try { await loadReplayCatalog(true); showPlaybackMessage("資料集清單已更新。"); }
-        catch (error) { showPlaybackMessage(`資料集更新失敗：${error.message}`, true); }
-    });
-    refreshButton.addEventListener("click", refreshStatus);
-    openGripperButton.addEventListener("click", () => moveGripper("open"));
-    closeGripperButton.addEventListener("click", () => moveGripper("close"));
-    window.addEventListener("beforeunload", () => {
-        if (pollingTimer !== null) window.clearInterval(pollingTimer);
-        if (playbackPollingTimer !== null) window.clearInterval(playbackPollingTimer);
-        if (replayCatalogTimer !== null) window.clearInterval(replayCatalogTimer);
-        stopPreview();
-    });
-    await loadTaskRegistry();
-    try { await loadReplayCatalog(true); } catch (error) { showPlaybackMessage(`資料集載入失敗：${error.message}`, true); }
-    replayCatalogTimer = window.setInterval(autoRefreshReplayCatalog, 3000);
-    refreshPlaybackStatus();
-    refreshStatus();
-</script>
+
+        document.getElementById("armName").addEventListener("change", (event) => {
+            document.getElementById("gripperName").value = event.target.value;
+            renderResolvedOutputPath();
+        });
+        document.getElementById("task").addEventListener("input", renderResolvedOutputPath);
+        document.getElementById("datasetFormat").addEventListener("change", renderResolvedOutputPath);
+        document.getElementById("replayDataset").addEventListener("change", updateReplaySelection);
+        document.getElementById("replayArm").addEventListener("change", (event) => {
+            document.getElementById("replayGripper").value = event.target.value;
+        });
+        document.getElementById("startReplayButton").addEventListener("click", async () => {
+            const dataset = selectedReplayDataset();
+            if (!dataset) return showPlaybackMessage("請先選擇 dataset。", true);
+            const arm = document.getElementById("replayArm").value;
+            if (!(dataset.compatible_arms ?? []).includes(arm)) return showPlaybackMessage(`此 dataset 的 robot_type=${dataset.robot_type}，不可使用 ${arm}。`, true);
+            const episode = Number(document.getElementById("replayEpisode").value);
+            if (!window.confirm(`即將移動實體 ${arm} 手臂並播放 episode ${episode}。\n\n請確認工作區無人、無障礙物且急停可用。\n\n確定開始嗎？`)) return;
+            showPlaybackMessage("正在載入 episode 並啟動 Replay…");
+            try {
+                const response = await postJson("/api/record/start_robot_playback", {
+                    input_path: dataset.dataset_path,
+                    dataset_format: dataset.format,
+                    arm_name: arm,
+                    gripper_name: document.getElementById("replayGripper").value,
+                    episode_index: episode,
+                    speed: Number(document.getElementById("replaySpeed").value),
+                    acceleration: Number(document.getElementById("replayAcceleration").value),
+                    lookahead_time: 0.1,
+                    gain: 300,
+                    move_to_start: document.getElementById("replayMoveToStart").value === "true",
+                    move_to_start_speed: 0.1,
+                    move_to_start_acceleration: 0.1,
+                });
+                showResponse(response);
+                if (!responseSucceeded(response)) throw new Error(responseError(response));
+                showPlaybackMessage("Replay 已開始。需要立即停止時按紅色按鈕或實體急停。")
+                await refreshPlaybackStatus();
+            } catch (error) {
+                showPlaybackMessage(`Replay 啟動失敗：${error.message}`, true);
+            }
+        });
+        document.getElementById("stopReplayButton").addEventListener("click", async () => {
+            try {
+                const response = await postJson("/api/record/stop_robot_playback", {
+                    arm_name: document.getElementById("replayArm").value,
+                    gripper_name: document.getElementById("replayGripper").value,
+                });
+                showResponse(response);
+                if (!responseSucceeded(response)) throw new Error(responseError(response));
+                showPlaybackMessage("Replay 已停止。")
+                await refreshPlaybackStatus();
+            } catch (error) {
+                showPlaybackMessage(`停止 Replay 失敗：${error.message}`, true);
+            }
+        });
+        document.getElementById("refreshReplayButton").addEventListener("click", async () => {
+            try { await loadReplayCatalog(true); showPlaybackMessage("資料集清單已更新。"); }
+            catch (error) { showPlaybackMessage(`資料集更新失敗：${error.message}`, true); }
+        });
+        refreshButton.addEventListener("click", refreshStatus);
+        openGripperButton.addEventListener("click", () => moveGripper("open"));
+        closeGripperButton.addEventListener("click", () => moveGripper("close"));
+        window.addEventListener("beforeunload", () => {
+            if (pollingTimer !== null) window.clearInterval(pollingTimer);
+            if (playbackPollingTimer !== null) window.clearInterval(playbackPollingTimer);
+            if (replayCatalogTimer !== null) window.clearInterval(replayCatalogTimer);
+            stopPreview();
+        });
+        await loadTaskRegistry();
+        try { await loadReplayCatalog(true); } catch (error) { showPlaybackMessage(`資料集載入失敗：${error.message}`, true); }
+        replayCatalogTimer = window.setInterval(autoRefreshReplayCatalog, 3000);
+        refreshPlaybackStatus();
+        refreshStatus();
+    </script>
 </body>
 </html>

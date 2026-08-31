@@ -4,7 +4,7 @@ from flask import (
     request,
 )
 
-from services import record_service
+from services import recording as record_service
 
 
 record_bp = Blueprint(
@@ -84,6 +84,8 @@ def start_robot_recording():
                     "initial_gripper_position",
                     0,
                 ),
+
+            dataset_format=data.get("dataset_format", "lerobot_v3"),
         )
     )
 
@@ -103,6 +105,7 @@ def stop_robot_recording():
         record_service.stop_robot_recording(
             arm_name=data.get("arm_name"),
             gripper_name=data.get("gripper_name"),
+            dataset_format=data.get("dataset_format"),
         )
     )
 
@@ -116,10 +119,11 @@ def stop_robot_recording():
     methods=["GET"],
 )
 def get_robot_recording_status():
-
     return jsonify(
         record_service
-        .get_robot_recording_status()
+        .get_robot_recording_status(
+            dataset_format=request.args.get("dataset_format")
+        )
     )
 
 
@@ -307,6 +311,8 @@ def start_robot_playback():
                 data.get(
                     "move_to_start_acceleration"
                 ),
+
+            dataset_format=data.get("dataset_format"),
         )
     )
 
