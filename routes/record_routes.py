@@ -4,7 +4,7 @@ from flask import (
     request,
 )
 
-from services import recording as record_service
+import recording as record_service
 
 
 record_bp = Blueprint(
@@ -84,6 +84,8 @@ def start_robot_recording():
                     "initial_gripper_position",
                     0,
                 ),
+
+            dataset_mode=data.get("dataset_mode", "multi_task"),
 
             dataset_format=data.get("dataset_format", "lerobot_v3"),
         )

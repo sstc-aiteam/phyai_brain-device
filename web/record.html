@@ -138,29 +138,34 @@
                         </select>
                     </div>
                     <div class="field">
+                        <label for="datasetMode">dataset mode</label>
+                        <select id="datasetMode" name="dataset_mode">
+                            <option value="multi_task">multi-task（同一 arm 共用）</option>
+                            <option value="single_task">single-task（依 task 分資料夾）</option>
+                        </select>
+                    </div>
+                    <div class="field">
                         <label for="armName">arm_name</label>
                         <select id="armName" name="arm_name">
-                            <option value="left">left（UR7e）</option>
-                            <option value="right">right（UR5）</option>
+                            <option value="">正在讀取已連接設備...</option>
                         </select>
                     </div>
                     <div class="field">
                         <label for="gripperName">gripper_name</label>
                         <select id="gripperName" name="gripper_name">
-                            <option value="left">left</option>
-                            <option value="right">right</option>
+                            <option value="">正在讀取已連接設備...</option>
                         </select>
                     </div>
                     <div class="field full">
-                        <label>output_path（依 task 自動決定）</label>
+                        <label>output_path（依 format / arm 自動決定）</label>
                         <div class="status-item">
                             <div class="status-label">資料集根目錄</div>
                             <div id="datasetRoot" class="status-value">~/robot/lerobot_datasets</div>
                             <div class="status-label" style="margin-top: 10px">本次輸出路徑</div>
                             <div id="resolvedOutputPath" class="status-value">輸入 task 後自動配置</div>
                         </div>
-                        <span class="hint">命名規則：task_NNNN_&lt;task-slug&gt;_&lt;arm&gt;。相同 task + arm 會新增
-                            episode，不會建立新資料夾。</span>
+                        <span class="hint">multi-task：同一 format / arm 的所有 task 共用 dataset。single-task：同一 task / arm 共用
+                            dataset，不同 task 分開。每個 episode 都保留 task 標籤。</span>
                     </div>
                     <div class="field">
                         <label for="interval">interval（秒）</label>
@@ -232,7 +237,7 @@
 
         <section class="card">
             <h2>Replay 錄製軌跡</h2>
-            <div class="hint" style="margin-bottom: 14px">Replay 會讓實體手臂先移動到 episode 起點，再依原始 FPS 播放 joints與夾爪。開始前請清空工作區並準備急停。</div>
+            <div class="hint" style="margin-bottom: 14px">Replay 會讓實體手臂先移動到 episode 起點，再依原始 FPS 播放joints與夾爪。開始前請清空工作區並準備急停。</div>
             <div class="form-grid">
                 <div class="field full">
                     <label for="replayDataset">Task / Dataset</label>
@@ -245,15 +250,13 @@
                 <div class="field">
                     <label for="replayArm">Arm</label>
                     <select id="replayArm">
-                        <option value="left">left（UR7e）</option>
-                        <option value="right">right（UR5）</option>
+                        <option value="">正在讀取已連接設備...</option>
                     </select>
                 </div>
                 <div class="field">
                     <label for="replayGripper">Gripper</label>
                     <select id="replayGripper">
-                        <option value="left">left</option>
-                        <option value="right">right</option>
+                        <option value="">正在讀取已連接設備...</option>
                     </select>
                 </div>
                 <div class="field">
@@ -326,12 +329,80 @@
         let previewCameraName = null;
         let taskRegistryData = { tasks: [], dataset_root: "~/robot/lerobot_datasets" };
         let replayDatasets = [];
-
+        let recordingDevices = [];
         function booleanValue(id) { return document.getElementById(id).value === "true"; }
         function responseData(response) { return response?.data ?? {}; }
         function responseSucceeded(response) { return response?.status === "success" && response?.result !== false; }
-        function responseError(response) { return response?.error?.message ?? response?.error ?? response?.message ?? "操作失敗"; }
-
+        function responseError(response) {
+            return response?.error?.message
+                ?? response?.error
+                ?? response?.message
+                ?? (response == null ? "伺服器回傳空內容" : JSON.stringify(response));
+        }
+        function taskSlug(task) {
+            return task.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "task";
+        }
+        function fillGripperSelect(selectId, armName) {
+            const select = document.getElementById(selectId);
+            const previous = select.value;
+            const arm = recordingDevices.find((item) => item.arm_name === armName);
+            select.replaceChildren();
+            for (const gripper of arm?.grippers ?? []) {
+                const option = document.createElement("option");
+                option.value = gripper.gripper_name;
+                option.textContent = `${gripper.gripper_name}（${gripper.driver ?? "unknown"}）`;
+                select.appendChild(option);
+            }
+            if ([...select.options].some((option) => option.value === previous)) select.value = previous;
+            if (!select.options.length) {
+                const option = document.createElement("option");
+                option.value = "";
+                option.textContent = "沒有已連接的 gripper";
+                select.appendChild(option);
+            }
+        }
+        function fillArmSelect(selectId, gripperSelectId) {
+            const select = document.getElementById(selectId);
+            const previous = select.value;
+            select.replaceChildren();
+            for (const arm of recordingDevices) {
+                const option = document.createElement("option");
+                option.value = arm.arm_name;
+                option.textContent = `${arm.arm_name}（${arm.driver}）`;
+                select.appendChild(option);
+            }
+            if ([...select.options].some((option) => option.value === previous)) select.value = previous;
+            if (!select.options.length) {
+                const option = document.createElement("option");
+                option.value = "";
+                option.textContent = "沒有已連接的 arm";
+                select.appendChild(option);
+            }
+            fillGripperSelect(gripperSelectId, select.value);
+        }
+        async function loadRecordingDevices() {
+            const [armResponse, gripperResponse] = await Promise.all([
+                getJson("/api/arm/get_arm_status"),
+                getJson("/api/gripper/get_gripper_status"),
+            ]);
+            for (const response of [armResponse, gripperResponse]) {
+                if (!responseSucceeded(response)) throw new Error(responseError(response));
+            }
+            const grippers = responseData(gripperResponse).grippers ?? [];
+            recordingDevices = (responseData(armResponse).arms ?? []).map((arm) => ({
+                ...arm,
+                grippers: grippers.filter((item) =>
+                    item.gripper_name === arm.arm_name
+                    && item.connected !== false
+                    && !item.error
+                ),
+                cameras: [{ camera_name: arm.arm_name, arm_name: arm.arm_name }],
+            }));
+            fillArmSelect("armName", "gripperName");
+            fillArmSelect("replayArm", "replayGripper");
+            if (!recordingDevices.length) throw new Error("arm_service 沒有回報任何已連接手臂");
+            renderResolvedOutputPath();
+        }
         function showMessage(text, isError = false) {
             message.textContent = text;
             message.className = isError ? "error" : "success";
@@ -340,30 +411,29 @@
         function showResponse(response) {
             apiResponse.textContent = JSON.stringify(response, null, 2);
         }
-
-        function taskSlug(task) {
-            return task.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "task";
-        }
-
         function renderResolvedOutputPath() {
             const task = document.getElementById("task").value.trim();
             const arm = document.getElementById("armName").value;
             const format = document.getElementById("datasetFormat").value;
+            const mode = document.getElementById("datasetMode").value;
+            const datasetRoot = taskRegistryData.dataset_root;
+            document.getElementById("datasetRoot").textContent = datasetRoot;
+            const folder = mode === "multi_task"
+                ? `multitask_${arm}`
+                : `single_task/${taskSlug(task)}_${arm}`;
+            const expectedPath = `${datasetRoot}/${format}/${folder}`;
             const existing = (taskRegistryData.tasks ?? []).find((item) =>
                 String(item.task ?? "").toLowerCase() === task.toLowerCase()
                 && String(item.arm_name ?? "").toLowerCase() === arm
-                && String(item.dataset_path ?? "").includes(`/${format}/`)
+                && String(item.dataset_path ?? "") === expectedPath
             );
             if (existing) {
                 document.getElementById("resolvedOutputPath").textContent = `${existing.dataset_path}（下一個 episode：${existing.episode_count ?? 0}）`;
                 return;
             }
-            const sameTask = (taskRegistryData.tasks ?? []).find((item) => String(item.task ?? "").toLowerCase() === task.toLowerCase());
-            const numbers = (taskRegistryData.tasks ?? []).map((item) => Number(String(item.task_id ?? "").replace("task_", ""))).filter(Number.isFinite);
-            const taskId = sameTask?.task_id ?? `task_${String(Math.max(0, ...numbers) + 1).padStart(4, "0")}`;
-            document.getElementById("resolvedOutputPath").textContent = `${taskRegistryData.dataset_root}/${format}/${taskSlug(task)}_${arm}（新 ${format} task/arm dataset）`;
+            const description = mode === "multi_task" ? "multi-task 共用 dataset" : "single-task dataset";
+            document.getElementById("resolvedOutputPath").textContent = `${expectedPath}（${description}）`;
         }
-
         async function loadTaskRegistry() {
             try {
                 const response = await getJson("/api/record/get_task_registry");
@@ -400,7 +470,7 @@
             const arm = dataset?.compatible_arms?.[0];
             if (arm) {
                 document.getElementById("replayArm").value = arm;
-                document.getElementById("replayGripper").value = arm;
+                fillGripperSelect("replayGripper", arm);
             }
             document.getElementById("playbackPath").textContent = dataset?.dataset_path ?? "—";
             document.getElementById("startReplayButton").disabled = !dataset || !(dataset.episodes ?? []).length || !(dataset.compatible_arms ?? []).length;
@@ -418,9 +488,11 @@
                 episode_details: dataset.episode_details,
             })));
             if (!force && nextSignature === replayCatalogSignature) return false;
-
+            
             const select = document.getElementById("replayDataset");
-            const previousDataset = selectedReplayDataset()?.dataset_path;
+            const previousSelection = selectedReplayDataset();
+            const previousDataset = previousSelection?.dataset_path;
+            const previousTaskId = previousSelection?.task_id;
             const previousEpisode = document.getElementById("replayEpisode").value;
             replayDatasets = nextDatasets;
             replayCatalogSignature = nextSignature;
@@ -429,7 +501,7 @@
                 const option = document.createElement("option");
                 option.value = String(index);
                 const legacy = dataset.legacy ? " [legacy]" : "";
-                option.textContent = `${dataset.task_id ?? "legacy"} — ${dataset.task}${legacy} — ${dataset.total_episodes} episodes — ${dataset.robot_type}`;
+                option.textContent = `${dataset.task_id ?? "legacy"} — ${dataset.task}${legacy} — ${dataset.total_episodes} episodes — ${dataset.robot_type} — ${dataset.dataset_path}`;
                 select.appendChild(option);
             });
             if (!replayDatasets.length) {
@@ -438,7 +510,9 @@
                 option.value = "";
                 select.appendChild(option);
             }
-            const previousIndex = replayDatasets.findIndex((dataset) => dataset.dataset_path === previousDataset);
+            const previousIndex = replayDatasets.findIndex((dataset) =>
+                dataset.dataset_path === previousDataset && dataset.task_id === previousTaskId
+            );
             if (previousIndex >= 0) select.value = String(previousIndex);
             updateReplaySelection();
             const episodeSelect = document.getElementById("replayEpisode");
@@ -505,7 +579,6 @@
                 showPlaybackMessage(`Replay 狀態更新失敗：${error.message}`, true);
             }
         }
-
         function setFormLocked(locked) {
             form.querySelectorAll("select, input").forEach((element) => { element.disabled = locked; });
             startButton.disabled = locked;
@@ -513,7 +586,6 @@
             openGripperButton.disabled = !locked;
             closeGripperButton.disabled = !locked;
         }
-
         function startPreview(cameraName) {
             if (!cameraName || previewCameraName === cameraName) return;
             previewCameraName = cameraName;
@@ -585,6 +657,7 @@
                 record_video: booleanValue("recordVideo"),
                 task,
                 initial_gripper_position: Number(document.getElementById("initialGripperPosition").value),
+                dataset_mode: document.getElementById("datasetMode").value,
                 dataset_format: document.getElementById("datasetFormat").value,
             };
             startButton.disabled = true;
@@ -597,7 +670,8 @@
                 document.getElementById("resolvedOutputPath").textContent = startedData.absolute_path ?? startedData.output_path;
                 const cameraName = (startedData.camera_names ?? [])[0];
                 if (startedData.record_video && cameraName) startPreview(cameraName);
-                showMessage("錄製已開始。請完成示範後按「停止並儲存」。");
+                const startupSeconds = Number(startedData.startup_seconds ?? 0).toFixed(1);
+                showMessage(`錄製已開始（啟動 ${startupSeconds} 秒）。請完成示範後按「停止並儲存」。`);
                 await refreshStatus();
             } catch (error) {
                 showMessage(`開始失敗：${error.message}`, true);
@@ -607,6 +681,7 @@
 
         stopButton.addEventListener("click", async () => {
             stopButton.disabled = true;
+            stopPreview("錄製已停止；正在寫入 dataset…");
             showMessage("正在停止並寫入 LeRobot episode…");
             try {
                 const response = await postJson("/api/record/stop_robot_recording", {
@@ -617,7 +692,9 @@
                 showResponse(response);
                 if (!responseSucceeded(response)) throw new Error(responseError(response));
                 stopPreview("錄製已停止；相機預覽已關閉。")
-                showMessage(`錄製已儲存：${responseData(response).output_path ?? "完成"}`);
+                const stoppedData = responseData(response);
+                const stopSeconds = Number(stoppedData.stop_timings?.total_seconds ?? 0).toFixed(1);
+                showMessage(`錄製已儲存（停止與寫入 ${stopSeconds} 秒）：${stoppedData.output_path ?? "完成"}`);
                 await loadTaskRegistry();
                 await loadReplayCatalog(true);
                 await refreshStatus();
@@ -641,14 +718,15 @@
         }
 
         document.getElementById("armName").addEventListener("change", (event) => {
-            document.getElementById("gripperName").value = event.target.value;
+            fillGripperSelect("gripperName", event.target.value);
             renderResolvedOutputPath();
         });
         document.getElementById("task").addEventListener("input", renderResolvedOutputPath);
         document.getElementById("datasetFormat").addEventListener("change", renderResolvedOutputPath);
+        document.getElementById("datasetMode").addEventListener("change", renderResolvedOutputPath);
         document.getElementById("replayDataset").addEventListener("change", updateReplaySelection);
         document.getElementById("replayArm").addEventListener("change", (event) => {
-            document.getElementById("replayGripper").value = event.target.value;
+            fillGripperSelect("replayGripper", event.target.value);
         });
         document.getElementById("startReplayButton").addEventListener("click", async () => {
             const dataset = selectedReplayDataset();
@@ -708,6 +786,7 @@
             if (replayCatalogTimer !== null) window.clearInterval(replayCatalogTimer);
             stopPreview();
         });
+        try { await loadRecordingDevices(); } catch (error) { showMessage(`设备读取失败：${error.message}`, true); }
         await loadTaskRegistry();
         try { await loadReplayCatalog(true); } catch (error) { showPlaybackMessage(`資料集載入失敗：${error.message}`, true); }
         replayCatalogTimer = window.setInterval(autoRefreshReplayCatalog, 3000);

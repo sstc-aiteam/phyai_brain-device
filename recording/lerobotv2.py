@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import cv2
 import numpy as np
 
-from services.recording import lerobotv3 as _v3
+from recording import core as _core
 from utils.response import error
 
 
@@ -27,14 +27,14 @@ ACTION_NAMES = [
     "delta_rx", "delta_ry", "delta_rz", "gripper",
 ]
 LANGUAGE_COLUMN = "annotation.language.language_instruction"
-DEFAULT_DATASET_DIR = os.path.join(_v3.DEFAULT_DATASET_DIR, "lerobot_v2")
+DEFAULT_DATASET_DIR = os.path.abspath(os.environ.get(
+    "LEROBOT_DATASET_ROOT",
+    _core.DEFAULT_DATASET_DIR,
+))
+SCHEMA_DIR = os.path.join(DEFAULT_DATASET_DIR, "schema")
+SCHEMA_PATH = os.path.join(SCHEMA_DIR, "modality.json")
 
 _adapter_lock = threading.RLock()
-_patch_active = False
-_original_open_dataset = None
-_original_frame_mapper = None
-_playback_patch_active = False
-_original_episode_loader = None
 
 
 def modality_config(camera_name, robot_type=None):
@@ -71,7 +71,7 @@ def modality_config(camera_name, robot_type=None):
             },
         },
         "video": {
-            "wrist_image": {
+            "left_image": {
                 "original_key": f"observation.images.{camera_name}",
             },
         },
@@ -94,7 +94,7 @@ def sample_to_lerobot_v2_row(
     state = np.asarray(
         sample["tcp_pose"] + [sample["gripper"]], dtype=np.float32
     )
-    delta = _v3._tcp_local_delta(sample["tcp_pose"], next_sample["tcp_pose"])
+    delta = _core._tcp_local_delta(sample["tcp_pose"], next_sample["tcp_pose"])
     action = np.concatenate([
         delta,
         np.asarray([next_sample["gripper"]], dtype=np.float32),
@@ -140,16 +140,122 @@ def _json_write(path, payload):
     os.replace(temporary, path)
 
 
+def _directory_has_files(path):
+    return os.path.isdir(path) and any(
+        filenames for _, _, filenames in os.walk(path)
+    )
+
+
+def _is_recoverable_incomplete_dataset(root, camera_name, expected_schema):
+    """Recognize files left when recording stopped before its first save.
+
+    ``info.json`` is intentionally written only after ``save_episode``.  A
+    process interruption before that point can therefore leave the task,
+    modality and episode-0 video behind.  Those files are safe to reuse: the
+    next episode-0 video writer truncates the orphan video and the task list is
+    append-only.  Anything else remains an error so an unrelated directory is
+    never silently adopted as a dataset.
+    """
+    if not os.path.isdir(root):
+        return False
+    allowed_files = {
+        os.path.join("meta", "tasks.jsonl"),
+        os.path.join("meta", "modality.json"),
+        os.path.join(
+            "videos", "chunk-000", f"observation.images.{camera_name}",
+            "episode_000000.mp4",
+        ),
+    }
+    found_files = set()
+    for directory, _, filenames in os.walk(root):
+        for filename in filenames:
+            found_files.add(os.path.relpath(os.path.join(directory, filename), root))
+    if not found_files or not found_files.issubset(allowed_files):
+        return False
+
+    modality_path = os.path.join(root, "meta", "modality.json")
+    if os.path.isfile(modality_path):
+        try:
+            with open(modality_path, "r", encoding="utf-8") as source:
+                if json.load(source) != expected_schema:
+                    return False
+        except (OSError, ValueError, TypeError):
+            return False
+    tasks_path = os.path.join(root, "meta", "tasks.jsonl")
+    if os.path.isfile(tasks_path):
+        try:
+            tasks = _jsonl_read(tasks_path)
+            if any(
+                not isinstance(row, dict)
+                or not isinstance(row.get("task"), str)
+                or not isinstance(row.get("task_index"), int)
+                for row in tasks
+            ):
+                return False
+        except (OSError, ValueError, TypeError):
+            return False
+    return True
+
+
+def _ensure_shared_schema(camera_name, robot_type):
+    """Create the canonical schema once and reject incompatible recordings."""
+    expected = modality_config(camera_name, robot_type)
+    schema_path = os.path.join(SCHEMA_DIR, robot_type, "modality.json")
+    if os.path.isfile(schema_path):
+        with open(schema_path, "r", encoding="utf-8") as source:
+            existing = json.load(source)
+        if existing != expected:
+            raise ValueError(
+                f"相機或 modality 與 {robot_type} 共用 schema 不一致: {schema_path}"
+            )
+    else:
+        _json_write(schema_path, expected)
+    return expected
+
+
+def _resolve_dataset_path(task, arm_name, robot_type, dataset_mode="multi_task"):
+    """Return one stable v2 dataset according to mode, task, and arm."""
+    robot_type = str(robot_type).strip().lower()
+    if robot_type not in SUPPORTED_ROBOT_TYPES:
+        raise ValueError("robot_type 必須是 " + " 或 ".join(sorted(SUPPORTED_ROBOT_TYPES)))
+    normalized_arm = str(arm_name).strip().lower()
+    mode = _core._normalize_dataset_mode(dataset_mode)
+    if mode == "multi_task":
+        folder = f"multitask_{normalized_arm}"
+    else:
+        folder = os.path.join(
+            "single_task", f"{_core._task_slug(str(task))}_{normalized_arm}"
+        )
+    return os.path.join(DEFAULT_DATASET_DIR, "lerobot_v2", folder)
+
+
+def _resolve_multitask_path(task, robot_type, arm_name=None):
+    """Backward-compatible helper for callers expecting multi-task mode."""
+    arm_name = arm_name or ("left" if robot_type == "ur7e" else "right")
+    return _resolve_dataset_path(task, arm_name, robot_type, "multi_task")
+
+
 class LeRobotV2DatasetWriter:
     """Small append-only LeRobot v2 writer matching the API used by v3 recorder."""
 
     def __init__(self, root, fps, camera_frames, robot_type):
         self.root = os.path.abspath(root)
         self.fps = int(fps)
+        if self.fps != 10:
+            raise ValueError("GR00T multi-task dataset 的錄製頻率固定為 10 Hz")
         self.camera_frames = camera_frames
         self.robot_type = robot_type
+        if robot_type not in SUPPORTED_ROBOT_TYPES:
+            raise ValueError("此 multi-task dataset 僅接受 UR5 或 UR7e 錄製資料")
+        if len(camera_frames) != 1:
+            raise ValueError("GR00T multi-task schema 必須且只能包含一台相機")
+        camera_name = next(iter(camera_frames))
+        image = camera_frames[camera_name]
+        if image.shape[:2] != (480, 640):
+            raise ValueError("GR00T multi-task dataset 的影像解析度固定為 640x480")
+        schema = _ensure_shared_schema(camera_name, robot_type)
         self.info_path = os.path.join(self.root, "meta", "info.json")
-        existing = _v3._read_dataset_info(self.root)
+        existing = _core._read_dataset_info(self.root)
         if existing:
             if existing.get("codebase_version") not in {"v2.0", "v2.1"}:
                 raise ValueError("output_path 已包含非 LeRobot v2 資料")
@@ -159,15 +265,27 @@ class LeRobotV2DatasetWriter:
                 raise ValueError("同一資料集不可混用 UR5 與 UR7e")
             self.info = existing
         else:
-            if os.path.exists(self.root) and os.listdir(self.root):
+            if _directory_has_files(self.root) and not _is_recoverable_incomplete_dataset(
+                self.root, camera_name, schema
+            ):
                 raise ValueError("output_path 已存在且不是 LeRobot v2 資料集")
             self.info = self._new_info()
+        os.makedirs(os.path.join(self.root, "meta"), exist_ok=True)
+        os.makedirs(os.path.join(self.root, "data", "chunk-000"), exist_ok=True)
+        os.makedirs(
+            os.path.join(
+                self.root, "videos", "chunk-000",
+                f"observation.images.{camera_name}",
+            ),
+            exist_ok=True,
+        )
+        _json_write(os.path.join(self.root, "meta", "modality.json"), schema)
         self.info.setdefault("features", {}).setdefault(
             "observation.joints",
             {
                 "dtype": "float32",
                 "shape": [6],
-                "names": list(_v3.DEFAULT_ARM_JOINT_NAMES),
+                "names": list(_core.DEFAULT_ARM_JOINT_NAMES),
             },
         )
         self.meta = SimpleNamespace(total_episodes=int(self.info.get("total_episodes", 0)))
@@ -180,7 +298,7 @@ class LeRobotV2DatasetWriter:
             "observation.state": {"dtype": "float32", "shape": [7], "names": STATE_NAMES},
             "observation.joints": {
                 "dtype": "float32", "shape": [6],
-                "names": list(_v3.DEFAULT_ARM_JOINT_NAMES),
+                "names": list(_core.DEFAULT_ARM_JOINT_NAMES),
             },
             "action": {"dtype": "float32", "shape": [7], "names": ACTION_NAMES},
             "timestamp": {"dtype": "float32", "shape": [1], "names": None},
@@ -217,9 +335,12 @@ class LeRobotV2DatasetWriter:
         path = os.path.join(self.root, "meta", "tasks.jsonl")
         tasks = _jsonl_read(path)
         for row in tasks:
-            if row.get("task") == task:
+            if str(row.get("task", "")).casefold() == str(task).casefold():
                 return int(row["task_index"])
-        task_index = max([int(row["task_index"]) for row in tasks], default=-1) + 1
+        task_index = max(
+            (int(row.get("task_index", -1)) for row in tasks),
+            default=-1,
+        ) + 1
         tasks.append({"task_index": task_index, "task": task})
         _jsonl_write(path, tasks)
         return task_index
@@ -321,9 +442,10 @@ class LeRobotV2DatasetWriter:
         self.info["total_tasks"] = len(_jsonl_read(os.path.join(self.root, "meta", "tasks.jsonl")))
         self.info["total_videos"] = self.info["total_episodes"] * len(self.camera_frames)
         _json_write(self.info_path, self.info)
-        camera_name = next(iter(self.camera_frames), None)
-        if camera_name:
-            _json_write(os.path.join(self.root, "meta", "modality.json"), modality_config(camera_name, self.robot_type))
+        _json_write(
+            os.path.join(self.root, "meta", "modality.json"),
+            modality_config(next(iter(self.camera_frames)), self.robot_type),
+        )
         self.meta.total_episodes += 1
         self.rows = []
 
@@ -348,25 +470,6 @@ def _v2_frame(sample, next_sample, task, done=False):
     }
 
 
-def _activate_adapter():
-    global _patch_active, _original_open_dataset, _original_frame_mapper
-    if _patch_active:
-        raise RuntimeError("LeRobot v2 adapter already active")
-    _original_open_dataset = _v3._open_lerobot_dataset
-    _original_frame_mapper = _v3._sample_to_lerobot_frame
-    _v3._open_lerobot_dataset = _open_v2_dataset
-    _v3._sample_to_lerobot_frame = _v2_frame
-    _patch_active = True
-
-
-def _deactivate_adapter():
-    global _patch_active
-    if _patch_active:
-        _v3._open_lerobot_dataset = _original_open_dataset
-        _v3._sample_to_lerobot_frame = _original_frame_mapper
-        _patch_active = False
-
-
 def _rewrite_response(response):
     response["module"] = MODULE
     data = response.get("data")
@@ -379,43 +482,57 @@ def _rewrite_response(response):
 
 def start_robot_recording(*args, **kwargs):
     with _adapter_lock:
-        arm_name = kwargs.get("arm_name") or (args[0] if args else None)
-        task = kwargs.get("task", "robot demonstration")
-        if not kwargs.get("record_video", False):
+        try:
+            task = kwargs.get("task", "robot demonstration")
+            if not kwargs.get("record_video", False):
+                return error(
+                    MODULE,
+                    "start_robot_recording",
+                    message="GR00T N1.5 v2 dataset 必須設定 record_video=true",
+                    error_type="ValueError",
+                )
+            requested = kwargs.get("output_path")
+            if requested is None:
+                arm_name = kwargs.get("arm_name") or (args[0] if args else None)
+                arm_info = _core._recording_arm_info(arm_name)
+                robot_type = arm_info.get("driver")
+                kwargs["output_path"] = _resolve_dataset_path(
+                    task,
+                    arm_name,
+                    robot_type,
+                    kwargs.get("dataset_mode", "multi_task"),
+                )
+            response = _core.start_robot_recording(
+                *args,
+                **kwargs,
+                _dataset_opener=_open_v2_dataset,
+                _frame_mapper=_v2_frame,
+                _arm_info=arm_info if requested is None else None,
+            )
+            return _rewrite_response(response)
+        except Exception as exc:
             return error(
                 MODULE,
                 "start_robot_recording",
-                message="GR00T N1.5 v2 dataset 必須設定 record_video=true",
-                error_type="ValueError",
+                error=exc,
+                error_type=type(exc).__name__,
             )
-        requested = kwargs.get("output_path")
-        if requested is None:
-            slug = _v3._task_slug(str(task))
-            kwargs["output_path"] = os.path.join(DEFAULT_DATASET_DIR, f"{slug}_{arm_name}")
-        _activate_adapter()
-        response = _v3.start_robot_recording(*args, **kwargs)
-        if response.get("status") != "success":
-            _deactivate_adapter()
-        return _rewrite_response(response)
 
 
 def stop_robot_recording(*args, **kwargs):
     with _adapter_lock:
-        try:
-            return _rewrite_response(_v3.stop_robot_recording(*args, **kwargs))
-        finally:
-            _deactivate_adapter()
+        return _rewrite_response(_core.stop_robot_recording(*args, **kwargs))
 
 
 def get_robot_recording_status():
-    return _rewrite_response(_v3.get_robot_recording_status())
+    return _rewrite_response(_core.get_robot_recording_status())
 
 
 def _load_lerobot_v2_episode(input_path, episode_index=0):
     """Load the joint trajectory directly from a LeRobot v2 parquet episode."""
     import pyarrow.parquet as pq
 
-    dataset_path = _v3._normalize_input_path(input_path)
+    dataset_path = _core._normalize_input_path(input_path)
     try:
         episode_index = int(episode_index)
     except (TypeError, ValueError) as exc:
@@ -423,7 +540,7 @@ def _load_lerobot_v2_episode(input_path, episode_index=0):
     if episode_index < 0:
         raise ValueError("episode_index 不可小於 0")
 
-    info = _v3._read_dataset_info(dataset_path) or {}
+    info = _core._read_dataset_info(dataset_path) or {}
     if info.get("codebase_version") not in {"v2.0", "v2.1"}:
         raise ValueError("選取的資料集不是 LeRobot v2")
     fps = int(info.get("fps", 0))
@@ -472,49 +589,27 @@ def _load_lerobot_v2_episode(input_path, episode_index=0):
     return dataset_path, 1.0 / fps, joint_trajectory, gripper_events
 
 
-def _activate_playback_adapter():
-    global _playback_patch_active, _original_episode_loader
-    if not _playback_patch_active:
-        _original_episode_loader = _v3._load_lerobot_episode
-        _v3._load_lerobot_episode = _load_lerobot_v2_episode
-        _playback_patch_active = True
-
-
-def _deactivate_playback_adapter():
-    global _playback_patch_active
-    if _playback_patch_active:
-        _v3._load_lerobot_episode = _original_episode_loader
-        _playback_patch_active = False
-
-
 def start_robot_playback(*args, **kwargs):
     with _adapter_lock:
-        _activate_playback_adapter()
-        response = _v3.start_robot_playback(*args, **kwargs)
-        if response.get("status") != "success":
-            _deactivate_playback_adapter()
+        response = _core.start_robot_playback(
+            *args, **kwargs, _episode_loader=_load_lerobot_v2_episode
+        )
         return _rewrite_response(response)
 
 
 def stop_robot_playback(*args, **kwargs):
     with _adapter_lock:
-        try:
-            return _rewrite_response(_v3.stop_robot_playback(*args, **kwargs))
-        finally:
-            _deactivate_playback_adapter()
+        return _rewrite_response(_core.stop_robot_playback(*args, **kwargs))
 
 
 def get_robot_playback_status():
     with _adapter_lock:
-        response = _rewrite_response(_v3.get_robot_playback_status())
-        if not (response.get("data") or {}).get("playing", False):
-            _deactivate_playback_adapter()
-        return response
+        return _rewrite_response(_core.get_robot_playback_status())
 
 
 # These operations do not define the recording serialization format.
-get_task_registry = _v3.get_task_registry
-get_replay_catalog = _v3.get_replay_catalog
-move_recording_gripper = _v3.move_recording_gripper
-open_recording_gripper = _v3.open_recording_gripper
-close_recording_gripper = _v3.close_recording_gripper
+get_task_registry = _core.get_task_registry
+get_replay_catalog = _core.get_replay_catalog
+move_recording_gripper = _core.move_recording_gripper
+open_recording_gripper = _core.open_recording_gripper
+close_recording_gripper = _core.close_recording_gripper
