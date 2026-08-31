@@ -1,6 +1,11 @@
 import cv2
 import math
 import numpy as np
+import os
+import pickle
+import struct
+import subprocess
+import threading
 from ultralytics import YOLO
 
 
@@ -220,6 +225,7 @@ class YoloDetector:
         )
 
         return annotated_frame, detections
+
 
     def _parse_result(self, frame, result, draw=True):
         detections = []
@@ -787,6 +793,88 @@ class YoloDetector:
         )
 
 
+class CudaYoloDetector:
+    """Run YOLO in the Jetson Python 3.10 CUDA environment."""
+
+    def __init__(self, model_path, imgsz=None, conf=None, device=None):
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+        python_path = os.path.join(project_root, "venv_cuda", "bin", "python")
+        worker_path = os.path.join(os.path.dirname(__file__), "yolo_cuda_worker.py")
+        if not os.path.isfile(python_path):
+            raise RuntimeError(f"找不到 CUDA YOLO Python: {python_path}")
+        self._lock = threading.Lock()
+        self._process = subprocess.Popen(
+            [
+                python_path,
+                worker_path,
+                "--model-path", str(model_path),
+                "--imgsz", str(imgsz or DEFAULT_IMGSZ),
+                "--conf", str(conf if conf is not None else DEFAULT_CONF),
+                "--device", str(device or "cuda:0"),
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+        )
+        ready = self._receive()
+        if not ready.get("ok"):
+            self.close()
+            raise RuntimeError(ready.get("error", "CUDA YOLO worker 啟動失敗"))
+
+    @staticmethod
+    def _read_exact(stream, size):
+        chunks = []
+        remaining = size
+        while remaining:
+            chunk = stream.read(remaining)
+            if not chunk:
+                raise RuntimeError("CUDA YOLO worker 已停止")
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        return b"".join(chunks)
+
+    def _receive(self):
+        header = self._read_exact(self._process.stdout, 8)
+        size = struct.unpack("!Q", header)[0]
+        return pickle.loads(self._read_exact(self._process.stdout, size))
+
+    def predict(self, color_image, draw=True):
+        if color_image is None:
+            return None, []
+        request = pickle.dumps(
+            {"image": color_image, "draw": bool(draw)},
+            protocol=pickle.HIGHEST_PROTOCOL,
+        )
+        with self._lock:
+            if self._process.poll() is not None:
+                raise RuntimeError("CUDA YOLO worker 未執行")
+            self._process.stdin.write(struct.pack("!Q", len(request)))
+            self._process.stdin.write(request)
+            self._process.stdin.flush()
+            response = self._receive()
+        if not response.get("ok"):
+            raise RuntimeError(response.get("error", "CUDA YOLO inference 失敗"))
+        return response["annotated_frame"], response["detections"]
+
+    def close(self):
+        process = getattr(self, "_process", None)
+        if process is None:
+            return
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=3)
+        self._process = None
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
+
+
 # ============================================================
 # Factory
 # ============================================================
@@ -805,7 +893,12 @@ def create_detector(
     傳入此函式。
     """
 
-    return YoloDetector(
+    detector_class = (
+        CudaYoloDetector
+        if str(device or "").strip().lower().startswith("cuda")
+        else YoloDetector
+    )
+    return detector_class(
         model_path=model_path,
         imgsz=imgsz,
         conf=conf,

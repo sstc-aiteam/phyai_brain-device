@@ -13,7 +13,7 @@ from services import arm_service, camera_service, gripper_service
 from utils.response import success, error
 
 
-MODULE = "record"
+MODULE = "record_lerobotv3"
 logger = logging.getLogger(__name__)
 
 
@@ -57,6 +57,12 @@ LEROBOT_TCP_ACTION_NAMES = [
     "gripper",
 ]
 
+LEROBOT_TCP_BASE_ACTION_NAMES = [
+    "tcp_base_delta_x", "tcp_base_delta_y", "tcp_base_delta_z",
+    "tcp_base_delta_rx", "tcp_base_delta_ry", "tcp_base_delta_rz",
+    "gripper",
+]
+
 LEROBOT_JOINT_ACTION_NAMES = [
     "shoulder_pan",
     "shoulder_lift",
@@ -69,6 +75,7 @@ LEROBOT_JOINT_ACTION_NAMES = [
 
 LEROBOT_ACTION_SPACES = {
     "action_tcp": "tcp_local_delta",
+    "action_tcp_base": "tcp_base_delta",
     "action_joints": "joint_absolute",
 }
 
@@ -368,6 +375,12 @@ def get_replay_catalog():
                 "robot_type": robot_type,
                 "compatible_arms": compatible_arms,
                 "fps": info.get("fps"),
+                "codebase_version": info.get("codebase_version"),
+                "format": (
+                    "lerobot_v2"
+                    if info.get("codebase_version") in {"v2.0", "v2.1"}
+                    else "lerobot_v3"
+                ),
                 "total_episodes": total_episodes,
                 "total_frames": info.get("total_frames"),
                 "episodes": list(range(total_episodes)),
@@ -506,6 +519,11 @@ def _lerobot_features(camera_frames):
             "shape": (7,),
             "names": LEROBOT_TCP_ACTION_NAMES,
         },
+        "action_tcp_base": {
+            "dtype": "float32",
+            "shape": (7,),
+            "names": LEROBOT_TCP_BASE_ACTION_NAMES,
+        },
         "action_joints": {
             "dtype": "float32",
             "shape": (7,),
@@ -565,9 +583,13 @@ def _open_lerobot_dataset(dataset_path, fps, camera_frames, robot_type):
             )
         existing_features = info.get("features", {})
         existing_tcp_action_names = existing_features.get("action_tcp", {}).get("names")
+        existing_tcp_base_action_names = existing_features.get(
+            "action_tcp_base", {}
+        ).get("names")
         existing_joint_action_names = existing_features.get("action_joints", {}).get("names")
         if (
             existing_tcp_action_names != LEROBOT_TCP_ACTION_NAMES
+            or existing_tcp_base_action_names != LEROBOT_TCP_BASE_ACTION_NAMES
             or existing_joint_action_names != LEROBOT_JOINT_ACTION_NAMES
         ):
             raise ValueError(
@@ -618,12 +640,35 @@ def _tcp_local_delta(current_pose, next_pose):
     ]).astype(np.float32)
 
 
+def _tcp_base_delta(current_pose, next_pose):
+    import cv2
+
+    current = np.asarray(current_pose, dtype=np.float64)
+    following = np.asarray(next_pose, dtype=np.float64)
+    current_rotation, _ = cv2.Rodrigues(current[3:6])
+    next_rotation, _ = cv2.Rodrigues(following[3:6])
+
+    # Express both translation and rotation in the robot base frame.
+    base_translation = following[:3] - current[:3]
+    relative_rotation = next_rotation @ current_rotation.T
+    rotation_delta, _ = cv2.Rodrigues(relative_rotation)
+    return np.concatenate([
+        base_translation,
+        rotation_delta.reshape(3),
+    ]).astype(np.float32)
+
+
 def _sample_to_lerobot_frame(sample, next_sample, task, done=False):
     state = np.asarray(sample["joints"] + [sample["gripper"]], dtype=np.float32)
     tcp_pose = np.asarray(sample["tcp_pose"] + [sample["gripper"]], dtype=np.float32)
     delta = _tcp_local_delta(sample["tcp_pose"], next_sample["tcp_pose"])
     action_tcp = np.concatenate([
         delta,
+        np.asarray([next_sample["gripper"]], dtype=np.float32),
+    ])
+    base_delta = _tcp_base_delta(sample["tcp_pose"], next_sample["tcp_pose"])
+    action_tcp_base = np.concatenate([
+        base_delta,
         np.asarray([next_sample["gripper"]], dtype=np.float32),
     ])
     action_joints = np.asarray(
@@ -634,6 +679,7 @@ def _sample_to_lerobot_frame(sample, next_sample, task, done=False):
         "observation.state": state,
         "observation.tcp_pose": tcp_pose,
         "action_tcp": action_tcp,
+        "action_tcp_base": action_tcp_base,
         "action_joints": action_joints,
         "next.done": np.atleast_1d(np.bool_(done)),
         "task": task,
