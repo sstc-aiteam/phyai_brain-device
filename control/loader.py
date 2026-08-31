@@ -79,9 +79,9 @@ CAMERA_DRIVERS = {
         "class": "D405Driver",
     },
 
-    "usb_camera": {
-        "module": "control.usb_camera",
-        "class": "USBCameraDriver",
+    "logitech": {
+        "module": "control.logitech",
+        "class": "LogitechDriver",
     },
 }
 
