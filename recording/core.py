@@ -4,11 +4,11 @@ import os
 import re
 import threading
 import time
+from glob import glob
 from datetime import datetime, timezone
 
 import numpy as np
 
-import config
 from services import arm_service, camera_service, gripper_service
 from utils.response import success, error
 
@@ -107,6 +107,7 @@ _record_freedrive = False
 _record_camera_names = []
 _record_task = None
 _record_task_id = None
+_record_frame_mapper = None
 
 _task_registry_lock = threading.RLock()
 
@@ -129,10 +130,31 @@ _playback_phase = "idle"
 _playback_error = None
 _playback_completed = False
 
+# Robotiq e-Series commands are complete URScript programs injected through
+# port 30002.  The TCP send returns before the controller has necessarily
+# started and finished that program, so immediately re-uploading RTDE can race
+# with a delayed Robotiq program and leave ServoJ without its control script.
+ROBOTIQ_ESERIES_SCRIPT_TIMEOUT_SECONDS = 5.0
+
 
 # ============================================================
 # Common Helpers
 # ============================================================
+
+def _settle_robotiq_eseries_script(arm_name):
+    """Synchronize with the actual port-30002 program, without fixed delay."""
+    response = arm_service.wait_for_external_script_completion(
+        arm_name=arm_name,
+        timeout=ROBOTIQ_ESERIES_SCRIPT_TIMEOUT_SECONDS,
+        cancel_event=_playback_stop_event,
+    )
+    if _playback_stop_event.is_set():
+        return False
+    _require_success(
+        response,
+        "arm_service.wait_for_external_script_completion",
+    )
+    return True
 
 def _project_root():
     return os.path.abspath(
@@ -180,9 +202,12 @@ def _utc_now():
 
 def _empty_task_registry():
     return {
-        "version": 1,
+        "version": 2,
         "dataset_root": DEFAULT_DATASET_DIR,
-        "naming_rule": "task_NNNN_<task-slug>_<arm-name>",
+        "naming_rule": {
+            "multi_task": "lerobot_vN/multitask_<arm-name>",
+            "single_task": "lerobot_vN/single_task/<task-slug>_<arm-name>",
+        },
         "episode_label_rule": "episode_NNNNNN_<arm-name>_YYYYMMDD_HHMMSS",
         "tasks": [],
     }
@@ -195,9 +220,12 @@ def _load_task_registry():
         registry = json.load(source)
     if not isinstance(registry, dict) or not isinstance(registry.get("tasks"), list):
         raise ValueError(f"Invalid task registry: {TASK_REGISTRY_PATH}")
-    registry.setdefault("version", 1)
+    registry["version"] = max(2, int(registry.get("version", 1)))
     registry["dataset_root"] = DEFAULT_DATASET_DIR
-    registry["naming_rule"] = "task_NNNN_<task-slug>_<arm-name>"
+    registry["naming_rule"] = {
+        "multi_task": "lerobot_vN/multitask_<arm-name>",
+        "single_task": "lerobot_vN/single_task/<task-slug>_<arm-name>",
+    }
     registry["episode_label_rule"] = "episode_NNNNNN_<arm-name>_YYYYMMDD_HHMMSS"
     return registry
 
@@ -216,13 +244,39 @@ def _task_slug(task):
     return slug[:48] or "task"
 
 
-def _resolve_task_dataset(task, arm_name, output_path=None):
+def _multitask_dataset_path(arm_name):
+    normalized_arm = str(arm_name).strip().lower()
+    if not normalized_arm:
+        raise ValueError("arm_name 不可為空")
+    return os.path.join(
+        DEFAULT_DATASET_DIR, "lerobot_v3", f"multitask_{normalized_arm}"
+    )
+
+
+def _normalize_dataset_mode(dataset_mode):
+    normalized = str(dataset_mode or "multi_task").strip().lower().replace("-", "_")
+    if normalized not in {"multi_task", "single_task"}:
+        raise ValueError("dataset_mode 必須是 multi_task 或 single_task")
+    return normalized
+
+
+def _recording_dataset_path(task, arm_name, dataset_mode="multi_task"):
+    normalized_arm = str(arm_name).strip().lower()
+    mode = _normalize_dataset_mode(dataset_mode)
+    if mode == "multi_task":
+        folder = f"multitask_{normalized_arm}"
+    else:
+        folder = os.path.join("single_task", f"{_task_slug(str(task))}_{normalized_arm}")
+    return os.path.join(DEFAULT_DATASET_DIR, "lerobot_v3", folder)
+
+
+def _resolve_task_dataset(task, arm_name, output_path=None, dataset_mode="multi_task"):
     normalized_task = " ".join(task.split())
     normalized_arm = str(arm_name).strip().lower()
     requested_path = (
         _normalize_output_path(output_path)
         if output_path is not None
-        else None
+        else _recording_dataset_path(normalized_task, normalized_arm, dataset_mode)
     )
     with _task_registry_lock:
         registry = _load_task_registry()
@@ -232,8 +286,7 @@ def _resolve_task_dataset(task, arm_name, output_path=None):
                 if str(item.get("task", "")).casefold() == normalized_task.casefold()
                 and str(item.get("arm_name", "")).lower() == normalized_arm
                 and (
-                    requested_path is None
-                    or os.path.abspath(item.get("dataset_path", ""))
+                    os.path.abspath(item.get("dataset_path", ""))
                     == os.path.abspath(requested_path)
                 )
             ),
@@ -256,11 +309,8 @@ def _resolve_task_dataset(task, arm_name, output_path=None):
                 if same_task_ids
                 else f"task_{max(used_numbers, default=0) + 1:04d}"
             )
-            folder_name = f"{task_id}_{_task_slug(normalized_task)}_{normalized_arm}"
-            dataset_path = os.path.join(DEFAULT_DATASET_DIR, folder_name)
-            if requested_path is not None:
-                folder_name = os.path.basename(os.path.normpath(requested_path))
-                dataset_path = requested_path
+            folder_name = os.path.relpath(requested_path, DEFAULT_DATASET_DIR)
+            dataset_path = requested_path
             now = _utc_now()
             entry = {
                 "task_id": task_id,
@@ -268,6 +318,7 @@ def _resolve_task_dataset(task, arm_name, output_path=None):
                 "arm_name": normalized_arm,
                 "dataset_folder": folder_name,
                 "dataset_path": dataset_path,
+                "dataset_mode": _normalize_dataset_mode(dataset_mode),
                 "episode_count": 0,
                 "episodes": [],
                 "created_at": now,
@@ -303,7 +354,6 @@ def _update_task_episode_count(task_id, arm_name, episode_count, episode_index=N
                 entry.get("task_id") == task_id
                 and entry.get("arm_name") == arm_name
             ):
-                entry["episode_count"] = int(episode_count)
                 recorded_at = datetime.now().astimezone().isoformat()
                 entry["updated_at"] = recorded_at
                 episodes = entry.setdefault("episodes", [])
@@ -316,9 +366,16 @@ def _update_task_episode_count(task_id, arm_name, episode_count, episode_index=N
                         "arm_name": arm_name,
                         "recorded_at": recorded_at,
                         "label": _episode_label(episode_index, arm_name, recorded_at),
+                        "task": entry.get("task"),
                     })
+                entry["episode_count"] = len(episodes)
                 _save_task_registry(registry)
-                _write_episode_labels(entry["dataset_path"], episodes)
+                dataset_episodes = []
+                for task_entry in registry["tasks"]:
+                    if os.path.abspath(task_entry.get("dataset_path", "")) == os.path.abspath(entry["dataset_path"]):
+                        dataset_episodes.extend(task_entry.get("episodes", []))
+                dataset_episodes.sort(key=lambda item: int(item.get("episode_index", -1)))
+                _write_episode_labels(entry["dataset_path"], dataset_episodes)
                 return dict(entry)
     raise ValueError(f"Unknown task dataset: task_id={task_id}, arm_name={arm_name}")
 
@@ -328,6 +385,8 @@ def get_task_registry():
     try:
         with _task_registry_lock:
             registry = _load_task_registry()
+            if _reconcile_v3_task_registry(registry):
+                _save_task_registry(registry)
         return success(
             MODULE,
             action,
@@ -347,6 +406,8 @@ def get_replay_catalog():
     try:
         with _task_registry_lock:
             registry = _load_task_registry()
+            if _reconcile_v3_task_registry(registry):
+                _save_task_registry(registry)
         registered = [
             {**entry, "legacy": False}
             for entry in registry.get("tasks", [])
@@ -354,36 +415,96 @@ def get_replay_catalog():
             {**entry, "legacy": True}
             for entry in registry.get("legacy_datasets", [])
         ]
-        datasets = []
+        filesystem_datasets = _filesystem_dataset_paths()
+        live_arms = _recording_arm_inventory()
+        path_entry_counts = {}
         for entry in registered:
-            dataset_path = entry.get("dataset_path")
+            path = os.path.abspath(str(entry.get("dataset_path", "")))
+            if path:
+                path_entry_counts[path] = path_entry_counts.get(path, 0) + 1
+        datasets = []
+        catalog_keys = set()
+        for entry in registered:
+            registered_path = entry.get("dataset_path")
+            canonical_path = (
+                os.path.realpath(registered_path)
+                if isinstance(registered_path, str) and registered_path
+                else None
+            )
+            dataset_path = filesystem_datasets.get(canonical_path)
             info = _read_dataset_info(dataset_path) if dataset_path else None
             if info is None:
                 continue
             total_episodes = int(info.get("total_episodes", 0))
+            total_tasks = int(info.get("total_tasks", 0))
+            codebase_version = info.get("codebase_version")
+            is_v2 = codebase_version in {"v2.0", "v2.1"}
+            raw_episode_details = entry.get("episodes", [])
+            valid_episode_details = [
+                item for item in raw_episode_details
+                if 0 <= int(item.get("episode_index", -1)) < total_episodes
+            ]
+            native_task_episodes = []
+            if not is_v2:
+                native_episode_tasks = _read_v3_episode_tasks(dataset_path)
+                expected_task = str(entry.get("task", "")).casefold()
+                native_task_episodes = sorted(
+                    episode_index
+                    for episode_index, tasks in native_episode_tasks.items()
+                    if 0 <= episode_index < total_episodes
+                    and any(str(task).casefold() == expected_task for task in tasks)
+                )
+            # v2 datasets are one-task-per-directory, so the dataset metadata
+            # is authoritative even when an older registry contains stale or
+            # non-contiguous episode indices. Legacy/single-entry datasets can
+            # likewise expose every real episode safely.
+            dataset_path_key = os.path.abspath(dataset_path)
+            if native_task_episodes:
+                playable_episodes = native_task_episodes
+            elif (
+                (is_v2 and total_tasks <= 1)
+                or entry.get("legacy")
+                or (not raw_episode_details and path_entry_counts.get(dataset_path_key) == 1)
+            ):
+                playable_episodes = list(range(total_episodes))
+            else:
+                playable_episodes = [
+                    int(item["episode_index"])
+                    for item in valid_episode_details
+                ]
+            if not playable_episodes:
+                continue
+            catalog_key = (
+                os.path.abspath(dataset_path),
+                str(entry.get("task", "")).casefold(),
+                str(entry.get("arm_name", "")).casefold(),
+            )
+            if catalog_key in catalog_keys:
+                continue
+            catalog_keys.add(catalog_key)
             robot_type = info.get("robot_type")
             compatible_arms = [
-                arm_name
-                for arm_name, arm_config in config.ARMS.items()
-                if arm_config.get("driver") == robot_type
+                item["arm_name"] for item in live_arms
+                if item.get("driver") == robot_type
             ]
             datasets.append({
                 **entry,
-                "episode_details": entry.get("episodes", []),
+                "episode_details": valid_episode_details,
                 "dataset_path": dataset_path,
                 "relative_path": _relative_path(dataset_path),
                 "robot_type": robot_type,
                 "compatible_arms": compatible_arms,
                 "fps": info.get("fps"),
-                "codebase_version": info.get("codebase_version"),
+                "codebase_version": codebase_version,
                 "format": (
                     "lerobot_v2"
-                    if info.get("codebase_version") in {"v2.0", "v2.1"}
+                    if is_v2
                     else "lerobot_v3"
                 ),
-                "total_episodes": total_episodes,
+                "total_episodes": len(playable_episodes),
+                "dataset_total_episodes": total_episodes,
                 "total_frames": info.get("total_frames"),
-                "episodes": list(range(total_episodes)),
+                "episodes": playable_episodes,
                 "action_features": [
                     key for key in info.get("features", {})
                     if key == "action" or key.startswith("action_")
@@ -437,25 +558,17 @@ def _normalize_output_path(
     return os.path.join(DEFAULT_DATASET_DIR, output_path)
 
 
-def _camera_names_for_arm(arm_name):
-    return [
-        camera_name
-        for camera_name, camera_config in config.CAMERAS.items()
-        if camera_config.get("mount", {}).get("arm_name") == arm_name
-    ]
-
-
-def _prepare_video_cameras(arm_name, record_video):
+def _prepare_video_cameras(arm_info, record_video):
     if not isinstance(record_video, bool):
         raise ValueError("record_video 必須是 bool")
     if not record_video:
         return {}
 
-    camera_names = _camera_names_for_arm(arm_name)
+    arm_name = arm_info["arm_name"]
+    camera_names = [item["camera_name"] for item in arm_info.get("cameras", [])]
     if not camera_names:
         raise ValueError(
-            f"arm '{arm_name}' 沒有綁定相機；請在 config.CAMERAS 的 "
-            f"mount.arm_name 設為 '{arm_name}'"
+            f"arm '{arm_name}' 沒有對應相機"
         )
 
     frames = {}
@@ -491,6 +604,134 @@ def _read_dataset_info(dataset_path):
         return None
     with open(info_path, "r", encoding="utf-8") as source:
         return json.load(source)
+
+
+def _filesystem_dataset_paths():
+    """Return canonical dataset directories that physically exist under the root."""
+    datasets = {}
+    if not os.path.isdir(DEFAULT_DATASET_DIR):
+        return datasets
+    for directory, child_directories, filenames in os.walk(DEFAULT_DATASET_DIR):
+        if os.path.basename(directory) == "meta" and "info.json" in filenames:
+            dataset_path = os.path.dirname(directory)
+            datasets[os.path.realpath(dataset_path)] = dataset_path
+            child_directories[:] = []
+    return datasets
+
+
+def _read_v3_episode_tasks(dataset_path):
+    """Read the authoritative episode/task mapping written by LeRobot v3."""
+    episode_tasks = {}
+    pattern = os.path.join(dataset_path, "meta", "episodes", "**", "*.parquet")
+    for path in sorted(glob(pattern, recursive=True)):
+        try:
+            import pandas as pd
+            frame = pd.read_parquet(path, columns=["episode_index", "tasks"])
+        except (ImportError, OSError, ValueError, KeyError):
+            continue
+        for row in frame.to_dict("records"):
+            episode_index = int(row["episode_index"])
+            tasks = row.get("tasks")
+            if tasks is None:
+                normalized_tasks = []
+            elif isinstance(tasks, str):
+                normalized_tasks = [tasks]
+            else:
+                normalized_tasks = [str(task) for task in list(tasks)]
+            episode_tasks[episode_index] = normalized_tasks
+    return episode_tasks
+
+
+def _reconcile_v3_task_registry(registry):
+    """Repair registry entries from LeRobot's authoritative v3 metadata."""
+    changed = False
+    v3_root = os.path.join(DEFAULT_DATASET_DIR, "lerobot_v3")
+    if not os.path.isdir(v3_root):
+        return changed
+    live_arms = _recording_arm_inventory()
+    for dataset_path in sorted(_filesystem_dataset_paths().values()):
+        if os.path.commonpath([v3_root, dataset_path]) != v3_root:
+            continue
+        folder = os.path.basename(dataset_path)
+        info = _read_dataset_info(dataset_path)
+        if not info or info.get("codebase_version") != "v3.0":
+            continue
+        robot_type = info.get("robot_type")
+        compatible_arms = [
+            item["arm_name"] for item in live_arms
+            if item.get("driver") == robot_type
+        ]
+        arm_name = (
+            folder.removeprefix("multitask_")
+            if folder.startswith("multitask_")
+            else (compatible_arms[0] if len(compatible_arms) == 1 else "")
+        )
+        if not any(item["arm_name"] == arm_name for item in live_arms):
+            continue
+        native_episode_tasks = _read_v3_episode_tasks(dataset_path)
+        task_episodes = {}
+        for episode_index, tasks in native_episode_tasks.items():
+            for task in tasks:
+                task_episodes.setdefault(str(task), []).append(int(episode_index))
+        for task, episode_indices in task_episodes.items():
+            entry = next((
+                item for item in registry["tasks"]
+                if str(item.get("task", "")).casefold() == task.casefold()
+                and str(item.get("arm_name", "")).casefold() == arm_name.casefold()
+                and os.path.abspath(item.get("dataset_path", "")) == os.path.abspath(dataset_path)
+            ), None)
+            if entry is None:
+                same_task = next((
+                    item for item in registry["tasks"]
+                    if str(item.get("task", "")).casefold() == task.casefold()
+                ), None)
+                used_numbers = [
+                    int(match.group(1))
+                    for item in registry["tasks"]
+                    if (match := re.fullmatch(r"task_(\d+)", str(item.get("task_id", ""))))
+                ]
+                now = _utc_now()
+                entry = {
+                    "task_id": same_task.get("task_id") if same_task else f"task_{max(used_numbers, default=0) + 1:04d}",
+                    "task": task,
+                    "arm_name": arm_name,
+                    "dataset_folder": os.path.relpath(dataset_path, DEFAULT_DATASET_DIR),
+                    "dataset_path": dataset_path,
+                    "dataset_mode": (
+                        "single_task"
+                        if f"{os.sep}single_task{os.sep}" in dataset_path
+                        else "multi_task"
+                    ),
+                    "episode_count": 0,
+                    "episodes": [],
+                    "created_at": now,
+                    "updated_at": now,
+                }
+                registry["tasks"].append(entry)
+                changed = True
+            existing_by_index = {
+                int(item.get("episode_index", -1)): item
+                for item in entry.get("episodes", [])
+            }
+            repaired_episodes = []
+            for episode_index in sorted(set(episode_indices)):
+                item = existing_by_index.get(episode_index)
+                if item is None:
+                    recorded_at = datetime.now().astimezone().isoformat()
+                    item = {
+                        "episode_index": episode_index,
+                        "arm_name": arm_name,
+                        "recorded_at": recorded_at,
+                        "label": _episode_label(episode_index, arm_name, recorded_at),
+                        "task": task,
+                    }
+                repaired_episodes.append(item)
+            if entry.get("episodes") != repaired_episodes or entry.get("episode_count") != len(repaired_episodes):
+                entry["episodes"] = repaired_episodes
+                entry["episode_count"] = len(repaired_episodes)
+                entry["updated_at"] = datetime.now().astimezone().isoformat()
+                changed = True
+    return changed
 
 
 def _dataset_repo_id(dataset_path):
@@ -758,6 +999,72 @@ def _require_success(
     return response
 
 
+def _recording_arm_inventory():
+    arm_response = arm_service.get_arm_status()
+    gripper_response = gripper_service.get_gripper_status()
+    _require_success(arm_response, "arm_service.get_arm_status")
+    _require_success(gripper_response, "gripper_service.get_gripper_status")
+    live_grippers = {
+        item.get("gripper_name"): item
+        for item in (gripper_response.get("data") or {}).get("grippers", [])
+        if item.get("connected", True) is not False and not item.get("error")
+    }
+    return [
+        {
+            **arm,
+            "grippers": (
+                [{**live_grippers[arm["arm_name"]], "arm_name": arm["arm_name"]}]
+                if arm["arm_name"] in live_grippers else []
+            ),
+            # A stopped camera may report disconnected. Resolve it by the
+            # arm naming convention, then start it before requesting a frame.
+            "cameras": [{
+                "camera_name": arm["arm_name"],
+                "arm_name": arm["arm_name"],
+            }],
+        }
+        for arm in (arm_response.get("data") or {}).get("arms", [])
+    ]
+
+
+def _recording_arm_info(arm_name):
+    normalized = str(arm_name).strip().lower()
+    arm_response = arm_service.get_arm_status(normalized)
+    gripper_response = gripper_service.get_gripper_status(normalized)
+    _require_success(arm_response, "arm_service.get_arm_status")
+    _require_success(gripper_response, "gripper_service.get_gripper_status")
+    arm = next(iter((arm_response.get("data") or {}).get("arms", [])), None)
+    grippers = [
+        item for item in (gripper_response.get("data") or {}).get("grippers", [])
+        if item.get("connected", True) is not False and not item.get("error")
+    ]
+    info = (
+        {
+            **arm,
+            "grippers": grippers,
+            "cameras": [{"camera_name": normalized, "arm_name": normalized}],
+        }
+        if arm is not None else None
+    )
+    if info is None:
+        raise ValueError(f"arm '{normalized}' 未連線或不存在")
+    return info
+
+
+def _recording_gripper_info(arm_info, gripper_name):
+    normalized = str(gripper_name).strip().lower()
+    info = next((
+        item for item in arm_info.get("grippers", [])
+        if item.get("gripper_name") == normalized
+    ), None)
+    if info is None:
+        raise ValueError(
+            f"gripper '{normalized}' 未連線、不存在或不屬於 arm "
+            f"'{arm_info.get('arm_name')}'"
+        )
+    return info
+
+
 # ============================================================
 # Arm / Gripper Sampling
 # ============================================================
@@ -997,6 +1304,7 @@ def _reset_record_state():
     global _record_pending_sample
     global _record_saved_frame_count
     global _record_gripper_position
+    global _record_frame_mapper
 
     with _record_lock:
         _record_thread = None
@@ -1014,6 +1322,7 @@ def _reset_record_state():
         _record_pending_sample = None
         _record_saved_frame_count = 0
         _record_gripper_position = 0
+        _record_frame_mapper = None
     _record_stop_event.clear()
 
 
@@ -1206,7 +1515,7 @@ def _record_loop():
                 previous_sample = _record_pending_sample
                 if previous_sample is not None:
                     dataset.add_frame(
-                        _sample_to_lerobot_frame(
+                        _record_frame_mapper(
                             previous_sample, current_sample, task, done=False
                         )
                     )
@@ -1235,7 +1544,12 @@ def start_robot_recording(
     record_video=False,
     task="robot demonstration",
     initial_gripper_position=0,
+    dataset_mode="multi_task",
+    _dataset_opener=None,
+    _frame_mapper=None,
+    _arm_info=None,
 ):
+    startup_started_at = time.perf_counter()
     action = (
         "start_robot_recording"
     )
@@ -1259,6 +1573,7 @@ def start_robot_recording(
         global _record_camera_names
         global _record_task
         global _record_task_id
+        global _record_frame_mapper
 
         with _record_lock:
 
@@ -1357,21 +1672,10 @@ def start_robot_recording(
                     "gripper_name 不可為空"
                 )
 
-            if arm_name not in config.ARMS:
-                raise ValueError(
-                    f"不支援的 arm_name: {arm_name}；"
-                    f"可用值為 {', '.join(sorted(config.ARMS))}"
-                )
-            if gripper_name not in config.GRIPPERS:
-                raise ValueError(f"不支援的 gripper_name: {gripper_name}")
-            expected_arm = config.GRIPPERS[gripper_name].get("arm_name")
-            if expected_arm != arm_name:
-                raise ValueError(
-                    f"gripper '{gripper_name}' 屬於 arm '{expected_arm}'，"
-                    f"不可搭配 arm '{arm_name}'"
-                )
+            arm_info = _arm_info or _recording_arm_info(arm_name)
+            _recording_gripper_info(arm_info, gripper_name)
 
-            camera_frames = _prepare_video_cameras(arm_name, record_video)
+            camera_frames = _prepare_video_cameras(arm_info, record_video)
             camera_names = list(camera_frames)
 
             # ==================================================
@@ -1421,16 +1725,20 @@ def start_robot_recording(
             # Output
             # ==================================================
 
-            task_entry, _ = _resolve_task_dataset(task, arm_name, output_path)
+            task_entry, _ = _resolve_task_dataset(
+                task, arm_name, output_path, dataset_mode=dataset_mode
+            )
             task_id = task_entry["task_id"]
             full_output_path = task_entry["dataset_path"]
 
             fps = max(1, int(round(1.0 / interval)))
-            dataset = _open_lerobot_dataset(
+            dataset_opener = _dataset_opener or _open_lerobot_dataset
+            frame_mapper = _frame_mapper or _sample_to_lerobot_frame
+            dataset = dataset_opener(
                 full_output_path,
                 fps,
                 camera_frames,
-                config.ARMS[arm_name]["driver"],
+                arm_info["driver"],
             )
             episode_index = int(dataset.meta.total_episodes)
 
@@ -1473,6 +1781,7 @@ def start_robot_recording(
             _record_task = task
 
             _record_task_id = task_id
+            _record_frame_mapper = frame_mapper
 
             _record_start_time = (
                 time.perf_counter()
@@ -1568,6 +1877,9 @@ def start_robot_recording(
 
                     "initial_gripper_position":
                         initial_gripper_position,
+
+                    "startup_seconds":
+                        time.perf_counter() - startup_started_at,
                 },
             )
 
@@ -2091,6 +2403,8 @@ def close_recording_gripper(
 def stop_robot_recording(arm_name, gripper_name=None):
     action = "stop_robot_recording"
     should_cleanup = False
+    stop_started_at = time.perf_counter()
+    stop_warnings = []
 
     try:
         global _record_thread
@@ -2131,13 +2445,39 @@ def stop_robot_recording(arm_name, gripper_name=None):
 
         should_cleanup = True
         _record_stop_event.set()
+        wall_recording_seconds = max(0.0, stop_started_at - start_time)
         thread.join(timeout=10)
         if thread.is_alive():
             raise RuntimeError("錄製執行緒無法在 10 秒內停止")
+        thread_stop_seconds = time.perf_counter() - stop_started_at
+
+        stopped_camera_names = _stop_video_cameras(camera_names)
 
         if freedrive:
             response = arm_service.stop_arm_freedrive(arm_name)
-            _require_success(response, "arm_service.stop_arm_freedrive")
+            if (
+                response.get("status") != "success"
+                or response.get("result", True) is False
+            ):
+                first_error = response.get("message", "unknown error")
+                reconnect_response = arm_service.reconnect_arm(arm_name=arm_name)
+                if (
+                    reconnect_response.get("status") == "success"
+                    and reconnect_response.get("result", True) is not False
+                ):
+                    response = arm_service.stop_arm_freedrive(arm_name)
+                if (
+                    response.get("status") != "success"
+                    or response.get("result", True) is False
+                ):
+                    safety_response = arm_service.stop_arm(arm_name=arm_name)
+                    warning = (
+                        "freedrive 停止命令失敗，但錄製資料仍繼續保存："
+                        f"{first_error}; retry={response.get('message', 'unknown error')}; "
+                        f"safety_stop={safety_response.get('status', 'unknown')}"
+                    )
+                    logger.warning(warning)
+                    stop_warnings.append(warning)
 
         with _record_lock:
             dataset = _record_dataset
@@ -2148,22 +2488,28 @@ def stop_robot_recording(arm_name, gripper_name=None):
             # The final observation has no future command; use a zero TCP delta
             # and preserve its current gripper state.
             dataset.add_frame(
-                _sample_to_lerobot_frame(
+                _record_frame_mapper(
                     pending_sample, pending_sample, _record_task, done=True
                 )
             )
             _record_saved_frame_count += 1
             sample_count = _record_saved_frame_count
 
+        save_started_at = time.perf_counter()
         try:
             dataset.save_episode()
         finally:
             dataset.finalize()
+        save_seconds = time.perf_counter() - save_started_at
 
-        stopped_camera_names = _stop_video_cameras(camera_names)
-
-        duration_seconds = max(0.0, time.perf_counter() - start_time)
         info = _read_dataset_info(output_path) or {}
+        fps = max(1, int(info.get("fps", round(1.0 / _record_interval))))
+        # LeRobot timestamps are frame-based (0, 1/fps, ...).  Derive the
+        # episode duration from the saved timeline.  The previous wall-clock
+        # calculation happened after camera shutdown, video finalization and
+        # parquet writes, so a 5-second demonstration could be reported as
+        # 18+ seconds even though its dataset timestamps were correct.
+        duration_seconds = max(0.0, (sample_count - 1) / float(fps))
         task_entry = _update_task_episode_count(
             task_id,
             arm_name,
@@ -2197,6 +2543,7 @@ def stop_robot_recording(arm_name, gripper_name=None):
                 ),
                 "sample_count": sample_count,
                 "duration_seconds": duration_seconds,
+                "wall_recording_seconds": wall_recording_seconds,
                 "freedrive": freedrive,
                 "format": "lerobot_v3",
                 "codebase_version": info.get("codebase_version"),
@@ -2207,6 +2554,12 @@ def stop_robot_recording(arm_name, gripper_name=None):
                 "video_keys": video_keys,
                 "stopped_camera_names": stopped_camera_names,
                 "cameras_stopped": len(stopped_camera_names) == len(camera_names),
+                "stop_timings": {
+                    "thread_stop_seconds": thread_stop_seconds,
+                    "save_finalize_seconds": save_seconds,
+                    "total_seconds": time.perf_counter() - stop_started_at,
+                },
+                "warnings": stop_warnings,
                 "action_spaces": dict(LEROBOT_ACTION_SPACES),
             },
         )
@@ -2510,6 +2863,7 @@ def _playback_worker(
     move_to_start,
     move_to_start_speed,
     move_to_start_acceleration,
+    episode_loader,
 ):
     global _playback_thread
     global _playback_input_path
@@ -2526,7 +2880,7 @@ def _playback_worker(
             _playback_phase = "loading"
 
         _, recorded_interval, joint_trajectory, gripper_events = (
-            _load_lerobot_episode(input_path, episode_index)
+            episode_loader(input_path, episode_index)
         )
 
         if not joint_trajectory:
@@ -2563,10 +2917,11 @@ def _playback_worker(
                 response,
                 "gripper_service.move_gripper(initial)",
             )
-            if (
-                config.GRIPPERS.get(gripper_name, {}).get("driver")
-                == "robotiq_eseries"
-            ):
+            if _recording_gripper_info(
+                _recording_arm_info(arm_name), gripper_name
+            ).get("driver") == "robotiq_eseries":
+                if not _settle_robotiq_eseries_script(arm_name):
+                    return
                 response = arm_service.reconnect_arm(arm_name=arm_name)
                 _require_success(
                     response,
@@ -2626,8 +2981,9 @@ def _playback_worker(
         # 每段 ServoJ 正常結束後才送夾爪命令，下一段會由 arm driver
         # 自動確認並恢復 RTDE control script。
         if (
-            config.GRIPPERS.get(gripper_name, {}).get("driver")
-            == "robotiq_eseries"
+            _recording_gripper_info(
+                _recording_arm_info(arm_name), gripper_name
+            ).get("driver") == "robotiq_eseries"
             and gripper_events
         ):
             start_time = time.perf_counter()
@@ -2675,6 +3031,8 @@ def _playback_worker(
                     response,
                     "gripper_service.move_gripper(segment boundary)",
                 )
+                if not _settle_robotiq_eseries_script(arm_name):
+                    return
                 response = arm_service.reconnect_arm(arm_name=arm_name)
                 _require_success(
                     response,
@@ -2890,6 +3248,7 @@ def start_robot_playback(
     move_to_start=True,
     move_to_start_speed=None,
     move_to_start_acceleration=None,
+    _episode_loader=None,
 ):
 
     action = (
@@ -2920,7 +3279,8 @@ def start_robot_playback(
                     "recording is currently running"
                 )
 
-            full_path, _, _, _ = _load_lerobot_episode(
+            episode_loader = _episode_loader or _load_lerobot_episode
+            full_path, _, _, _ = episode_loader(
                 input_path,
                 episode_index,
             )
@@ -2976,19 +3336,11 @@ def start_robot_playback(
                 .lower()
             )
 
-            if arm_name not in config.ARMS:
-                raise ValueError(f"不支援的 arm_name: {arm_name}")
-            if gripper_name not in config.GRIPPERS:
-                raise ValueError(f"不支援的 gripper_name: {gripper_name}")
-            expected_arm = config.GRIPPERS[gripper_name].get("arm_name")
-            if expected_arm != arm_name:
-                raise ValueError(
-                    f"gripper '{gripper_name}' 屬於 arm '{expected_arm}'，"
-                    f"不可搭配 arm '{arm_name}'"
-                )
+            arm_info = _recording_arm_info(arm_name)
+            _recording_gripper_info(arm_info, gripper_name)
             info = _read_dataset_info(full_path) or {}
             robot_type = info.get("robot_type")
-            configured_driver = config.ARMS[arm_name].get("driver")
+            configured_driver = arm_info.get("driver")
             if robot_type != configured_driver:
                 raise ValueError(
                     f"dataset robot_type='{robot_type}' 不可播放到 "
@@ -2998,6 +3350,19 @@ def start_robot_playback(
             # ==================================================
             # Hardware Validation
             # ==================================================
+
+            # Playback may be started before any other arm endpoint has
+            # established the RTDE receive connection.  Connect explicitly
+            # before requiring a live joint sample; otherwise a valid arm can
+            # be rejected with "joints unavailable" even though reconnecting
+            # it would make the state immediately available.
+            response = arm_service.reconnect_arm(
+                arm_name=arm_name,
+            )
+            _require_success(
+                response,
+                "arm_service.reconnect_arm(before playback)",
+            )
 
             _get_arm_sample(
                 arm_name
@@ -3073,6 +3438,9 @@ def start_robot_playback(
 
                         "move_to_start_acceleration":
                             move_to_start_acceleration,
+
+                        "episode_loader":
+                            episode_loader,
                     },
 
                     name=
