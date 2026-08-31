@@ -454,7 +454,7 @@ class UR7eDriver:
 
             return self._rtde_c
 
-    def _ensure_control_ready(self):
+    def _ensure_control_ready(self, force_reupload=False):
         """
         確認 RTDE Control socket 與 control script 可正常使用。
 
@@ -472,7 +472,7 @@ class UR7eDriver:
                         "RTDE Control reconnect failed"
                     )
 
-            if not rtde_c.isProgramRunning():
+            if force_reupload or not rtde_c.isProgramRunning():
                 logger.warning(
                     "[UR7e] RTDE control script is not running; reuploading"
                 )
@@ -480,7 +480,10 @@ class UR7eDriver:
                     raise RuntimeError(
                         "RTDE control script reupload failed"
                     )
-                time.sleep(0.2)
+                if not self._wait_for_control_program(rtde_c):
+                    raise RuntimeError(
+                        "RTDE control script did not start within 2 seconds"
+                    )
 
             if not rtde_c.isConnected():
                 raise ConnectionError(
@@ -493,6 +496,16 @@ class UR7eDriver:
                 )
 
         return True
+
+    @staticmethod
+    def _wait_for_control_program(rtde_c, timeout=2.0):
+        """Allow the controller time to start an accepted RTDE script."""
+        deadline = time.monotonic() + float(timeout)
+        while time.monotonic() < deadline:
+            if rtde_c.isConnected() and rtde_c.isProgramRunning():
+                return True
+            time.sleep(0.1)
+        return False
 
     def _call_control(
         self,
@@ -615,7 +628,19 @@ class UR7eDriver:
             )
             self._disconnect_control()
             time.sleep(0.5)
-            self._ensure_control_ready()
+            try:
+                # isProgramRunning() can refer to a Robotiq script injected
+                # through port 30002, so reconnect must always reupload RTDE.
+                self._ensure_control_ready(force_reupload=True)
+            except RuntimeError as exc:
+                status = self.get_arm_status()
+                raise RuntimeError(
+                    "RTDE control script is not running after reconnect; "
+                    f"arm_mode={status.get('arm_mode')}, "
+                    f"emergency_stopped={status.get('is_emergency_stopped')}, "
+                    f"protective_stopped={status.get('is_protective_stopped')}, "
+                    f"data_stale={status.get('data_stale')}"
+                ) from exc
 
         self._start_receive_monitor()
 
@@ -624,6 +649,36 @@ class UR7eDriver:
             self.ip,
         )
         return True
+
+    def wait_for_external_script_completion(
+        self, timeout=5.0, cancel_event=None, stable_stopped_time=0.2
+    ):
+        """Wait until a port-30002 URScript has actually stopped."""
+        timeout = max(0.1, float(timeout))
+        stable_stopped_time = max(0.05, float(stable_stopped_time))
+        deadline = time.monotonic() + timeout
+        stopped_since = None
+        while time.monotonic() < deadline:
+            if cancel_event is not None and cancel_event.is_set():
+                return False
+            running = bool(self._call_control(
+                "isProgramRunning", ensure_ready=False
+            ))
+            now = time.monotonic()
+            if running:
+                stopped_since = None
+            elif stopped_since is None:
+                stopped_since = now
+            elif now - stopped_since >= stable_stopped_time:
+                return True
+            if cancel_event is not None:
+                if cancel_event.wait(0.05):
+                    return False
+            else:
+                time.sleep(0.05)
+        raise TimeoutError(
+            f"external URScript did not finish within {timeout:.1f} seconds"
+        )
 
     def send_custom_script_function(self, function_name, script):
         """
@@ -1419,9 +1474,7 @@ class UR7eDriver:
     # Freedrive / Manual Mode
     # =========================
 
-    def start_arm_freedrive(
-        self,
-    ):
+    def start_arm_freedrive(self):
         """
         開啟 Freedrive 手動拖曳模式。
 
@@ -1433,18 +1486,10 @@ class UR7eDriver:
 
             # 先停止目前任何 motion。
             if self._motion_mode is not None:
-                self._stop_motion(
-                    acceleration=
-                        DEFAULT_JOG_ACCELERATION
-                )
+                self._stop_motion(acceleration=DEFAULT_JOG_ACCELERATION)
+                time.sleep(0.05)
 
-                time.sleep(
-                    0.05
-                )
-
-            command_id = (
-                self._generate_command_id()
-            )
+            command_id = self._generate_command_id()
 
             logger.info(
                 "[UR7e] start freedrive "
@@ -1452,27 +1497,18 @@ class UR7eDriver:
                 command_id,
             )
 
-            result = (
-                self._call_control(
-                    "freedriveMode"
-                )
-            )
+            result = self._call_control("freedriveMode")
 
             if not result:
                 raise RuntimeError(
                     "RTDE freedriveMode 執行失敗"
                 )
 
-            self._set_motion_mode(
-                "freedrive"
-            )
+            self._set_motion_mode("freedrive")
 
             return True
 
-
-    def stop_arm_freedrive(
-        self,
-    ):
+    def stop_arm_freedrive(self):
         """
         關閉 Freedrive，恢復一般 position control。
         """
@@ -1482,9 +1518,7 @@ class UR7eDriver:
             if self._motion_mode != "freedrive":
                 return True
 
-            command_id = (
-                self._generate_command_id()
-            )
+            command_id = self._generate_command_id()
 
             logger.info(
                 "[UR7e] stop freedrive "
@@ -1492,11 +1526,7 @@ class UR7eDriver:
                 command_id,
             )
 
-            result = (
-                self._call_control(
-                    "endFreedriveMode"
-                )
-            )
+            result = self._call_control("endFreedriveMode")
 
             if not result:
                 raise RuntimeError(
