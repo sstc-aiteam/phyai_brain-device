@@ -18,7 +18,7 @@ class InferenceClient:
         port: int,
         timeout: float,
         gripper_position: float = 0.0,
-        instruction: str = "open the left drawer",
+        instruction: str = "open drawer",
     ):
         self._host = host
         self._port = port

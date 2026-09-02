@@ -46,7 +46,7 @@ python -m inference_service
 - `INFERENCE_HZ`（預設 `10`）
 - `INFERENCE_TIMEOUT`（預設 `5` 秒）
 - `INFERENCE_GRIPPER_POSITION`（預設 `0.0`）
-- `INFERENCE_INSTRUCTION`（預設 `open the left drawer`）
+- `INFERENCE_INSTRUCTION`（預設 `open drawer`，與訓練 dataset task 一致）
 
 預設收到的 action 只會輸出 JSON。確認工作區安全後，設定
 `INFERENCE_EXECUTE_ACTIONS=true` 才會透過本機 arm API 執行 blocking moveL。

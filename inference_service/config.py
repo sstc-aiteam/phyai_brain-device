@@ -30,7 +30,7 @@ class Settings:
     request_timeout: float = 5.0
     jpeg_quality: int = 90
     gripper_position: float = 0.0
-    instruction: str = "open the left drawer"
+    instruction: str = "open drawer"
     execute_actions: bool = False
     arm_api_url: str = "http://127.0.0.1:5001"
     arm_name: str = "left"
