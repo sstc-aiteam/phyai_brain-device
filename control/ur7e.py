@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 # =========================
-# UR5 Driver Defaults
+# UR7e Driver Defaults
 # =========================
 
 # Driver fallback defaults.
@@ -30,7 +30,7 @@ DEFAULT_JOG_TIMEOUT = 0.2
 
 
 # =========================
-# UR5 Hard Safety Limits
+# UR7e Hard Safety Limits
 # =========================
 
 # Absolute Driver-side safety boundary.
@@ -94,7 +94,7 @@ RTDE_RECEIVE_ERROR_RETRY_INTERVAL = 1.0
 
 class UR7eDriver:
     """
-    Universal Robots UR5 RTDE driver。
+    Universal Robots UR7e RTDE driver。
     """
 
     ARM_DOF = 6
@@ -202,7 +202,7 @@ class UR7eDriver:
         with self._shutdown_lock:
             if self._shutdown_done:
                 raise RuntimeError(
-                    "UR5 Driver 已 shutdown，不能重新啟動 Receive monitor"
+                    "UR7e Driver 已 shutdown，不能重新啟動 Receive monitor"
                 )
 
         with self._receive_monitor_lock:
@@ -215,7 +215,7 @@ class UR7eDriver:
 
             thread = threading.Thread(
                 target=self._receive_monitor_loop,
-                name=f"UR5ReceiveMonitor-{self.ip}",
+                name=f"UR7eReceiveMonitor-{self.ip}",
                 daemon=True,
             )
 
@@ -649,62 +649,6 @@ class UR7eDriver:
             self.ip,
         )
         return True
-
-    def wait_for_external_script_completion(
-        self, timeout=5.0, cancel_event=None, stable_stopped_time=0.2
-    ):
-        """Wait until a port-30002 URScript has actually stopped."""
-        timeout = max(0.1, float(timeout))
-        stable_stopped_time = max(0.05, float(stable_stopped_time))
-        deadline = time.monotonic() + timeout
-        stopped_since = None
-        while time.monotonic() < deadline:
-            if cancel_event is not None and cancel_event.is_set():
-                return False
-            running = bool(self._call_control(
-                "isProgramRunning", ensure_ready=False
-            ))
-            now = time.monotonic()
-            if running:
-                stopped_since = None
-            elif stopped_since is None:
-                stopped_since = now
-            elif now - stopped_since >= stable_stopped_time:
-                return True
-            if cancel_event is not None:
-                if cancel_event.wait(0.05):
-                    return False
-            else:
-                time.sleep(0.05)
-        raise TimeoutError(
-            f"external URScript did not finish within {timeout:.1f} seconds"
-        )
-
-    def send_custom_script_function(self, function_name, script):
-        """
-        透過 Control Gateway 呼叫 sendCustomScriptFunction。
-
-        Receive monitor 全程保持運作。
-        """
-        if not isinstance(function_name, str) or not function_name.strip():
-            raise ValueError("function_name 必須是非空字串")
-
-        if not isinstance(script, str) or not script.strip():
-            raise ValueError("script 必須是非空字串")
-
-        with self._motion_lock:
-            result = self._call_control(
-                "sendCustomScriptFunction",
-                function_name.strip(),
-                script,
-            )
-
-        # custom script 可能讓 UR controller 上的 control script 停止。
-        # 透過 Control Gateway 再做一次 readiness check，不直接操作 Control。
-        time.sleep(0.1)
-        self._call_control("isProgramRunning")
-
-        return bool(result)
 
     def _generate_command_id(self):
         self._motion_command_id += 1
@@ -1859,7 +1803,7 @@ class UR7eDriver:
 
     def shutdown(self):
         """
-        正常關閉 UR5 Driver。
+        正常關閉 UR7e Driver。
 
         關閉順序：
         1. 停止 Receive monitor
@@ -1893,7 +1837,7 @@ class UR7eDriver:
                     self._disconnect_control()
 
                 self._reset_receive_state(
-                    error="UR5 driver shutdown"
+                    error="UR7e driver shutdown"
                 )
 
                 self._shutdown_done = True
