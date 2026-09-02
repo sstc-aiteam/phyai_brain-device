@@ -12,6 +12,8 @@ matplotlib>=3.9,<4.0
 pyrealsense2==2.58.1.10581
 ur-rtde>=1.6
 requests>=2.31,<3.0
+pyzmq>=26,<28
+msgpack>=1.0,<2.0
 pydantic-settings
 pandas>=2.3,<3.0
 pyarrow>=21,<30
