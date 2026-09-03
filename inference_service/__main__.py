@@ -26,7 +26,12 @@ def main() -> None:
 
     service = LiveInferenceService(
         pose_source=URTCPPoseSource(settings.robot_ip),
-        image_source=HTTPJPEGSource(settings.image_url, settings.request_timeout),
+        image_source=HTTPJPEGSource(
+            settings.image_url,
+            settings.request_timeout,
+            status_url=f"{settings.arm_api_url}/api/camera/get_camera_status",
+            camera_name=settings.camera_name,
+        ),
         client=InferenceClient(
             settings.inference_host,
             settings.inference_port,

@@ -41,6 +41,7 @@ python -m inference_service
 
 - `INFERENCE_ROBOT_IP`（手臂 IP，預設 `192.168.50.76`）
 - `INFERENCE_IMAGE_URL`（預設 left camera 的 `/api/vision/camera_rgb`）
+- `INFERENCE_CAMERA_NAME`（預設 `left`；服務會先確認相機已啟動，未啟動時只提醒一次）
 - `INFERENCE_HOST`（預設 `192.168.50.215`）
 - `INFERENCE_PORT`（預設 `5555`）
 - `INFERENCE_HZ`（預設 `10`）

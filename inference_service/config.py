@@ -34,6 +34,7 @@ class Settings:
     execute_actions: bool = False
     arm_api_url: str = "http://127.0.0.1:5001"
     arm_name: str = "left"
+    camera_name: str = "left"
     action_frame: str = "tool"
     max_translation_delta: float = 0.025
     max_rotation_delta: float = 0.05
@@ -55,6 +56,7 @@ class Settings:
             execute_actions=_bool_env("INFERENCE_EXECUTE_ACTIONS", cls.execute_actions),
             arm_api_url=os.getenv("INFERENCE_ARM_API_URL", cls.arm_api_url),
             arm_name=os.getenv("INFERENCE_ARM_NAME", cls.arm_name),
+            camera_name=os.getenv("INFERENCE_CAMERA_NAME", cls.camera_name),
             action_frame=os.getenv("INFERENCE_ACTION_FRAME", cls.action_frame).lower(),
             max_translation_delta=_float_env(
                 "INFERENCE_MAX_TRANSLATION_DELTA", cls.max_translation_delta

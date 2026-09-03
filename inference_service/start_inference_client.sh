@@ -54,27 +54,6 @@ if ! curl --fail --silent --show-error \
     exit 1
 fi
 
-echo "Starting camera '${CAMERA_NAME}'..."
-CAMERA_RESPONSE="$(curl --fail --silent --show-error \
-    -X POST \
-    -H 'Content-Type: application/json' \
-    -d "{\"camera_name\":\"${CAMERA_NAME}\"}" \
-    "${ARM_API_URL}/api/camera/start_camera")"
-
-if [[ "${CAMERA_RESPONSE}" != *'"result":true'* ]]; then
-    echo "ERROR: camera failed to start: ${CAMERA_RESPONSE}" >&2
-    exit 1
-fi
-
-CAMERA_TEST_FILE="$(mktemp /tmp/phyai-inference-camera.XXXXXX.jpg)"
-trap 'rm -f "${CAMERA_TEST_FILE}"' EXIT
-curl --fail --silent --show-error "${IMAGE_URL}" --output "${CAMERA_TEST_FILE}"
-if [[ ! -s "${CAMERA_TEST_FILE}" ]]; then
-    echo "ERROR: camera returned an empty image." >&2
-    exit 1
-fi
-echo "Camera is ready."
-
 cd "${PROJECT_DIR}"
 nohup env \
     INFERENCE_HOST="${INFERENCE_HOST:-192.168.50.215}" \
