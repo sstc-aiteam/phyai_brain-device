@@ -130,32 +130,9 @@ _playback_phase = "idle"
 _playback_error = None
 _playback_completed = False
 
-# Robotiq e-Series commands are complete URScript programs injected through
-# port 30002.  The TCP send returns before the controller has necessarily
-# started and finished that program, so immediately re-uploading RTDE can race
-# with a delayed Robotiq program and leave ServoJ without its control script.
-ROBOTIQ_ESERIES_SCRIPT_TIMEOUT_SECONDS = 5.0
-
-
 # ============================================================
 # Common Helpers
 # ============================================================
-
-def _settle_robotiq_eseries_script(arm_name):
-    """Synchronize with the actual port-30002 program, without fixed delay."""
-    response = arm_service.wait_for_external_script_completion(
-        arm_name=arm_name,
-        timeout=ROBOTIQ_ESERIES_SCRIPT_TIMEOUT_SECONDS,
-        cancel_event=_playback_stop_event,
-    )
-    if _playback_stop_event.is_set():
-        return False
-    _require_success(
-        response,
-        "arm_service.wait_for_external_script_completion",
-    )
-    return True
-
 def _project_root():
     return os.path.abspath(
         os.path.join(
@@ -1306,7 +1283,10 @@ def _reset_record_state():
     global _record_gripper_position
     global _record_frame_mapper
 
+    suspended_gripper_name = None
     with _record_lock:
+        if _record_freedrive:
+            suspended_gripper_name = _record_gripper_name
         _record_thread = None
         _record_start_time = None
         _record_output_path = None
@@ -1324,6 +1304,8 @@ def _reset_record_state():
         _record_gripper_position = 0
         _record_frame_mapper = None
     _record_stop_event.clear()
+    if suspended_gripper_name is not None:
+        gripper_service.resume_status_polling(suspended_gripper_name)
 
 
 def _get_record_elapsed():
@@ -1420,33 +1402,14 @@ def _restore_recording_freedrive(
     freedrive,
 ):
     """
-    Gripper command 可能透過 URScript
-    中斷目前 RTDE Freedrive。
-
-    如果 recording 原本有開啟 freedrive，
-    gripper command 完成後重新進入 freedrive。
+    檢查是否需要恢復 freedrive，如果需要，則會呼叫 arm_service.start_arm_freedrive
     """
 
     if not freedrive:
         return False
 
-    # 等待 gripper URScript command
-    # 完成 controller 端切換。
-    time.sleep(
-        0.2
-    )
-
-    response = (
-        arm_service
-        .start_arm_freedrive(
-            arm_name
-        )
-    )
-
-    _require_success(
-        response,
-        "arm_service.start_arm_freedrive",
-    )
+    response = (arm_service.start_arm_freedrive(arm_name))
+    _require_success(response,"arm_service.start_arm_freedrive",)
 
     return True
 
@@ -1699,29 +1662,6 @@ def start_robot_recording(
                 )
 
             # ==================================================
-            # Start Freedrive
-            # ==================================================
-
-            if freedrive:
-
-                response = (
-                    arm_service
-                    .start_arm_freedrive(
-                        arm_name
-                    )
-                )
-
-                _require_success(
-                    response,
-                    "arm_service."
-                    "start_arm_freedrive",
-                )
-
-                freedrive_started = (
-                    True
-                )
-
-            # ==================================================
             # Output
             # ==================================================
 
@@ -1783,11 +1723,32 @@ def start_robot_recording(
             _record_task_id = task_id
             _record_frame_mapper = frame_mapper
 
-            _record_start_time = (
-                time.perf_counter()
-            )
-
             _record_stop_event.clear()
+
+            # ==================================================
+            # Start Freedrive
+            # ==================================================
+
+            # Freedrive must be the final hardware operation during startup.
+            # Dataset creation can be slow and may load camera/video backends;
+            # enabling manual mode before that work is complete leaves the arm
+            # in a fragile intermediate state and can make freedrive appear to
+            # stop as soon as recording starts.
+            if freedrive:
+                # Wait for any in-flight Robotiq port-30002 status read and
+                # prevent background dashboards from launching another one.
+                # Such scripts replace the RTDE program and kill freedrive.
+                if gripper_service.uses_external_urscript(gripper_name):
+                    gripper_service.suspend_status_polling(gripper_name)
+                response = arm_service.start_arm_freedrive(arm_name)
+                _require_success(
+                    response,
+                    "arm_service.start_arm_freedrive",
+                )
+                freedrive_started = True
+
+            # Recording time begins only after manual mode is confirmed.
+            _record_start_time = time.perf_counter()
 
             # ==================================================
             # Thread
@@ -1904,6 +1865,11 @@ def start_robot_recording(
                 logger.exception(
                     "failed to rollback freedrive"
                 )
+
+        # Startup may fail after the recording globals were populated (for
+        # example when freedrive is rejected by the controller).  Do not leave
+        # stale status behind for the next attempt.
+        _reset_record_state()
 
         logger.exception(
             "start_robot_recording failed"
@@ -2145,30 +2111,9 @@ def open_recording_gripper(
         # Execute Gripper
         # ====================================================
 
-        response = (
-            gripper_service
-            .open_gripper(
-                gripper_name=
-                    gripper_name,
+        response = (gripper_service.open_gripper(gripper_name=gripper_name, speed=speed, force=force, wait=wait, timeout=timeout,))
 
-                speed=
-                    speed,
-
-                force=
-                    force,
-
-                wait=
-                    wait,
-
-                timeout=
-                    timeout,
-            )
-        )
-
-        _require_success(
-            response,
-            "gripper_service.open_gripper",
-        )
+        _require_success(response, "gripper_service.open_gripper")
 
         # ====================================================
         # Record Event
@@ -2446,12 +2391,28 @@ def stop_robot_recording(arm_name, gripper_name=None):
         should_cleanup = True
         _record_stop_event.set()
         wall_recording_seconds = max(0.0, stop_started_at - start_time)
+
+        # A disconnected RealSense can remain blocked inside wait_for_frames()
+        # longer than the recording thread's join timeout.  Stop the pipeline
+        # first so the blocking frame read is interrupted and the loop can see
+        # _record_stop_event and exit.  Waiting for the thread before stopping
+        # cameras causes a circular wait and the misleading 10-second error.
+        try:
+            stopped_camera_names = _stop_video_cameras(camera_names)
+        except Exception as exc:
+            # D405.stop() may itself report the prior USB disconnect after it
+            # has already cleared the running pipeline.  Continue joining the
+            # recording worker because the stop attempt still serves as the
+            # cancellation signal for wait_for_frames().
+            stopped_camera_names = []
+            warning = f"停止錄製相機時發生錯誤：{exc}"
+            logger.warning(warning)
+            stop_warnings.append(warning)
+
         thread.join(timeout=10)
         if thread.is_alive():
             raise RuntimeError("錄製執行緒無法在 10 秒內停止")
         thread_stop_seconds = time.perf_counter() - stop_started_at
-
-        stopped_camera_names = _stop_video_cameras(camera_names)
 
         if freedrive:
             response = arm_service.stop_arm_freedrive(arm_name)
@@ -2874,7 +2835,19 @@ def _playback_worker(
     global _playback_error
     global _playback_completed
 
+    gripper_status_polling_suspended = False
+
     try:
+
+        # Robotiq e-Series status reads send a complete URScript through port
+        # 30002.  If one is sent while RTDE is streaming ServoJ points, the
+        # controller replaces the RTDE control program and servoJ starts
+        # returning False.  Keep passive status reads disabled for the whole
+        # playback.  Explicit gripper commands at segment boundaries still
+        # run normally and reconnect RTDE before the next arm segment.
+        if gripper_service.uses_external_urscript(gripper_name):
+            gripper_service.suspend_status_polling(gripper_name)
+            gripper_status_polling_suspended = True
 
         with _playback_lock:
             _playback_phase = "loading"
@@ -2917,16 +2890,6 @@ def _playback_worker(
                 response,
                 "gripper_service.move_gripper(initial)",
             )
-            if _recording_gripper_info(
-                _recording_arm_info(arm_name), gripper_name
-            ).get("driver") == "robotiq_eseries":
-                if not _settle_robotiq_eseries_script(arm_name):
-                    return
-                response = arm_service.reconnect_arm(arm_name=arm_name)
-                _require_success(
-                    response,
-                    "arm_service.reconnect_arm(after initial gripper)",
-                )
 
         if _playback_stop_event.is_set():
             return
@@ -3030,13 +2993,6 @@ def _playback_worker(
                 _require_success(
                     response,
                     "gripper_service.move_gripper(segment boundary)",
-                )
-                if not _settle_robotiq_eseries_script(arm_name):
-                    return
-                response = arm_service.reconnect_arm(arm_name=arm_name)
-                _require_success(
-                    response,
-                    "arm_service.reconnect_arm(after gripper boundary)",
                 )
                 segment_start = event_index
 
@@ -3213,6 +3169,9 @@ def _playback_worker(
         )
 
     finally:
+
+        if gripper_status_polling_suspended:
+            gripper_service.resume_status_polling(gripper_name)
 
         with _playback_lock:
 

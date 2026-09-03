@@ -27,6 +27,7 @@ ARM_FUNCTIONS = (
     "get_arm_joints",
     "reconnect_arm",
     "move_arm_pose",
+    "servoL",
     "move_arm_joints",
     "move_arm_joint_trajectory",
     "start_arm_jog",

@@ -18,6 +18,18 @@ export function stop_arm()
     return postJson("/api/arm/stop_arm");
 }
 
+
+export function start_arm_freedrive(arm_name)
+{
+    return postJson("/api/arm/start_arm_freedrive", {arm_name: arm_name});
+}
+
+
+export function stop_arm_freedrive(arm_name)
+{
+    return postJson("/api/arm/stop_arm_freedrive", {arm_name: arm_name});
+}
+
 export function move_arm_point_to_xyz(x, y, z, options = {})
 {
     return postJson("/api/arm/move_arm_point_to_xyz", {x: x, y: y, z: z, speed: options.speed ?? 0.1, acceleration: options.acceleration ?? 0.1, wait: options.wait ?? true});

@@ -109,6 +109,7 @@ class UR5Driver:
             "pose",
             "joints",
             "move_pose",
+            "servo_l",
             "move_joints",
             "joint_trajectory",
             "jog",
@@ -661,7 +662,7 @@ class UR5Driver:
 
     # 建立手臂動的類型
     def _set_motion_mode(self, mode):
-        allowed_modes = {None, "move_j", "move_l", "servo_j", "speed_l", "jog", "freedrive",}
+        allowed_modes = {None, "move_j", "move_l", "servo_j", "servo_l", "speed_l", "jog", "freedrive",}
 
         if mode not in allowed_modes:
             raise ValueError(
@@ -708,7 +709,7 @@ class UR5Driver:
             MAX_STOP_ACCELERATION,
         )
 
-        if motion_mode == "servo_j":
+        if motion_mode in ("servo_j", "servo_l"):
             self._call_control(
                 "servoStop",
             )
@@ -758,7 +759,7 @@ class UR5Driver:
         if stop_acceleration is None:
             stop_acceleration = DEFAULT_JOG_ACCELERATION
 
-        allowed_modes = {"move_j", "move_l", "servo_j", "speed_l", "jog", "freedrive"}
+        allowed_modes = {"move_j", "move_l", "servo_j", "servo_l", "speed_l", "jog", "freedrive"}
 
         if new_mode not in allowed_modes:
             raise ValueError(f"invalid new motion mode: {new_mode}")
@@ -1088,6 +1089,36 @@ class UR5Driver:
 
         self._clear_motion_mode(command_id=command_id, expected_mode="move_j")
         return reached
+
+    def servoL(self, pose, dt=None, speed=None, acceleration=None, lookahead_time=0.1, gain=300):
+        """Send one ServoL setpoint while retaining Cartesian servo mode."""
+        if dt is None:
+            dt = DEFAULT_TRAJECTORY_DT
+        if speed is None:
+            speed = DEFAULT_SPEED
+        if acceleration is None:
+            acceleration = DEFAULT_ACCELERATION
+
+        target_pose = self._normalize_pose(pose)
+        self._check_pose_range(target_pose)
+        dt = self._check_value_range("dt", dt, MIN_TRAJECTORY_DT, MAX_TRAJECTORY_DT)
+        speed = self._check_value_range("speed", speed, MIN_SPEED, MAX_SPEED)
+        acceleration = self._check_value_range("acceleration", acceleration, MIN_ACCELERATION, MAX_ACCELERATION)
+        lookahead_time = self._check_value_range("lookahead_time", lookahead_time, MIN_SERVOJ_LOOKAHEAD_TIME, MAX_SERVOJ_LOOKAHEAD_TIME)
+        gain = int(self._check_value_range("gain", gain, MIN_SERVOJ_GAIN, MAX_SERVOJ_GAIN))
+
+        with self._motion_lock:
+            if self._motion_mode != "servo_l":
+                self._begin_motion(new_mode="servo_l", stop_acceleration=acceleration)
+            logger.debug("[UR5] RTDE servoL target: %s", target_pose)
+            try:
+                return bool(self._call_control(
+                    "servoL", target_pose, speed, acceleration, dt,
+                    lookahead_time, gain,
+                ))
+            except Exception:
+                self._motion_mode = None
+                raise
 
 
     def move_arm_joint_trajectory(self, joint_trajectory, dt=None, speed=None, acceleration=None, lookahead_time=0.1, gain=300, wait=True, move_to_start=True, move_to_start_speed=None, move_to_start_acceleration=None):
