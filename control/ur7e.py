@@ -109,6 +109,7 @@ class UR7eDriver:
             "pose",
             "joints",
             "move_pose",
+            "servo_l",
             "move_joints",
             "joint_trajectory",
             "jog",
@@ -650,6 +651,75 @@ class UR7eDriver:
         )
         return True
 
+    def _recover_control_after_external_script(
+        self,
+        timeout=5.0,
+    ):
+        logger.warning(
+            "[UR7e] recovering RTDE control "
+            "after external URScript"
+        )
+
+        try:
+            self.wait_for_external_script_completion(
+                timeout=timeout,
+            )
+        except Exception as exc:
+            logger.warning(
+                "[UR7e] wait external script failed: %s",
+                exc,
+            )
+
+        # external URScript 已經讓 Python 端的 motion state 失真
+        self._motion_mode = None
+        self._jog_direction = None
+
+        # 重建 RTDE Control Script
+        self._disconnect_control()
+
+        time.sleep(0.1)
+
+        self._ensure_control_ready(
+            force_reupload=True
+        )
+
+        logger.info(
+            "[UR7e] RTDE control recovered"
+        )
+
+        return True
+
+    def wait_for_external_script_completion(
+        self, timeout=5.0, cancel_event=None, stable_stopped_time=0.2
+    ):
+        """Wait until a port-30002 URScript has actually stopped."""
+        timeout = max(0.1, float(timeout))
+        stable_stopped_time = max(0.05, float(stable_stopped_time))
+        deadline = time.monotonic() + timeout
+        stopped_since = None
+        while time.monotonic() < deadline:
+            if cancel_event is not None and cancel_event.is_set():
+                return False
+            running = bool(self._call_control(
+                "isProgramRunning", ensure_ready=False
+            ))
+            now = time.monotonic()
+            if running:
+                stopped_since = None
+            elif stopped_since is None:
+                stopped_since = now
+            elif now - stopped_since >= stable_stopped_time:
+                return True
+            if cancel_event is not None:
+                if cancel_event.wait(0.05):
+                    return False
+            else:
+                time.sleep(0.05)
+        raise TimeoutError(
+            f"external URScript did not finish within {timeout:.1f} seconds"
+        )
+
+
     def _generate_command_id(self):
         self._motion_command_id += 1
         return self._motion_command_id
@@ -661,7 +731,7 @@ class UR7eDriver:
 
     # 建立手臂動的類型
     def _set_motion_mode(self, mode):
-        allowed_modes = {None, "move_j", "move_l", "servo_j", "speed_l", "jog", "freedrive",}
+        allowed_modes = {None, "move_j", "move_l", "servo_j", "servo_l", "speed_l", "jog", "freedrive",}
 
         if mode not in allowed_modes:
             raise ValueError(
@@ -708,7 +778,7 @@ class UR7eDriver:
             MAX_STOP_ACCELERATION,
         )
 
-        if motion_mode == "servo_j":
+        if motion_mode in ("servo_j", "servo_l"):
             self._call_control(
                 "servoStop",
             )
@@ -758,7 +828,7 @@ class UR7eDriver:
         if stop_acceleration is None:
             stop_acceleration = DEFAULT_JOG_ACCELERATION
 
-        allowed_modes = {"move_j", "move_l", "servo_j", "speed_l", "jog", "freedrive"}
+        allowed_modes = {"move_j", "move_l", "servo_j", "servo_l", "speed_l", "jog", "freedrive"}
 
         if new_mode not in allowed_modes:
             raise ValueError(f"invalid new motion mode: {new_mode}")
@@ -1088,6 +1158,36 @@ class UR7eDriver:
 
         self._clear_motion_mode(command_id=command_id, expected_mode="move_j")
         return reached
+
+    def servoL(self, pose, dt=None, speed=None, acceleration=None, lookahead_time=0.1, gain=300):
+        """Send one ServoL setpoint while retaining Cartesian servo mode."""
+        if dt is None:
+            dt = DEFAULT_TRAJECTORY_DT
+        if speed is None:
+            speed = DEFAULT_SPEED
+        if acceleration is None:
+            acceleration = DEFAULT_ACCELERATION
+
+        target_pose = self._normalize_pose(pose)
+        self._check_pose_range(target_pose)
+        dt = self._check_value_range("dt", dt, MIN_TRAJECTORY_DT, MAX_TRAJECTORY_DT)
+        speed = self._check_value_range("speed", speed, MIN_SPEED, MAX_SPEED)
+        acceleration = self._check_value_range("acceleration", acceleration, MIN_ACCELERATION, MAX_ACCELERATION)
+        lookahead_time = self._check_value_range("lookahead_time", lookahead_time, MIN_SERVOJ_LOOKAHEAD_TIME, MAX_SERVOJ_LOOKAHEAD_TIME)
+        gain = int(self._check_value_range("gain", gain, MIN_SERVOJ_GAIN, MAX_SERVOJ_GAIN))
+
+        with self._motion_lock:
+            if self._motion_mode != "servo_l":
+                self._begin_motion(new_mode="servo_l", stop_acceleration=acceleration)
+            logger.debug("[UR7e] RTDE servoL target: %s", target_pose)
+            try:
+                return bool(self._call_control(
+                    "servoL", target_pose, speed, acceleration, dt,
+                    lookahead_time, gain,
+                ))
+            except Exception:
+                self._motion_mode = None
+                raise
 
 
     def move_arm_joint_trajectory(self, joint_trajectory, dt=None, speed=None, acceleration=None, lookahead_time=0.1, gain=300, wait=True, move_to_start=True, move_to_start_speed=None, move_to_start_acceleration=None):
@@ -1422,18 +1522,47 @@ class UR7eDriver:
         """
         開啟 Freedrive 手動拖曳模式。
 
-        開啟後可直接用手拖動機械手臂。
-        Freedrive 啟用期間不可執行一般 move / jog trajectory。
+        若 Freedrive 曾被 external URScript
+        （例如 Robotiq port 30002）中斷，
+        會自動恢復 RTDE control script 後重新進入 Freedrive。
         """
 
         with self._motion_lock:
 
-            # 先停止目前任何 motion。
-            if self._motion_mode is not None:
-                self._stop_motion(acceleration=DEFAULT_JOG_ACCELERATION)
+            # =====================================================
+            # Restore after external URScript
+            # =====================================================
+
+            if self._motion_mode == "freedrive":
+
+                logger.warning(
+                    "[UR7e] freedrive requested while "
+                    "software state is already freedrive; "
+                    "recovering RTDE control"
+                )
+
+                self._recover_control_after_external_script()
+
+            # =====================================================
+            # Stop other motion
+            # =====================================================
+
+            elif self._motion_mode is not None:
+
+                self._stop_motion(
+                    acceleration=
+                        DEFAULT_JOG_ACCELERATION
+                )
+
                 time.sleep(0.05)
 
-            command_id = self._generate_command_id()
+            # =====================================================
+            # Start Freedrive
+            # =====================================================
+
+            command_id = (
+                self._generate_command_id()
+            )
 
             logger.info(
                 "[UR7e] start freedrive "
@@ -1441,17 +1570,20 @@ class UR7eDriver:
                 command_id,
             )
 
-            result = self._call_control("freedriveMode")
+            result = self._call_control(
+                "freedriveMode"
+            )
 
             if not result:
                 raise RuntimeError(
                     "RTDE freedriveMode 執行失敗"
                 )
 
-            self._set_motion_mode("freedrive")
+            self._set_motion_mode(
+                "freedrive"
+            )
 
             return True
-
     def stop_arm_freedrive(self):
         """
         關閉 Freedrive，恢復一般 position control。

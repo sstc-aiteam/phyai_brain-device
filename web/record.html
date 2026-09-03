@@ -55,6 +55,7 @@
         button.secondary { background: #64748b; }
         button.danger { background: #dc2626; }
         button.gripper { background: #7c3aed; }
+        button.freedrive { background: #0f766e; }
         button:disabled { opacity: .45; cursor: not-allowed; }
         .status-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
         .status-item { padding: 13px; border-radius: 9px; background: #f8fafc; border: 1px solid #e2e8f0; }
@@ -206,6 +207,8 @@
                     <button id="startButton" type="submit">開始錄製</button>
                     <button id="stopButton" class="danger" type="button" disabled>停止並儲存</button>
                     <button id="refreshButton" class="secondary" type="button">更新狀態</button>
+                    <button id="startFreedriveButton" class="freedrive" type="button">開始 Freedrive</button>
+                    <button id="stopFreedriveButton" class="danger" type="button" disabled>結束 Freedrive</button>
                     <button id="openGripperButton" class="gripper" type="button" disabled>開啟夾爪</button>
                     <button id="closeGripperButton" class="gripper" type="button" disabled>關閉夾爪</button>
                 </div>
@@ -310,11 +313,14 @@
 
     <script type="module">
         import { getJson, postJson } from "/web/includes/library/JSFile/modules/core.js";
+        import { start_arm_freedrive, stop_arm_freedrive } from "/web/includes/library/JSFile/modules/arm.js";
 
         const form = document.getElementById("recordForm");
         const startButton = document.getElementById("startButton");
         const stopButton = document.getElementById("stopButton");
         const refreshButton = document.getElementById("refreshButton");
+        const startFreedriveButton = document.getElementById("startFreedriveButton");
+        const stopFreedriveButton = document.getElementById("stopFreedriveButton");
         const openGripperButton = document.getElementById("openGripperButton");
         const closeGripperButton = document.getElementById("closeGripperButton");
         const message = document.getElementById("message");
@@ -717,6 +723,30 @@
             }
         }
 
+        async function setFreedrive(start) {
+            const armName = document.getElementById("armName").value;
+            if (!armName) return showMessage("請先選擇手臂。", true);
+            startFreedriveButton.disabled = true;
+            stopFreedriveButton.disabled = true;
+            showMessage(start ? "正在啟動 Freedrive…" : "正在結束 Freedrive…");
+            try {
+                const response = await (start
+                    ? start_arm_freedrive(armName)
+                    : stop_arm_freedrive(armName));
+                showResponse(response);
+                if (!responseSucceeded(response)) throw new Error(responseError(response));
+                startFreedriveButton.disabled = start;
+                stopFreedriveButton.disabled = !start;
+                showMessage(start
+                    ? `${armName} Freedrive 已啟動。`
+                    : `${armName} Freedrive 已結束。`);
+            } catch (error) {
+                startFreedriveButton.disabled = false;
+                stopFreedriveButton.disabled = false;
+                showMessage(`Freedrive 操作失敗：${error.message}`, true);
+            }
+        }
+
         document.getElementById("armName").addEventListener("change", (event) => {
             fillGripperSelect("gripperName", event.target.value);
             renderResolvedOutputPath();
@@ -778,6 +808,8 @@
             catch (error) { showPlaybackMessage(`資料集更新失敗：${error.message}`, true); }
         });
         refreshButton.addEventListener("click", refreshStatus);
+        startFreedriveButton.addEventListener("click", () => setFreedrive(true));
+        stopFreedriveButton.addEventListener("click", () => setFreedrive(false));
         openGripperButton.addEventListener("click", () => moveGripper("open"));
         closeGripperButton.addEventListener("click", () => moveGripper("close"));
         window.addEventListener("beforeunload", () => {
