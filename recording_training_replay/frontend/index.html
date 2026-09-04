@@ -71,6 +71,7 @@
         }
         select:disabled, input:disabled { background: #eef1f5; }
         .hint { color: #64748b; font-size: 13px; }
+        .action-hint { flex: 1 0 100%; margin: 0 0 4px; padding: 10px 13px; border: 1px solid #fcd34d; border-radius: 8px; color: #92400e; background: #fffbeb; font-size: 14px; }
         .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
         button {
             padding: 11px 18px;
@@ -341,6 +342,7 @@
                 </div>
             </div>
             <div class="actions">
+                <div class="action-hint" role="note">ⓘ 開始播放前，請先更新資料夾以載入最新錄製內容。</div>
                 <button id="startReplayButton" type="button">開始 Replay</button>
                 <button id="refreshReplayButton" class="secondary" type="button">更新資料夾</button>
             </div>
