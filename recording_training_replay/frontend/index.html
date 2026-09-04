@@ -342,7 +342,6 @@
             </div>
             <div class="actions">
                 <button id="startReplayButton" type="button">開始 Replay</button>
-                <button id="stopReplayButton" class="danger" type="button" disabled>緊急停止 Replay</button>
                 <button id="refreshReplayButton" class="secondary" type="button">更新資料夾</button>
             </div>
             <div class="status-grid" style="margin-top: 16px">
@@ -399,7 +398,7 @@
         import { getJson } from "/web/includes/library/JSFile/modules/core.js";
         import { start_arm_freedrive, stop_arm_freedrive } from "/web/includes/library/JSFile/modules/arm.js";
         import { getRecordingStatus, getTaskRegistry, registerTask, moveRecordingGripper, startRecording, stopRecording } from "/recording-training-replay/static/recording.js";
-        import { getReplayCatalog, startPlayback, stopPlayback } from "/recording-training-replay/static/replay.js";
+        import { getPlaybackStatus, getReplayCatalog, startPlayback, stopPlayback } from "/recording-training-replay/static/replay.js";
         import { getTrainingUploadStatus, submitTrainingDataset } from "/recording-training-replay/static/training.js";
 
         const form = document.getElementById("recordForm");
@@ -416,6 +415,7 @@
         const previewPlaceholder = document.getElementById("previewPlaceholder");
         const previewBadge = document.getElementById("previewBadge");
         let pollingTimer = null;
+        let replayPollingTimer = null;
         let uploadPollingTimer = null;
         let replayCatalogSignature = "";
         let previewCameraName = null;
@@ -710,6 +710,46 @@
             element.className = isError ? "error" : "success";
         }
 
+        async function refreshReplayStatus() {
+            try {
+                const response = await getPlaybackStatus();
+                if (!responseSucceeded(response)) throw new Error(responseError(response));
+                const data = responseData(response);
+                const playing = Boolean(data.playing);
+                const labels = {
+                    idle: "未播放", starting: "準備中", loading: "載入 Episode",
+                    validating_arm: "檢查手臂", validating_gripper: "檢查夾爪",
+                    waiting_for_motion_session: "等待手臂控制權",
+                    moving_to_start: "移動至起點",
+                    playing: "播放中", completed: "播放完成", stopped: "已停止", failed: "播放失敗",
+                };
+                const status = document.getElementById("playingStatus");
+                status.textContent = labels[data.phase] ?? (playing ? "播放中" : "未播放");
+                status.className = `status-value ${playing ? "recording" : "stopped"}`;
+                document.getElementById("playbackElapsed").textContent = `${Number(data.elapsed_seconds ?? 0).toFixed(1)} 秒`;
+                document.getElementById("playbackPath").textContent = data.input_path ?? selectedReplayDataset()?.dataset_path ?? "—";
+                document.getElementById("replayDataset").disabled = playing;
+                document.getElementById("replayEpisode").disabled = playing;
+                document.getElementById("replayArm").disabled = playing;
+                document.getElementById("replayGripper").disabled = playing;
+                if (playing) {
+                    document.getElementById("startReplayButton").disabled = true;
+                    if (replayPollingTimer === null) replayPollingTimer = window.setInterval(refreshReplayStatus, 500);
+                } else {
+                    if (replayPollingTimer !== null) {
+                        window.clearInterval(replayPollingTimer);
+                        replayPollingTimer = null;
+                    }
+                    updateReplaySelection();
+                    if (data.phase === "completed") showPlaybackMessage("Replay 播放完成。");
+                    else if (data.phase === "failed") showPlaybackMessage(`Replay 失敗：${data.error ?? "未知錯誤"}`, true);
+                    else if (data.phase === "stopped") showPlaybackMessage("Replay 已停止。");
+                }
+            } catch (error) {
+                showPlaybackMessage(`Replay 狀態更新失敗：${error.message}`, true);
+            }
+        }
+
         function showUploadMessage(text, isError = false) {
             const element = document.getElementById("uploadMessage");
             element.textContent = text;
@@ -975,34 +1015,15 @@
                 });
                 showResponse(response);
                 if (!responseSucceeded(response)) throw new Error(responseError(response));
-                showPlaybackMessage("Replay 已開始。需要立即停止時按紅色按鈕或實體急停。")
+                showPlaybackMessage("Replay 已開始；播放結束後狀態會自動更新。")
                 document.getElementById("playingStatus").textContent = "播放中";
                 document.getElementById("playingStatus").className = "status-value recording";
                 document.getElementById("startReplayButton").disabled = true;
-                document.getElementById("stopReplayButton").disabled = false;
                 document.getElementById("replayDataset").disabled = true;
                 document.getElementById("replayEpisode").disabled = true;
+                await refreshReplayStatus();
             } catch (error) {
                 showPlaybackMessage(`Replay 啟動失敗：${error.message}`, true);
-            }
-        });
-        document.getElementById("stopReplayButton").addEventListener("click", async () => {
-            try {
-                const response = await stopPlayback({
-                    arm_name: document.getElementById("replayArm").value,
-                    gripper_name: document.getElementById("replayGripper").value,
-                });
-                showResponse(response);
-                if (!responseSucceeded(response)) throw new Error(responseError(response));
-                showPlaybackMessage("Replay 已停止。")
-                document.getElementById("playingStatus").textContent = "未播放";
-                document.getElementById("playingStatus").className = "status-value stopped";
-                document.getElementById("startReplayButton").disabled = !selectedReplayDataset();
-                document.getElementById("stopReplayButton").disabled = true;
-                document.getElementById("replayDataset").disabled = false;
-                document.getElementById("replayEpisode").disabled = false;
-            } catch (error) {
-                showPlaybackMessage(`停止 Replay 失敗：${error.message}`, true);
             }
         });
         document.getElementById("refreshReplayButton").addEventListener("click", async () => {
@@ -1039,12 +1060,18 @@
         closeGripperButton.addEventListener("click", () => moveGripper("close"));
         window.addEventListener("beforeunload", () => {
             if (pollingTimer !== null) window.clearInterval(pollingTimer);
+            if (replayPollingTimer !== null) window.clearInterval(replayPollingTimer);
             if (uploadPollingTimer !== null) window.clearInterval(uploadPollingTimer);
             stopPreview();
         });
         try { await loadRecordingDevices(); } catch (error) { showMessage(`设备读取失败：${error.message}`, true); }
         syncDatasetModeUI();
         await loadTaskRegistry();
+        try {
+            await loadReplayCatalog(true);
+        } catch (error) {
+            showPlaybackMessage(`資料夾初始化失敗：${error.message}`, true);
+        }
         refreshUploadStatus();
         refreshStatus();
     </script>
