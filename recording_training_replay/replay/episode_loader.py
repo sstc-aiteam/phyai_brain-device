@@ -7,6 +7,7 @@ import numpy as np
 from services import recording_training_replay_service as _service
 
 
+# 讀取 LeRobot v2 episode 的關節與夾爪軌跡。
 def load_lerobot_v2_episode(input_path, episode_index=0):
     """Load a joint trajectory from a LeRobot v2 parquet episode."""
     import pyarrow.parquet as pq
@@ -19,7 +20,7 @@ def load_lerobot_v2_episode(input_path, episode_index=0):
     if episode_index < 0:
         raise ValueError("episode_index 不可小於 0")
 
-    info = _service._read_dataset_info(dataset_path) or {}
+    info = _service.read_dataset_info(dataset_path) or {}
     if info.get("codebase_version") not in {"v2.0", "v2.1"}:
         raise ValueError("選取的資料集不是 LeRobot v2")
     fps = int(info.get("fps", 0))
@@ -71,6 +72,7 @@ def load_lerobot_v2_episode(input_path, episode_index=0):
     return dataset_path, 1.0 / fps, joint_trajectory, gripper_events
 
 
+# 讀取 LeRobot v3 episode 的關節與夾爪軌跡。
 def load_lerobot_v3_episode(input_path, episode_index=0):
     """Load a joint trajectory from a LeRobot v3 parquet episode."""
     try:
@@ -86,7 +88,7 @@ def load_lerobot_v3_episode(input_path, episode_index=0):
     if episode_index < 0:
         raise ValueError("episode_index 不可小於 0")
 
-    info = _service._read_dataset_info(dataset_path) or {}
+    info = _service.read_dataset_info(dataset_path) or {}
     if info.get("codebase_version") != "v3.0":
         raise ValueError("選取的資料集不是 LeRobot v3")
     fps = float(info.get("fps", 0))

@@ -7,10 +7,12 @@ from services import recording_training_replay_service as subsystem_service
 record_bp = Blueprint("record", __name__, url_prefix="/api/record")
 
 
+# 取得請求中的 JSON 資料。
 def _json():
     return request.get_json(silent=True) or {}
 
 
+# 接收並啟動機器人錄製請求。
 @record_bp.post("/start_robot_recording")
 def start_robot_recording():
     data = _json()
@@ -26,6 +28,7 @@ def start_robot_recording():
     ))
 
 
+# 停止錄製並儲存目前 episode。
 @record_bp.post("/stop_robot_recording")
 def stop_robot_recording():
     data = _json()
@@ -35,6 +38,7 @@ def stop_robot_recording():
     ))
 
 
+# 回傳目前的錄製狀態。
 @record_bp.get("/get_robot_recording_status")
 def get_robot_recording_status():
     return jsonify(subsystem_service.get_recording_status_service(
@@ -42,16 +46,19 @@ def get_robot_recording_status():
     ))
 
 
+# 回傳已註冊的錄製任務清單。
 @record_bp.get("/get_task_registry")
 def get_task_registry():
     return jsonify(subsystem_service.get_task_registry())
 
 
+# 新增一筆錄製任務。
 @record_bp.post("/register_task")
 def register_task():
     return jsonify(subsystem_service.register_task(_json().get("task")))
 
 
+# 解析參數並執行指定的夾爪操作。
 def _gripper_call(action):
     data = _json()
     return jsonify(action(
@@ -61,6 +68,7 @@ def _gripper_call(action):
     ))
 
 
+# 將錄製用夾爪移動至指定位置。
 @record_bp.post("/move_recording_gripper")
 def move_recording_gripper():
     data = _json()
@@ -70,11 +78,13 @@ def move_recording_gripper():
     ))
 
 
+# 開啟錄製用夾爪。
 @record_bp.post("/open_recording_gripper")
 def open_recording_gripper():
     return _gripper_call(subsystem_service.open_recording_gripper)
 
 
+# 關閉錄製用夾爪。
 @record_bp.post("/close_recording_gripper")
 def close_recording_gripper():
     return _gripper_call(subsystem_service.close_recording_gripper)

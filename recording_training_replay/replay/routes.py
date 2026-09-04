@@ -7,11 +7,13 @@ from services import recording_training_replay_service as subsystem_service
 replay_bp = Blueprint("replay", __name__, url_prefix="/api/record")
 
 
+# 回傳可供 Replay 的資料集清單。
 @replay_bp.get("/get_replay_catalog")
 def get_replay_catalog():
     return jsonify(subsystem_service.get_replay_catalog())
 
 
+# 啟動指定 episode 的機器人回放。
 @replay_bp.post("/start_robot_playback")
 def start_robot_playback():
     data = request.get_json(silent=True) or {}
@@ -27,6 +29,7 @@ def start_robot_playback():
     ))
 
 
+# 停止目前進行中的機器人回放。
 @replay_bp.post("/stop_robot_playback")
 def stop_robot_playback():
     data = request.get_json(silent=True) or {}
@@ -35,6 +38,7 @@ def stop_robot_playback():
     ))
 
 
+# 回傳目前的機器人回放狀態。
 @replay_bp.get("/get_robot_playback_status")
 def get_robot_playback_status():
     return jsonify(subsystem_service.get_replay_status_service())

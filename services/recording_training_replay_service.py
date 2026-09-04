@@ -70,7 +70,7 @@ def _project_root():
     return PROJECT_ROOT
 
 
-def _read_dataset_info(dataset_path):
+def read_dataset_info(dataset_path):
     path = os.path.join(dataset_path, "meta", "info.json")
     if not os.path.isfile(path):
         return None
@@ -129,7 +129,7 @@ def _lerobot_features(camera_frames):
     return features
 
 
-def _open_lerobot_dataset(dataset_path, fps, camera_frames, robot_type):
+def open_lerobot_dataset(dataset_path, fps, camera_frames, robot_type):
     os.environ.setdefault(
         "HF_DATASETS_CACHE",
         os.path.join(_project_root(), ".cache", "huggingface", "datasets"),
@@ -142,7 +142,7 @@ def _open_lerobot_dataset(dataset_path, fps, camera_frames, robot_type):
             "run pip install -r requirements.txt"
         ) from exc
 
-    info = _read_dataset_info(dataset_path)
+    info = read_dataset_info(dataset_path)
     record_video = bool(camera_frames)
     repo_id = _dataset_repo_id(dataset_path)
     common = {
@@ -204,7 +204,7 @@ def _open_lerobot_dataset(dataset_path, fps, camera_frames, robot_type):
     )
 
 
-def _tcp_local_delta(current_pose, next_pose):
+def tcp_local_delta(current_pose, next_pose):
     import cv2
 
     current = np.asarray(current_pose, dtype=np.float64)
@@ -224,7 +224,7 @@ def _tcp_local_delta(current_pose, next_pose):
     ]).astype(np.float32)
 
 
-def _tcp_base_delta(current_pose, next_pose):
+def tcp_base_delta(current_pose, next_pose):
     import cv2
 
     current = np.asarray(current_pose, dtype=np.float64)
@@ -242,15 +242,15 @@ def _tcp_base_delta(current_pose, next_pose):
     ]).astype(np.float32)
 
 
-def _sample_to_lerobot_frame(sample, next_sample, task, done=False):
+def sample_to_lerobot_frame(sample, next_sample, task, done=False):
     state = np.asarray(sample["joints"] + [sample["gripper"]], dtype=np.float32)
     tcp_pose = np.asarray(sample["tcp_pose"] + [sample["gripper"]], dtype=np.float32)
-    delta = _tcp_local_delta(sample["tcp_pose"], next_sample["tcp_pose"])
+    delta = tcp_local_delta(sample["tcp_pose"], next_sample["tcp_pose"])
     action_tcp = np.concatenate([
         delta,
         np.asarray([next_sample["gripper"]], dtype=np.float32),
     ])
-    base_delta = _tcp_base_delta(sample["tcp_pose"], next_sample["tcp_pose"])
+    base_delta = tcp_base_delta(sample["tcp_pose"], next_sample["tcp_pose"])
     action_tcp_base = np.concatenate([
         base_delta,
         np.asarray([next_sample["gripper"]], dtype=np.float32),
@@ -281,18 +281,18 @@ def _service_data(response, action):
     return response.get("data") or {}
 
 
-def _normalize_dataset_mode(value):
+def normalize_dataset_mode(value):
     mode = str(value or "multi_task").strip().lower().replace("-", "_")
     if mode not in {"multi_task", "single_task"}:
         raise ValueError("dataset_mode 必須是 multi_task 或 single_task")
     return mode
 
 
-def _task_slug(task):
+def task_slug(task):
     return re.sub(r"[^a-z0-9]+", "-", task.lower()).strip("-")[:48] or "task"
 
 
-def _dataset_slug(dataset_name):
+def dataset_slug(dataset_name):
     return (
         re.sub(r"[^a-z0-9._-]+", "_", str(dataset_name).lower())
         .strip("._-")[:64]
@@ -373,13 +373,13 @@ def _dataset_path(
         if os.path.commonpath([DEFAULT_DATASET_DIR, path]) != DEFAULT_DATASET_DIR:
             raise ValueError("output_path 必須位於 lerobot_datasets")
         return path
-    mode = _normalize_dataset_mode(dataset_mode)
+    mode = normalize_dataset_mode(dataset_mode)
     if mode == "multi_task":
         if not str(dataset_name or "").strip():
             raise ValueError("multi_task 必須設定 dataset_name")
-        folder = os.path.join(mode, _dataset_slug(dataset_name))
+        folder = os.path.join(mode, dataset_slug(dataset_name))
     else:
-        folder = os.path.join(mode, _task_slug(task))
+        folder = os.path.join(mode, task_slug(task))
     return os.path.join(DEFAULT_DATASET_DIR, dataset_format, folder)
 
 
@@ -487,7 +487,7 @@ def start_recording(
         if not arm_name:
             raise ValueError("arm_name 不可為空")
         task = _normalize_task(task)
-        mode = _normalize_dataset_mode(dataset_mode)
+        mode = normalize_dataset_mode(dataset_mode)
         if mode == "multi_task" and _registered_task(task) is None:
             raise ValueError(f"multi-task 尚未註冊 task：{task}")
         interval = float(interval)
@@ -720,7 +720,7 @@ def _normalize_input_path(input_path):
         raise ValueError("input_path 必須位於 lerobot_datasets 內")
     if not os.path.isdir(path):
         raise FileNotFoundError(f"LeRobot dataset 不存在：{path}")
-    if _read_dataset_info(path) is None:
+    if read_dataset_info(path) is None:
         raise ValueError(f"不是有效的 LeRobot dataset：{path}")
     return path
 
@@ -810,7 +810,7 @@ def get_replay_catalog():
             if os.path.basename(directory) != "meta" or "info.json" not in filenames:
                 continue
             dataset_path = os.path.dirname(directory)
-            info = _read_dataset_info(dataset_path) or {}
+            info = read_dataset_info(dataset_path) or {}
             episode_details = _parquet_episode_details(dataset_path, info)
             if not episode_details:
                 continue
@@ -999,7 +999,7 @@ def _playback_worker(input_path, episode_index, arm_name, gripper_name,
         with _playback_lock:
             _playback_phase = "validating_arm"
         arm = _require_replay_arm(arm_name)
-        info = _read_dataset_info(dataset_path) or {}
+        info = read_dataset_info(dataset_path) or {}
         if info.get("robot_type") != arm.get("driver"):
             raise ValueError("dataset robot_type 與選擇的 arm 不相容")
         # Do not query gripper status before motion.  The e-Series status path
@@ -1068,7 +1068,7 @@ def start_robot_playback(input_path, arm_name, gripper_name=None,
             loader = _episode_loader
         else:
             normalized_path = _normalize_input_path(input_path)
-            info = _read_dataset_info(normalized_path) or {}
+            info = read_dataset_info(normalized_path) or {}
             detected_format = (
                 "lerobot_v2"
                 if str(info.get("codebase_version", "")).startswith("v2")

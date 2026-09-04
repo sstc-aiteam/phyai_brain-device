@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import cv2
 import numpy as np
 
-from recording_training_replay.recording import lerobot_common as _common
+from services import recording_training_replay_service as _service
 CODEBASE_VERSION = "v2.0"
 SUPPORTED_ROBOT_TYPES = {"ur5", "ur7e"}
 
@@ -23,11 +23,12 @@ ACTION_NAMES = [
 LANGUAGE_COLUMN = "annotation.language.language_instruction"
 DEFAULT_DATASET_DIR = os.path.abspath(os.environ.get(
     "LEROBOT_DATASET_ROOT",
-    _common.DEFAULT_DATASET_DIR,
+    _service.DEFAULT_DATASET_DIR,
 ))
 SCHEMA_DIR = os.path.join(DEFAULT_DATASET_DIR, "schema")
 SCHEMA_PATH = os.path.join(SCHEMA_DIR, "modality.json")
 
+# 建立 GR00T N1.5 使用的 modality schema。
 def modality_config(camera_name, robot_type=None):
     """Return the GR00T N1.5 modality payload for a UR5/UR7e wrist camera."""
     if robot_type is not None:
@@ -70,6 +71,7 @@ def modality_config(camera_name, robot_type=None):
     }
 
 
+# 使用目前與下一個錄製 frame，產生一筆包含狀態與動作的 GR00T 訓練資料。
 def sample_to_lerobot_v2_row(
     sample,
     next_sample,
@@ -85,7 +87,7 @@ def sample_to_lerobot_v2_row(
     state = np.asarray(
         sample["tcp_pose"] + [sample["gripper"]], dtype=np.float32
     )
-    delta = _common._tcp_local_delta(sample["tcp_pose"], next_sample["tcp_pose"])
+    delta = _service.tcp_local_delta(sample["tcp_pose"], next_sample["tcp_pose"])
     action = np.concatenate([
         delta,
         np.asarray([next_sample["gripper"]], dtype=np.float32),
@@ -106,6 +108,7 @@ def sample_to_lerobot_v2_row(
     }
 
 
+# 讀取 JSON Lines 檔案中的所有資料列。
 def _jsonl_read(path):
     if not os.path.isfile(path):
         return []
@@ -113,6 +116,7 @@ def _jsonl_read(path):
         return [json.loads(line) for line in source if line.strip()]
 
 
+# 以安全替換方式寫入 JSON Lines 檔案。
 def _jsonl_write(path, rows):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     temporary = f"{path}.tmp"
@@ -122,6 +126,7 @@ def _jsonl_write(path, rows):
     os.replace(temporary, path)
 
 
+# 以安全替換方式寫入 JSON 檔案。
 def _json_write(path, payload):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     temporary = f"{path}.tmp"
@@ -131,63 +136,14 @@ def _json_write(path, payload):
     os.replace(temporary, path)
 
 
+# 檢查目錄內是否包含任何檔案。
 def _directory_has_files(path):
     return os.path.isdir(path) and any(
         filenames for _, _, filenames in os.walk(path)
     )
 
 
-def _is_recoverable_incomplete_dataset(root, camera_name, expected_schema):
-    """Recognize files left when recording stopped before its first save.
-
-    ``info.json`` is intentionally written only after ``save_episode``.  A
-    process interruption before that point can therefore leave the task,
-    modality and episode-0 video behind.  Those files are safe to reuse: the
-    next episode-0 video writer truncates the orphan video and the task list is
-    append-only.  Anything else remains an error so an unrelated directory is
-    never silently adopted as a dataset.
-    """
-    if not os.path.isdir(root):
-        return False
-    allowed_files = {
-        os.path.join("meta", "tasks.jsonl"),
-        os.path.join("meta", "modality.json"),
-        os.path.join(
-            "videos", "chunk-000", f"observation.images.{camera_name}",
-            "episode_000000.mp4",
-        ),
-    }
-    found_files = set()
-    for directory, _, filenames in os.walk(root):
-        for filename in filenames:
-            found_files.add(os.path.relpath(os.path.join(directory, filename), root))
-    if not found_files or not found_files.issubset(allowed_files):
-        return False
-
-    modality_path = os.path.join(root, "meta", "modality.json")
-    if os.path.isfile(modality_path):
-        try:
-            with open(modality_path, "r", encoding="utf-8") as source:
-                if json.load(source) != expected_schema:
-                    return False
-        except (OSError, ValueError, TypeError):
-            return False
-    tasks_path = os.path.join(root, "meta", "tasks.jsonl")
-    if os.path.isfile(tasks_path):
-        try:
-            tasks = _jsonl_read(tasks_path)
-            if any(
-                not isinstance(row, dict)
-                or not isinstance(row.get("task"), str)
-                or not isinstance(row.get("task_index"), int)
-                for row in tasks
-            ):
-                return False
-        except (OSError, ValueError, TypeError):
-            return False
-    return True
-
-
+# 建立或驗證機器人共用的 GR00T schema。
 def _ensure_shared_schema(camera_name, robot_type):
     """Create the canonical schema once and reject incompatible recordings."""
     expected = modality_config(camera_name, robot_type)
@@ -204,6 +160,7 @@ def _ensure_shared_schema(camera_name, robot_type):
     return expected
 
 
+# 根據錄製模式產生穩定的 v2 dataset 路徑。
 def _resolve_dataset_path(
     task, arm_name, robot_type, dataset_mode="multi_task", dataset_name=None,
 ):
@@ -211,19 +168,20 @@ def _resolve_dataset_path(
     robot_type = str(robot_type).strip().lower()
     if robot_type not in SUPPORTED_ROBOT_TYPES:
         raise ValueError("robot_type 必須是 " + " 或 ".join(sorted(SUPPORTED_ROBOT_TYPES)))
-    mode = _common._normalize_dataset_mode(dataset_mode)
+    mode = _service.normalize_dataset_mode(dataset_mode)
     folder_name = dataset_name if mode == "multi_task" else task
     if not str(folder_name or "").strip():
         raise ValueError("multi_task 必須設定 dataset_name")
     slug = (
-        _common._dataset_slug(folder_name)
+        _service.dataset_slug(folder_name)
         if mode == "multi_task"
-        else _common._task_slug(str(folder_name))
+        else _service.task_slug(str(folder_name))
     )
     folder = os.path.join(mode, slug)
     return os.path.join(DEFAULT_DATASET_DIR, "lerobot_v2", folder)
 
 
+# 產生相容舊呼叫方式的 multi-task 路徑。
 def _resolve_multitask_path(task, robot_type, arm_name=None):
     """Backward-compatible helper for callers expecting multi-task mode."""
     arm_name = arm_name or ("left" if robot_type == "ur7e" else "right")
@@ -235,6 +193,7 @@ def _resolve_multitask_path(task, robot_type, arm_name=None):
 class LeRobotV2DatasetWriter:
     """Small append-only LeRobot v2 writer matching the API used by v3 recorder."""
 
+    # 初始化並驗證 LeRobot v2 dataset writer。
     def __init__(self, root, fps, camera_frames, robot_type):
         self.root = os.path.abspath(root)
         self.fps = int(fps)
@@ -252,7 +211,7 @@ class LeRobotV2DatasetWriter:
             raise ValueError("GR00T multi-task dataset 的影像解析度固定為 640x480")
         schema = _ensure_shared_schema(camera_name, robot_type)
         self.info_path = os.path.join(self.root, "meta", "info.json")
-        existing = _common._read_dataset_info(self.root)
+        existing = _service.read_dataset_info(self.root)
         if existing:
             if existing.get("codebase_version") not in {"v2.0", "v2.1"}:
                 raise ValueError("output_path 已包含非 LeRobot v2 資料")
@@ -262,9 +221,7 @@ class LeRobotV2DatasetWriter:
                 raise ValueError("同一資料集不可混用 UR5 與 UR7e")
             self.info = existing
         else:
-            if _directory_has_files(self.root) and not _is_recoverable_incomplete_dataset(
-                self.root, camera_name, schema
-            ):
+            if _directory_has_files(self.root):
                 raise ValueError("output_path 已存在且不是 LeRobot v2 資料集")
             self.info = self._new_info()
         os.makedirs(os.path.join(self.root, "meta"), exist_ok=True)
@@ -282,7 +239,7 @@ class LeRobotV2DatasetWriter:
             {
                 "dtype": "float32",
                 "shape": [7],
-                "names": list(_common.DEFAULT_ARM_JOINT_NAMES) + ["gripper"],
+                "names": list(_service.DEFAULT_ARM_JOINT_NAMES) + ["gripper"],
             },
         )
         self.meta = SimpleNamespace(total_episodes=int(self.info.get("total_episodes", 0)))
@@ -290,12 +247,13 @@ class LeRobotV2DatasetWriter:
         self.task = None
         self.video_writers = {}
 
+    # 建立新資料集的 info.json 內容。
     def _new_info(self):
         features = {
             "observation.state": {"dtype": "float32", "shape": [7], "names": STATE_NAMES},
             "observation.joints": {
                 "dtype": "float32", "shape": [7],
-                "names": list(_common.DEFAULT_ARM_JOINT_NAMES) + ["gripper"],
+                "names": list(_service.DEFAULT_ARM_JOINT_NAMES) + ["gripper"],
             },
             "action": {"dtype": "float32", "shape": [7], "names": ACTION_NAMES},
             "timestamp": {"dtype": "float32", "shape": [1], "names": None},
@@ -330,6 +288,7 @@ class LeRobotV2DatasetWriter:
             "features": features,
         }
 
+    # 取得既有 task index 或建立新的 index。
     def _task_index(self, task):
         path = os.path.join(self.root, "meta", "tasks.jsonl")
         tasks = _jsonl_read(path)
@@ -344,6 +303,7 @@ class LeRobotV2DatasetWriter:
         _jsonl_write(path, tasks)
         return task_index
 
+    # 取得或建立目前 episode 的相機影片 writer。
     def _video_writer(self, camera_name, image):
         writer = self.video_writers.get(camera_name)
         if writer is not None:
@@ -363,6 +323,7 @@ class LeRobotV2DatasetWriter:
         self.video_writers[camera_name] = writer
         return writer
 
+    # 將一個錄製 frame 加入目前 episode。
     def add_frame(self, frame):
         task = str(frame.pop("task"))
         self.task = task
@@ -391,6 +352,7 @@ class LeRobotV2DatasetWriter:
             self._video_writer(camera_name, image).write(image)
         self.rows.append(row)
 
+    # 將目前 episode 寫入 Parquet、影片與 metadata。
     def save_episode(self):
         if not self.rows:
             raise RuntimeError("LeRobot v2 episode 沒有 frame")
@@ -453,17 +415,20 @@ class LeRobotV2DatasetWriter:
         self.meta.total_episodes += 1
         self.rows = []
 
+    # 關閉仍在使用的影片 writer。
     def finalize(self):
         for writer in self.video_writers.values():
             writer.release()
         self.video_writers.clear()
 
 
-def _open_v2_dataset(dataset_path, fps, camera_frames, robot_type):
+# 建立 GR00T N1.5 訓練資料集 writer。
+def create_writer(dataset_path, fps, camera_frames, robot_type):
     return LeRobotV2DatasetWriter(dataset_path, fps, camera_frames, robot_type)
 
 
-def _v2_frame(sample, next_sample, task, done=False):
+# 封裝錄製樣本供 v2 writer 後續處理。
+def encode_frame(sample, next_sample, task, done=False):
     return {
         "task": task,
         "_sample": sample,

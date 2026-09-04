@@ -8,6 +8,7 @@ training_bp = Blueprint("training", __name__, url_prefix="/api/training")
 legacy_training_bp = Blueprint("legacy_training", __name__, url_prefix="/api/record")
 
 
+# 上傳資料集並建立訓練工作。
 def upload_training_dataset():
     data = request.get_json(silent=True) or {}
     return jsonify(subsystem_service.start_dataset_upload(
@@ -17,6 +18,7 @@ def upload_training_dataset():
     ))
 
 
+# 回傳訓練資料集的上傳狀態。
 def get_dataset_upload_status():
     return jsonify(subsystem_service.get_dataset_upload_status())
 
