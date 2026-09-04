@@ -5,10 +5,7 @@ from control.loader import (
     get_camera_driver_name,
 )
 
-from utils.response import (
-    success,
-    error,
-)
+from utils import response
 
 
 MODULE = "camera"
@@ -17,16 +14,15 @@ MODULE = "camera"
 # ============================================================
 # Camera Context
 # ============================================================
-
 def _normalize_camera_name(
     camera_name,
 ):
     if not isinstance(
         camera_name,
         str,
-    ) or not camera_name.strip():
+    ):
         raise ValueError(
-            "camera_name must be a non-empty string"
+            "camera_name must be a string"
         )
 
     camera_name = (
@@ -34,6 +30,11 @@ def _normalize_camera_name(
         .strip()
         .lower()
     )
+
+    if not camera_name:
+        raise ValueError(
+            "camera_name must not be empty"
+        )
 
     if camera_name not in config.CAMERAS:
         raise ValueError(
@@ -67,7 +68,7 @@ def _get_camera_context(
         )
     )
 
-    driver_name = (
+    driver = (
         get_camera_driver_name(
             camera_name
         )
@@ -76,7 +77,7 @@ def _get_camera_context(
     return (
         camera_name,
         camera,
-        driver_name,
+        driver,
         camera_config,
     )
 
@@ -97,51 +98,8 @@ def _get_target_camera_names(
 
 
 # ============================================================
-# Helpers
+# Config
 # ============================================================
-
-def _service_error(
-    action,
-    exc,
-    driver=None,
-):
-    return error(
-        MODULE,
-        action,
-        error=exc,
-        driver=driver,
-        error_type=
-            type(exc).__name__,
-    )
-
-
-def _execution_result(
-    action,
-    result,
-    camera_name,
-    driver,
-):
-    if not isinstance(
-        result,
-        bool,
-    ):
-        raise RuntimeError(
-            f"camera driver '{driver}' "
-            f"must return bool, got "
-            f"{type(result).__name__}"
-        )
-
-    return success(
-        MODULE,
-        action,
-        result=result,
-        data={
-            "camera_name":
-                camera_name,
-        },
-        driver=driver,
-    )
-
 
 def _get_stream_config(
     camera_config,
@@ -164,6 +122,10 @@ def _get_stream_config(
 
     return stream
 
+
+# ============================================================
+# Capabilities
+# ============================================================
 
 def _get_capabilities(
     camera,
@@ -193,7 +155,9 @@ def _get_capabilities(
     ):
         return {}
 
-    return capabilities
+    return dict(
+        capabilities
+    )
 
 
 def _require_capability(
@@ -219,12 +183,32 @@ def _require_capability(
 
 
 # ============================================================
-# Status
+# GET STATUS
 # ============================================================
 
 def get_camera_status(
     camera_name=None,
 ):
+    """
+    Standard camera status schema:
+
+    {
+        "connected": bool,
+        "running": bool | None,
+        "width": int | None,
+        "height": int | None,
+        "fps": float | int | None,
+        "color_enabled": bool | None,
+        "depth_enabled": bool | None,
+        "fault": bool | None
+    }
+
+    回傳 config.CAMERAS 中所有已設定的 camera。
+
+    Camera 無法建立、連線或取得狀態時，
+    仍保留該 camera 並標記 connected=False。
+    """
+
     action = "get_camera_status"
 
     try:
@@ -235,6 +219,8 @@ def get_camera_status(
                 camera_name
             )
         ):
+            driver = None
+
             try:
                 (
                     current_name,
@@ -247,36 +233,118 @@ def get_camera_status(
                     )
                 )
 
-                cameras.append({
-                    "camera_name":
-                        current_name,
+                raw_status = (
+                    camera
+                    .get_camera_status()
+                )
 
-                    "driver":
-                        driver,
-
-                    "status":
-                        camera
-                        .get_camera_status(),
-                })
-
-            except Exception as exc:
-                if camera_name is not None:
-                    return (
-                        _service_error(
-                            action,
-                            exc,
-                        )
+                if not isinstance(
+                    raw_status,
+                    dict,
+                ):
+                    raise RuntimeError(
+                        f"camera driver "
+                        f"'{driver}' "
+                        f"get_camera_status() "
+                        f"must return dict"
                     )
 
-                cameras.append({
-                    "camera_name":
-                        name,
+                status = {
+                    "connected":
+                        bool(
+                            raw_status.get(
+                                "connected",
+                                False,
+                            )
+                        ),
 
-                    "error":
-                        str(exc),
-                })
+                    "running":
+                        raw_status.get(
+                            "running"
+                        ),
 
-        return success(
+                    "width":
+                        raw_status.get(
+                            "width"
+                        ),
+
+                    "height":
+                        raw_status.get(
+                            "height"
+                        ),
+
+                    "fps":
+                        raw_status.get(
+                            "fps"
+                        ),
+
+                    "color_enabled":
+                        raw_status.get(
+                            "color_enabled"
+                        ),
+
+                    "depth_enabled":
+                        raw_status.get(
+                            "depth_enabled"
+                        ),
+
+                    "fault":
+                        raw_status.get(
+                            "fault"
+                        ),
+                }
+
+                cameras.append(
+                    {
+                        "camera_name":
+                            current_name,
+
+                        "driver":
+                            driver,
+
+                        "status":
+                            status,
+                    }
+                )
+
+            except Exception:
+                cameras.append(
+                    {
+                        "camera_name":
+                            name,
+
+                        "driver":
+                            driver,
+
+                        "status": {
+                            "connected":
+                                False,
+
+                            "running":
+                                None,
+
+                            "width":
+                                None,
+
+                            "height":
+                                None,
+
+                            "fps":
+                                None,
+
+                            "color_enabled":
+                                None,
+
+                            "depth_enabled":
+                                None,
+
+                            "fault":
+                                None,
+                        },
+                    }
+                )
+
+        return response.success(
             MODULE,
             action,
             result=True,
@@ -287,14 +355,17 @@ def get_camera_status(
         )
 
     except Exception as exc:
-        return _service_error(
+        return response.error(
+            MODULE,
             action,
-            exc,
+            error=exc,
+            error_type=
+                type(exc).__name__,
         )
 
 
 # ============================================================
-# Lifecycle
+# START CAMERA
 # ============================================================
 
 def start_camera(
@@ -302,11 +373,19 @@ def start_camera(
     width=None,
     height=None,
     fps=None,
-    enable_color=None,
-    enable_depth=None,
-    align_to=None,
-    frame_timeout_ms=None,
 ):
+    """
+    啟動指定 camera。
+
+    Public generic parameters:
+        width
+        height
+        fps
+
+    其他 stream-specific 設定由 config.CAMERAS
+    的 stream configuration 提供。
+    """
+
     action = "start_camera"
     driver = None
 
@@ -343,58 +422,75 @@ def start_camera(
                 "fps"
             )
 
-        if enable_color is None:
-            enable_color = stream.get(
-                "enable_color"
-            )
-
-        if enable_depth is None:
-            enable_depth = stream.get(
-                "enable_depth"
-            )
-
-        if align_to is None:
-            align_to = stream.get(
-                "align_to"
-            )
-
-        if frame_timeout_ms is None:
-            frame_timeout_ms = (
-                stream.get(
-                    "frame_timeout_ms"
-                )
-            )
-
         result = (
             camera.start_camera(
                 width=width,
                 height=height,
                 fps=fps,
                 enable_color=
-                    enable_color,
+                    stream.get(
+                        "enable_color"
+                    ),
                 enable_depth=
-                    enable_depth,
+                    stream.get(
+                        "enable_depth"
+                    ),
                 align_to=
-                    align_to,
+                    stream.get(
+                        "align_to"
+                    ),
                 frame_timeout_ms=
-                    frame_timeout_ms,
+                    stream.get(
+                        "frame_timeout_ms"
+                    ),
             )
         )
 
-        return _execution_result(
-            action,
+        if not isinstance(
             result,
-            camera_name,
-            driver,
+            bool,
+        ):
+            raise RuntimeError(
+                f"camera driver "
+                f"'{driver}' "
+                f"start_camera() "
+                f"must return bool"
+            )
+
+        return response.success(
+            MODULE,
+            action,
+            result=result,
+            data={
+                "camera_name":
+                    camera_name,
+
+                "width":
+                    width,
+
+                "height":
+                    height,
+
+                "fps":
+                    fps,
+            },
+            driver=driver,
         )
 
     except Exception as exc:
-        return _service_error(
+        return response.error(
+            MODULE,
             action,
-            exc,
-            driver,
+            error=exc,
+            driver=driver,
+            error_type=
+                type(exc).__name__,
         )
 
+
+# ============================================================
+# STOP CAMERA
+# ============================================================
 
 def stop_camera(
     camera_name,
@@ -418,28 +514,60 @@ def stop_camera(
             camera.stop_camera()
         )
 
-        return _execution_result(
-            action,
+        if not isinstance(
             result,
-            camera_name,
-            driver,
+            bool,
+        ):
+            raise RuntimeError(
+                f"camera driver "
+                f"'{driver}' "
+                f"stop_camera() "
+                f"must return bool"
+            )
+
+        return response.success(
+            MODULE,
+            action,
+            result=result,
+            data={
+                "camera_name":
+                    camera_name,
+            },
+            driver=driver,
         )
 
     except Exception as exc:
-        return _service_error(
+        return response.error(
+            MODULE,
             action,
-            exc,
-            driver,
+            error=exc,
+            driver=driver,
+            error_type=
+                type(exc).__name__,
         )
 
 
 # ============================================================
-# Internal Generic Camera APIs
+# GET FRAME
+# Internal Python API
 # ============================================================
 
 def get_frame(
     camera_name,
 ):
+    """
+    Standard frame contract:
+
+    {
+        "timestamp": float | None,
+        "color_image": numpy.ndarray | None,
+        "depth_image": numpy.ndarray | None
+    }
+
+    此 function 給其他 service 直接使用，
+    不包裝成 JSON response。
+    """
+
     (
         _,
         camera,
@@ -451,10 +579,26 @@ def get_frame(
         )
     )
 
-    return (
+    frame = (
         camera.get_frame()
     )
 
+    if not isinstance(
+        frame,
+        dict,
+    ):
+        raise RuntimeError(
+            "camera get_frame() "
+            "must return dictionary"
+        )
+
+    return frame
+
+
+# ============================================================
+# GET CAPABILITIES
+# Internal Python API
+# ============================================================
 
 def get_camera_capabilities(
     camera_name,
@@ -470,12 +614,17 @@ def get_camera_capabilities(
         )
     )
 
-    return dict(
+    return (
         _get_capabilities(
             camera
         )
     )
 
+
+# ============================================================
+# DISTANCE
+# Internal Python API
+# ============================================================
 
 def get_distance_value(
     camera_name,
@@ -486,7 +635,7 @@ def get_distance_value(
     (
         camera_name,
         camera,
-        _,
+        driver,
         _,
     ) = (
         _get_camera_context(
@@ -500,7 +649,21 @@ def get_distance_value(
         "depth",
     )
 
-    return float(
+    if not callable(
+        getattr(
+            camera,
+            "get_distance",
+            None,
+        )
+    ):
+        raise NotImplementedError(
+            f"camera driver "
+            f"'{driver}' "
+            f"does not support "
+            f"get_distance"
+        )
+
+    distance = (
         camera.get_distance(
             x=x,
             y=y,
@@ -508,6 +671,93 @@ def get_distance_value(
         )
     )
 
+    return float(
+        distance
+    )
+
+
+# ============================================================
+# DISTANCE
+# JSON-friendly API
+# ============================================================
+
+def get_distance(
+    camera_name,
+    x,
+    y,
+):
+    action = "get_distance"
+    driver = None
+
+    try:
+        (
+            camera_name,
+            camera,
+            driver,
+            _,
+        ) = (
+            _get_camera_context(
+                camera_name
+            )
+        )
+
+        _require_capability(
+            camera_name,
+            camera,
+            "depth",
+        )
+
+        if not callable(
+            getattr(
+                camera,
+                "get_distance",
+                None,
+            )
+        ):
+            raise NotImplementedError(
+                f"camera driver "
+                f"'{driver}' "
+                f"does not support "
+                f"get_distance"
+            )
+
+        distance = float(
+            camera.get_distance(
+                x=x,
+                y=y,
+                frame=None,
+            )
+        )
+
+        return response.success(
+            MODULE,
+            action,
+            result=True,
+            data={
+                "camera_name":
+                    camera_name,
+
+                "distance_m":
+                    distance,
+            },
+            driver=driver,
+        )
+
+    except Exception as exc:
+        return response.error(
+            MODULE,
+            action,
+            error=exc,
+            driver=driver,
+            error_type=
+                type(exc).__name__,
+        )
+
+
+# ============================================================
+# DEPROJECT
+# Internal Python API
+# ============================================================
 
 def deproject_pixel_to_point_value(
     camera_name,
@@ -519,7 +769,7 @@ def deproject_pixel_to_point_value(
     (
         camera_name,
         camera,
-        _,
+        driver,
         _,
     ) = (
         _get_camera_context(
@@ -533,6 +783,20 @@ def deproject_pixel_to_point_value(
         "deprojection",
     )
 
+    if not callable(
+        getattr(
+            camera,
+            "deproject_pixel_to_point",
+            None,
+        )
+    ):
+        raise NotImplementedError(
+            f"camera driver "
+            f"'{driver}' "
+            f"does not support "
+            f"deproject_pixel_to_point"
+        )
+
     point = (
         camera
         .deproject_pixel_to_point(
@@ -542,6 +806,21 @@ def deproject_pixel_to_point_value(
             frame=frame,
         )
     )
+
+    if (
+        not isinstance(
+            point,
+            (
+                list,
+                tuple,
+            ),
+        )
+        or len(point) != 3
+    ):
+        raise RuntimeError(
+            "deproject_pixel_to_point() "
+            "must return [x, y, z]"
+        )
 
     return [
         float(
@@ -556,6 +835,122 @@ def deproject_pixel_to_point_value(
     ]
 
 
+# ============================================================
+# DEPROJECT
+# JSON-friendly API
+# ============================================================
+
+def deproject_pixel_to_point(
+    camera_name,
+    x,
+    y,
+    depth=None,
+):
+    action = (
+        "deproject_pixel_to_point"
+    )
+
+    driver = None
+
+    try:
+        (
+            camera_name,
+            camera,
+            driver,
+            _,
+        ) = (
+            _get_camera_context(
+                camera_name
+            )
+        )
+
+        _require_capability(
+            camera_name,
+            camera,
+            "deprojection",
+        )
+
+        if not callable(
+            getattr(
+                camera,
+                "deproject_pixel_to_point",
+                None,
+            )
+        ):
+            raise NotImplementedError(
+                f"camera driver "
+                f"'{driver}' "
+                f"does not support "
+                f"deproject_pixel_to_point"
+            )
+
+        point = (
+            camera
+            .deproject_pixel_to_point(
+                x=x,
+                y=y,
+                depth=depth,
+                frame=None,
+            )
+        )
+
+        if (
+            not isinstance(
+                point,
+                (
+                    list,
+                    tuple,
+                ),
+            )
+            or len(point) != 3
+        ):
+            raise RuntimeError(
+                "deproject_pixel_to_point() "
+                "must return [x, y, z]"
+            )
+
+        camera_xyz = [
+            float(
+                point[0]
+            ),
+            float(
+                point[1]
+            ),
+            float(
+                point[2]
+            ),
+        ]
+
+        return response.success(
+            MODULE,
+            action,
+            result=True,
+            data={
+                "camera_name":
+                    camera_name,
+
+                "camera_xyz":
+                    camera_xyz,
+            },
+            driver=driver,
+        )
+
+    except Exception as exc:
+        return response.error(
+            MODULE,
+            action,
+            error=exc,
+            driver=driver,
+            error_type=
+                type(exc).__name__,
+        )
+
+
+# ============================================================
+# INTRINSICS
+# Internal Python API
+# ============================================================
+
 def get_intrinsics_value(
     camera_name,
     frame=None,
@@ -563,7 +958,7 @@ def get_intrinsics_value(
     (
         camera_name,
         camera,
-        _,
+        driver,
         _,
     ) = (
         _get_camera_context(
@@ -576,6 +971,20 @@ def get_intrinsics_value(
         camera,
         "intrinsics",
     )
+
+    if not callable(
+        getattr(
+            camera,
+            "get_intrinsics",
+            None,
+        )
+    ):
+        raise NotImplementedError(
+            f"camera driver "
+            f"'{driver}' "
+            f"does not support "
+            f"get_intrinsics"
+        )
 
     intrinsics = (
         camera.get_intrinsics(
@@ -607,170 +1016,10 @@ def get_intrinsics_value(
     return intrinsics
 
 
-def get_point_cloud_value(
-    camera_name,
-    frame=None,
-):
-    (
-        camera_name,
-        camera,
-        _,
-        _,
-    ) = (
-        _get_camera_context(
-            camera_name
-        )
-    )
-
-    _require_capability(
-        camera_name,
-        camera,
-        "point_cloud",
-    )
-
-    point_cloud = (
-        camera.get_point_cloud(
-            frame=frame
-        )
-    )
-
-    if point_cloud is None:
-        raise RuntimeError(
-            "point cloud unavailable"
-        )
-
-    return point_cloud
-
-
 # ============================================================
-# JSON-friendly APIs
+# INTRINSICS
+# JSON-friendly API
 # ============================================================
-
-def get_distance(
-    camera_name,
-    x,
-    y,
-):
-    action = "get_distance"
-    driver = None
-
-    try:
-        (
-            camera_name,
-            _,
-            driver,
-            _,
-        ) = (
-            _get_camera_context(
-                camera_name
-            )
-        )
-
-        distance = (
-            get_distance_value(
-                camera_name,
-                x,
-                y,
-            )
-        )
-
-        return success(
-            MODULE,
-            action,
-            result=True,
-            data={
-                "camera_name":
-                    camera_name,
-
-                "distance_m":
-                    distance,
-            },
-            driver=driver,
-        )
-
-    except NotImplementedError as exc:
-        return error(
-            MODULE,
-            action,
-            error=exc,
-            driver=driver,
-            error_type=
-                "DepthNotSupported",
-        )
-
-    except Exception as exc:
-        return _service_error(
-            action,
-            exc,
-            driver,
-        )
-
-
-def deproject_pixel_to_point(
-    camera_name,
-    x,
-    y,
-    depth=None,
-):
-    action = (
-        "deproject_pixel_to_point"
-    )
-
-    driver = None
-
-    try:
-        (
-            camera_name,
-            _,
-            driver,
-            _,
-        ) = (
-            _get_camera_context(
-                camera_name
-            )
-        )
-
-        point = (
-            deproject_pixel_to_point_value(
-                camera_name=
-                    camera_name,
-                x=x,
-                y=y,
-                depth=depth,
-            )
-        )
-
-        return success(
-            MODULE,
-            action,
-            result=True,
-            data={
-                "camera_name":
-                    camera_name,
-
-                "camera_xyz":
-                    point,
-            },
-            driver=driver,
-        )
-
-    except NotImplementedError as exc:
-        return error(
-            MODULE,
-            action,
-            error=exc,
-            driver=driver,
-            error_type=
-                "DeprojectionNotSupported",
-        )
-
-    except Exception as exc:
-        return _service_error(
-            action,
-            exc,
-            driver,
-        )
-
 
 def get_intrinsics(
     camera_name,
@@ -781,7 +1030,7 @@ def get_intrinsics(
     try:
         (
             camera_name,
-            _,
+            camera,
             driver,
             _,
         ) = (
@@ -790,13 +1039,54 @@ def get_intrinsics(
             )
         )
 
+        _require_capability(
+            camera_name,
+            camera,
+            "intrinsics",
+        )
+
+        if not callable(
+            getattr(
+                camera,
+                "get_intrinsics",
+                None,
+            )
+        ):
+            raise NotImplementedError(
+                f"camera driver "
+                f"'{driver}' "
+                f"does not support "
+                f"get_intrinsics"
+            )
+
         intrinsics = (
-            get_intrinsics_value(
-                camera_name
+            camera.get_intrinsics(
+                frame=None
             )
         )
 
-        return success(
+        if not isinstance(
+            intrinsics,
+            dict,
+        ):
+            raise RuntimeError(
+                "get_intrinsics() must "
+                "return dictionary"
+            )
+
+        for key in (
+            "fx",
+            "fy",
+            "cx",
+            "cy",
+        ):
+            if key not in intrinsics:
+                raise RuntimeError(
+                    f"intrinsics missing "
+                    f"'{key}'"
+                )
+
+        return response.success(
             MODULE,
             action,
             result=True,
@@ -810,19 +1100,66 @@ def get_intrinsics(
             driver=driver,
         )
 
-    except NotImplementedError as exc:
-        return error(
+    except Exception as exc:
+        return response.error(
             MODULE,
             action,
             error=exc,
             driver=driver,
             error_type=
-                "IntrinsicsNotSupported",
+                type(exc).__name__,
         )
 
-    except Exception as exc:
-        return _service_error(
-            action,
-            exc,
-            driver,
+
+# ============================================================
+# POINT CLOUD
+# Internal Python API
+# ============================================================
+
+def get_point_cloud_value(
+    camera_name,
+    frame=None,
+):
+    (
+        camera_name,
+        camera,
+        driver,
+        _,
+    ) = (
+        _get_camera_context(
+            camera_name
         )
+    )
+
+    _require_capability(
+        camera_name,
+        camera,
+        "point_cloud",
+    )
+
+    if not callable(
+        getattr(
+            camera,
+            "get_point_cloud",
+            None,
+        )
+    ):
+        raise NotImplementedError(
+            f"camera driver "
+            f"'{driver}' "
+            f"does not support "
+            f"get_point_cloud"
+        )
+
+    point_cloud = (
+        camera.get_point_cloud(
+            frame=frame
+        )
+    )
+
+    if point_cloud is None:
+        raise RuntimeError(
+            "point cloud unavailable"
+        )
+
+    return point_cloud

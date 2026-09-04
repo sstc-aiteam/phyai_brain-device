@@ -1,3 +1,4 @@
+import math
 import socket
 import threading
 import time
@@ -12,6 +13,7 @@ MIN_SPEED = 0
 MAX_SPEED = 255
 MIN_FORCE = 0
 MAX_FORCE = 255
+
 
 
 class RobotiqDriver:
@@ -78,6 +80,35 @@ class RobotiqDriver:
             )
 
         return value
+
+    @staticmethod
+    def _normalize_ratio(value, name):
+        try:
+            value = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"{name} must be a number"
+            ) from exc
+
+        if not math.isfinite(value):
+            raise ValueError(
+                f"{name} must be finite"
+            )
+
+        if not 0.0 <= value <= 1.0:
+            raise ValueError(
+                f"{name} must be between 0.0 and 1.0"
+            )
+
+        return value
+
+    @staticmethod
+    def _ratio_to_raw(value):
+        return int(round(float(value) * MAX_POSITION))
+
+    @staticmethod
+    def _raw_to_ratio(value):
+        return float(value) / float(MAX_POSITION)
 
     def _communicate(
         self,
@@ -289,183 +320,140 @@ class RobotiqDriver:
     def get_gripper_status(
         self,
     ):
-        connected = (
-            self._check_connection()
-        )
+        connected = self._check_connection()
 
         if not connected:
+            self._activated = False
             return {
                 "connected": False,
-                "activated": False,
+                "ready": False,
+                "moving": None,
                 "position": None,
+                "object_detected": None,
+                "fault": None,
+                "activated": False,
                 "requested_position": None,
                 "speed": None,
                 "force": None,
-                "object_detected": False,
                 "object_status": None,
-                "object_status_name":
-                    "unavailable",
+                "object_status_name": "unavailable",
                 "fault_code": None,
                 "gripper_status": None,
             }
 
-        gripper_status = (
-            self._get_variable(
-                "STA"
-            )
-        )
+        gripper_status = self._get_variable("STA")
+        raw_position = self._get_variable("POS")
+        raw_requested_position = self._get_variable("PRE")
+        object_status = self._get_variable("OBJ")
+        fault_code = self._get_variable("FLT")
 
-        position = (
-            self._get_variable(
-                "POS"
-            )
-        )
-
-        requested_position = (
-            self._get_variable(
-                "PRE"
-            )
-        )
-
-        object_status = (
-            self._get_variable(
-                "OBJ"
-            )
-        )
-
-        fault_code = (
-            self._get_variable(
-                "FLT"
-            )
-        )
-
-        speed = None
-        force = None
+        raw_speed = None
+        raw_force = None
 
         try:
-            speed = self._get_variable(
-                "SPE"
-            )
+            raw_speed = self._get_variable("SPE")
         except Exception:
             pass
 
         try:
-            force = self._get_variable(
-                "FOR"
-            )
+            raw_force = self._get_variable("FOR")
         except Exception:
             pass
 
-        activated = (
-            gripper_status == 3
-        )
+        activated = gripper_status == 3
+        moving = object_status == 0
+        object_detected = object_status in (1, 2)
+        fault = fault_code != 0
+        ready = connected and activated and not fault
 
         self._activated = activated
 
         return {
             "connected": True,
+            "ready": ready,
+            "moving": moving,
+            "position": self._raw_to_ratio(raw_position),
+            "object_detected": object_detected,
+            "fault": fault,
             "activated": activated,
-            "position": position,
-            "requested_position":
-                requested_position,
-            "speed": speed,
-            "force": force,
-            "object_detected":
-                object_status in (
-                    1,
-                    2,
-                ),
-            "object_status":
-                object_status,
-            "object_status_name":
-                self._decode_object_status(
-                    object_status
-                ),
-            "fault_code":
-                fault_code,
-            "gripper_status":
-                gripper_status,
+            "requested_position": self._raw_to_ratio(
+                raw_requested_position
+            ),
+            "speed": (
+                self._raw_to_ratio(raw_speed)
+                if raw_speed is not None
+                else None
+            ),
+            "force": (
+                self._raw_to_ratio(raw_force)
+                if raw_force is not None
+                else None
+            ),
+            "object_status": object_status,
+            "object_status_name": self._decode_object_status(
+                object_status
+            ),
+            "fault_code": fault_code,
+            "gripper_status": gripper_status,
         }
 
     def move_gripper(
         self,
         position,
-        speed=255,
-        force=150,
+        speed=1.0,
+        force=0.6,
         wait=True,
         timeout=5.0,
     ):
-        position = (
-            self._normalize_int(
-                position,
-                MIN_POSITION,
-                MAX_POSITION,
-                "position",
-            )
-        )
+        position = self._normalize_ratio(position, "position")
+        speed = self._normalize_ratio(speed, "speed")
+        force = self._normalize_ratio(force, "force")
 
-        speed = (
-            self._normalize_int(
-                speed,
-                MIN_SPEED,
-                MAX_SPEED,
-                "speed",
-            )
-        )
+        if not isinstance(wait, bool):
+            raise ValueError("wait must be bool")
 
-        force = (
-            self._normalize_int(
-                force,
-                MIN_FORCE,
-                MAX_FORCE,
-                "force",
-            )
-        )
+        try:
+            timeout = float(timeout)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "timeout must be a number"
+            ) from exc
 
-        gripper_status = (
-            self._get_variable(
-                "STA"
+        if not math.isfinite(timeout) or timeout <= 0:
+            raise ValueError(
+                "timeout must be greater than 0"
             )
-        )
+
+        raw_position = self._ratio_to_raw(position)
+        raw_speed = self._ratio_to_raw(speed)
+        raw_force = self._ratio_to_raw(force)
+
+        gripper_status = self._get_variable("STA")
 
         if gripper_status != 3:
             self.activate_gripper()
-
         else:
             self._activated = True
 
         self._set_variables(
-            POS=position,
-            SPE=speed,
-            FOR=force,
+            POS=raw_position,
+            SPE=raw_speed,
+            FOR=raw_force,
             GTO=1,
         )
 
         if not wait:
             return True
 
-        deadline = (
-            time.monotonic()
-            + float(timeout)
-        )
+        deadline = time.monotonic() + timeout
 
         while time.monotonic() < deadline:
-            object_status = (
-                self._get_variable(
-                    "OBJ"
-                )
-            )
+            object_status = self._get_variable("OBJ")
 
-            if object_status in (
-                1,
-                2,
-                3,
-            ):
+            if object_status in (1, 2, 3):
                 return True
 
-            time.sleep(
-                0.03
-            )
+            time.sleep(0.03)
 
         raise TimeoutError(
             "Gripper move timeout"
@@ -473,13 +461,13 @@ class RobotiqDriver:
 
     def open_gripper(
         self,
-        speed=255,
-        force=150,
+        speed=1.0,
+        force=0.6,
         wait=True,
         timeout=5.0,
     ):
         return self.move_gripper(
-            position=MIN_POSITION,
+            position=0.0,
             speed=speed,
             force=force,
             wait=wait,
@@ -488,13 +476,13 @@ class RobotiqDriver:
 
     def close_gripper(
         self,
-        speed=255,
-        force=150,
+        speed=1.0,
+        force=0.6,
         wait=True,
         timeout=5.0,
     ):
         return self.move_gripper(
-            position=MAX_POSITION,
+            position=1.0,
             speed=speed,
             force=force,
             wait=wait,

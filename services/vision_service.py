@@ -1,11 +1,8 @@
 import threading
 import time
-
 import cv2
 import numpy as np
-
 import config
-
 from control.yolo_detector import (
     create_detector,
 )
@@ -30,35 +27,6 @@ _DETECTOR_LOCK = threading.RLock()
 # ============================================================
 # Validation
 # ============================================================
-
-def _normalize_camera_name(
-    camera_name,
-):
-    if not isinstance(
-        camera_name,
-        str,
-    ) or not camera_name.strip():
-        raise ValueError(
-            "camera_name must be a non-empty string"
-        )
-
-    camera_name = (
-        camera_name
-        .strip()
-        .lower()
-    )
-
-    if camera_name not in config.CAMERAS:
-        raise ValueError(
-            f"Unsupported camera: "
-            f"{camera_name}. "
-            f"Supported cameras: "
-            f"{', '.join(sorted(config.CAMERAS))}"
-        )
-
-    return camera_name
-
-
 def _normalize_model_name(
     model_name,
 ):
@@ -505,11 +473,12 @@ def capture_vision(
     include_point_cloud=False,
     include_robot_xyz=True,
 ):
-    camera_name = (
-        _normalize_camera_name(
-            camera_name
-        )
-    )
+    """
+    取得指定 camera 的完整 vision observation。
+
+    Camera name 的驗證、driver 取得與 frame abstraction
+    全部由 camera_service 負責。
+    """
 
     frame = (
         camera_service
@@ -964,6 +933,8 @@ def camera_stream(
     """
     原始 RGB MJPEG stream generator。
 
+    Camera name validation 由 camera_service 負責。
+
     Routes:
         Response(
             vision_service.camera_stream(...),
@@ -972,12 +943,6 @@ def camera_stream(
                 "boundary=frame",
         )
     """
-
-    camera_name = (
-        _normalize_camera_name(
-            camera_name
-        )
-    )
 
     interval_sec = max(
         0.0,
@@ -1034,6 +999,9 @@ def yolo_stream(
     """
     含 YOLO 標註結果的 MJPEG stream generator。
 
+    Camera name validation 由 camera_service 負責。
+    Model validation 由 vision_service 負責。
+
     Routes:
         Response(
             vision_service.yolo_stream(...),
@@ -1042,12 +1010,6 @@ def yolo_stream(
                 "boundary=frame",
         )
     """
-
-    camera_name = (
-        _normalize_camera_name(
-            camera_name
-        )
-    )
 
     model_name = (
         _normalize_model_name(
@@ -1109,6 +1071,10 @@ def yolo_stream(
 
     return _generator()
 
+
+# ============================================================
+# VLA Summary
+# ============================================================
 
 def get_vla_observation_summary(
     camera_name,
@@ -1216,6 +1182,10 @@ def get_vla_observation_summary(
         },
     )
 
+
+# ============================================================
+# DETECTIONS
+# ============================================================
 
 def get_detections(
     camera_name,

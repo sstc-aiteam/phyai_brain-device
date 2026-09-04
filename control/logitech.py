@@ -5,9 +5,7 @@ import time
 import cv2
 import numpy as np
 
-
 logger = logging.getLogger(__name__)
-
 
 # ============================================================
 # Driver Defaults
@@ -16,9 +14,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_WIDTH = 1280
 DEFAULT_HEIGHT = 720
 DEFAULT_FPS = 30
-
 DEFAULT_FRAME_TIMEOUT_MS = 3000
-
 DEFAULT_FOURCC = "MJPG"
 
 
@@ -28,24 +24,27 @@ DEFAULT_FOURCC = "MJPG"
 
 MIN_WIDTH = 1
 MAX_WIDTH = 7680
-
 MIN_HEIGHT = 1
 MAX_HEIGHT = 4320
-
 MIN_FPS = 1
 MAX_FPS = 240
-
 MIN_FRAME_TIMEOUT_MS = 100
 MAX_FRAME_TIMEOUT_MS = 30000
 
 
 # ============================================================
-# USB Camera Driver
+# Logitech / Generic USB Camera Driver
 # ============================================================
 
 class LogitechDriver:
     """
-    Generic USB / UVC Camera Driver。
+    Generic USB / UVC RGB Camera Driver。
+
+    適用：
+    - Logitech
+    - AVer
+    - 一般 UVC webcam
+    - /dev/videoX USB camera
 
     Driver 責任：
     - OpenCV VideoCapture lifecycle
@@ -56,12 +55,13 @@ class LogitechDriver:
     - Depth
     - Pixel -> Camera XYZ deprojection
     - Point cloud
+    - 未標定情況下的 camera intrinsics
 
     Driver 不依賴 config.py。
     """
 
     DRIVER_METADATA = {
-        "name": "usb_camera",
+        "name": "logitech",
         "manufacturer": "Generic",
         "model": "UVC Camera",
 
@@ -84,28 +84,40 @@ class LogitechDriver:
         Args:
             device_index:
                 OpenCV camera index。
+
                 例如：
                     0 -> /dev/video0
                     6 -> /dev/video6
 
             device_path:
                 可直接指定 Linux device path。
-                例如：
-                    /dev/video6
 
-                如果有設定 device_path，
+                例如：
+                    /dev/video0
+
+                若有設定 device_path，
                 優先使用 device_path。
 
             fourcc:
                 OpenCV FOURCC。
-                預設使用 MJPG，
-                通常較適合 USB camera 的
-                1280x720 / 1920x1080 @ 30 FPS。
+
+                預設：
+                    MJPG
+
+                一般 USB camera 在：
+                    1280x720
+                    1920x1080
+                    30 FPS
+
+                使用 MJPG 通常較容易達到指定 FPS。
         """
 
         if device_path is not None:
             if (
-                not isinstance(device_path, str)
+                not isinstance(
+                    device_path,
+                    str,
+                )
                 or not device_path.strip()
             ):
                 raise ValueError(
@@ -137,14 +149,20 @@ class LogitechDriver:
 
         if fourcc is not None:
             if (
-                not isinstance(fourcc, str)
+                not isinstance(
+                    fourcc,
+                    str,
+                )
                 or len(fourcc) != 4
             ):
                 raise ValueError(
                     "fourcc 必須是 4 字元字串或 None"
                 )
 
-            fourcc = fourcc.upper()
+            fourcc = (
+                fourcc
+                .upper()
+            )
 
         self.device_index = (
             device_index
@@ -263,13 +281,18 @@ class LogitechDriver:
         開啟 VideoCapture。
 
         Linux 優先使用 V4L2 backend。
-        如果 V4L2 開啟失敗，
-        再 fallback 到 OpenCV default backend。
+
+        若 V4L2 開啟失敗，
+        fallback 到 OpenCV default backend。
         """
 
         device = (
             self._get_device()
         )
+
+        # ====================================================
+        # Linux V4L2
+        # ====================================================
 
         capture = cv2.VideoCapture(
             device,
@@ -279,7 +302,14 @@ class LogitechDriver:
         if capture.isOpened():
             return capture
 
-        capture.release()
+        try:
+            capture.release()
+        except Exception:
+            pass
+
+        # ====================================================
+        # OpenCV fallback
+        # ====================================================
 
         capture = cv2.VideoCapture(
             device
@@ -288,7 +318,10 @@ class LogitechDriver:
         if capture.isOpened():
             return capture
 
-        capture.release()
+        try:
+            capture.release()
+        except Exception:
+            pass
 
         raise RuntimeError(
             f"無法開啟 USB camera: "
@@ -313,24 +346,37 @@ class LogitechDriver:
         """
         啟動 USB camera。
 
-        為了與 D405Driver / camera_service
-        使用相同 interface，
-        保留：
+        為了和 D405Driver / camera_service
+        使用相同 interface，保留：
+
+            width
+            height
+            fps
             enable_color
             enable_depth
             align_to
+            frame_timeout_ms
 
-        USB RGB camera 不支援 depth / align。
+        一般 USB RGB camera：
+            color = supported
+            depth = unsupported
+            align = unsupported
         """
 
         if width is None:
-            width = DEFAULT_WIDTH
+            width = (
+                DEFAULT_WIDTH
+            )
 
         if height is None:
-            height = DEFAULT_HEIGHT
+            height = (
+                DEFAULT_HEIGHT
+            )
 
         if fps is None:
-            fps = DEFAULT_FPS
+            fps = (
+                DEFAULT_FPS
+            )
 
         if frame_timeout_ms is None:
             frame_timeout_ms = (
@@ -343,25 +389,31 @@ class LogitechDriver:
         if enable_depth is None:
             enable_depth = False
 
-        width = self._normalize_int(
-            width,
-            "width",
-            MIN_WIDTH,
-            MAX_WIDTH,
+        width = (
+            self._normalize_int(
+                width,
+                "width",
+                MIN_WIDTH,
+                MAX_WIDTH,
+            )
         )
 
-        height = self._normalize_int(
-            height,
-            "height",
-            MIN_HEIGHT,
-            MAX_HEIGHT,
+        height = (
+            self._normalize_int(
+                height,
+                "height",
+                MIN_HEIGHT,
+                MAX_HEIGHT,
+            )
         )
 
-        fps = self._normalize_int(
-            fps,
-            "fps",
-            MIN_FPS,
-            MAX_FPS,
+        fps = (
+            self._normalize_int(
+                fps,
+                "fps",
+                MIN_FPS,
+                MAX_FPS,
+            )
         )
 
         frame_timeout_ms = (
@@ -451,14 +503,14 @@ class LogitechDriver:
                     float(fps),
                 )
 
-                # Buffer 越小越適合 realtime vision。
+                # 即時 vision 不希望累積過多舊 frame。
                 capture.set(
                     cv2.CAP_PROP_BUFFERSIZE,
                     1,
                 )
 
                 # ============================================
-                # Read Actual Settings
+                # Actual Settings
                 # ============================================
 
                 actual_width = int(
@@ -518,11 +570,21 @@ class LogitechDriver:
                 # Commit State
                 # ============================================
 
-                self._capture = capture
+                self._capture = (
+                    capture
+                )
 
-                self._width = width
-                self._height = height
-                self._fps = fps
+                self._width = (
+                    width
+                )
+
+                self._height = (
+                    height
+                )
+
+                self._fps = (
+                    fps
+                )
 
                 self._actual_width = (
                     actual_width
@@ -570,7 +632,8 @@ class LogitechDriver:
                         pass
 
                 logger.exception(
-                    "[USB_CAMERA] camera start failed "
+                    "[USB_CAMERA] "
+                    "camera start failed "
                     "device=%s",
                     self._get_device(),
                 )
@@ -626,7 +689,18 @@ class LogitechDriver:
         self,
     ):
         """
-        取得 Camera Driver 狀態。
+        通用 camera_service status contract：
+
+        {
+            connected
+            running
+            width
+            height
+            fps
+            color_enabled
+            depth_enabled
+            fault
+        }
         """
 
         with self._lifecycle_lock:
@@ -641,20 +715,15 @@ class LogitechDriver:
             )
 
             return {
+                # ============================================
+                # Generic camera-service contract
+                # ============================================
+
                 "connected":
                     connected,
 
                 "running":
                     self._running,
-
-                "device_index":
-                    self.device_index,
-
-                "device_path":
-                    self.device_path,
-
-                "device":
-                    self._get_device(),
 
                 "width":
                     self._width,
@@ -664,6 +733,34 @@ class LogitechDriver:
 
                 "fps":
                     self._fps,
+
+                "color_enabled":
+                    True
+                    if self._running
+                    else None,
+
+                "depth_enabled":
+                    False
+                    if self._running
+                    else None,
+
+                "fault":
+                    False
+                    if connected
+                    else None,
+
+                # ============================================
+                # USB-specific diagnostics
+                # ============================================
+
+                "device_index":
+                    self.device_index,
+
+                "device_path":
+                    self.device_path,
+
+                "device":
+                    self._get_device(),
 
                 "actual_width":
                     self._actual_width,
@@ -719,18 +816,20 @@ class LogitechDriver:
         """
         取得最新 RGB frame。
 
-        回傳格式與 D405Driver 保持一致概念：
+        Generic frame contract：
 
         {
             "timestamp": float,
-            "color_image": np.ndarray,
+            "color_image": numpy.ndarray,
             "depth_image": None,
-            "color_frame": None,
-            "depth_frame": None,
         }
 
-        vision_service 主要使用：
-            frame["color_image"]
+        額外保留：
+
+            color_frame = None
+            depth_frame = None
+
+        讓其他 Camera Driver 可以維持相近 frame schema。
         """
 
         with self._frame_lock:
@@ -802,6 +901,7 @@ class LogitechDriver:
             )
 
             return {
+                # Generic frame contract
                 "timestamp":
                     timestamp,
 
@@ -811,6 +911,7 @@ class LogitechDriver:
                 "depth_image":
                     None,
 
+                # Optional opaque frame objects
                 "color_frame":
                     None,
 
@@ -833,6 +934,10 @@ class LogitechDriver:
         USB RGB camera 不支援 depth。
         """
 
+        _ = x
+        _ = y
+        _ = frame
+
         raise NotImplementedError(
             "USB camera does not support depth"
         )
@@ -850,9 +955,18 @@ class LogitechDriver:
         frame=None,
     ):
         """
-        USB RGB camera 沒有 depth，
-        無法直接 pixel -> camera XYZ。
+        一般 USB RGB camera 沒有 depth，
+        無法直接執行：
+
+            image pixel
+                ->
+            camera XYZ
         """
+
+        _ = x
+        _ = y
+        _ = depth
+        _ = frame
 
         raise NotImplementedError(
             "USB camera does not support deprojection"
@@ -868,12 +982,26 @@ class LogitechDriver:
         frame=None,
     ):
         """
-        一般 UVC camera 無法直接從 OpenCV VideoCapture
-        取得可靠的 calibrated intrinsics。
+        OpenCV VideoCapture 無法直接提供可靠的
+        calibrated camera intrinsics。
 
-        若未來完成 AVer calibration，
-        可以另外加入 fx / fy / cx / cy。
+        若未來有執行 camera calibration，
+        可以增加：
+
+            fx
+            fy
+            cx
+            cy
+            distortion coefficients
+
+        並把 DRIVER_METADATA：
+
+            "intrinsics": True
+
+        再由此 function 回傳。
         """
+
+        _ = frame
 
         raise NotImplementedError(
             "USB camera intrinsics are not configured"
@@ -889,8 +1017,10 @@ class LogitechDriver:
         frame=None,
     ):
         """
-        USB RGB camera 不支援 point cloud。
+        一般 USB RGB camera 不支援 point cloud。
         """
+
+        _ = frame
 
         raise NotImplementedError(
             "USB camera does not support point cloud"

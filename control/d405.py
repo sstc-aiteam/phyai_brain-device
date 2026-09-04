@@ -1,13 +1,10 @@
 import logging
 import math
 import threading
-
 import numpy as np
 import pyrealsense2 as rs
 
-
 logger = logging.getLogger(__name__)
-
 
 # ============================================================
 # Driver Defaults
@@ -16,12 +13,9 @@ logger = logging.getLogger(__name__)
 DEFAULT_WIDTH = 640
 DEFAULT_HEIGHT = 480
 DEFAULT_FPS = 30
-
 DEFAULT_ENABLE_COLOR = True
 DEFAULT_ENABLE_DEPTH = True
-
 DEFAULT_ALIGN_TO = "color"
-
 DEFAULT_FRAME_TIMEOUT_MS = 3000
 
 
@@ -31,13 +25,10 @@ DEFAULT_FRAME_TIMEOUT_MS = 3000
 
 MIN_WIDTH = 1
 MAX_WIDTH = 4096
-
 MIN_HEIGHT = 1
 MAX_HEIGHT = 2160
-
 MIN_FPS = 1
 MAX_FPS = 120
-
 MIN_FRAME_TIMEOUT_MS = 100
 MAX_FRAME_TIMEOUT_MS = 30000
 
@@ -56,6 +47,8 @@ class D405Driver:
     - frame acquisition
     - pixel depth distance
     - pixel -> camera XYZ deprojection
+    - camera intrinsics
+    - point cloud
 
     Driver 不依賴 config.py。
     """
@@ -569,22 +562,33 @@ class D405Driver:
     ):
         """
         取得 Driver 狀態。
+
+        通用 camera_service contract：
+            connected
+            running
+            width
+            height
+            fps
+            color_enabled
+            depth_enabled
+            fault
+
+        其他欄位為 D405-specific diagnostics。
         """
 
         with self._lifecycle_lock:
+            connected = bool(
+                self._running
+                and self._pipeline is not None
+            )
+
             return {
+                # Generic camera-service contract
                 "connected":
-                    bool(
-                        self._running
-                        and self._pipeline
-                        is not None
-                    ),
+                    connected,
 
                 "running":
                     self._running,
-
-                "serial_number":
-                    self.serial_number,
 
                 "width":
                     self._width,
@@ -595,11 +599,18 @@ class D405Driver:
                 "fps":
                     self._fps,
 
-                "enable_color":
+                "color_enabled":
                     self._enable_color,
 
-                "enable_depth":
+                "depth_enabled":
                     self._enable_depth,
+
+                "fault":
+                    False,
+
+                # D405-specific diagnostics
+                "serial_number":
+                    self.serial_number,
 
                 "align_to":
                     self._align_to,
@@ -642,15 +653,21 @@ class D405Driver:
         """
         取得一組同步 Camera frame。
 
-        return:
+        通用 camera_service contract：
             {
-                "color_image": numpy.ndarray | None,
-                "depth_frame": opaque driver-specific object | None,
                 "timestamp": float | None,
+                "color_image": numpy.ndarray | None,
+                "depth_image": numpy.ndarray | None,
             }
 
-        外層只應把 depth_frame 視為 opaque data，
-        不應直接依賴 pyrealsense2 型別。
+        額外保留：
+            "depth_frame"
+
+        depth_frame 是 D405 Driver 內部使用的 opaque object，
+        供 get_distance()、deproject_pixel_to_point()、
+        get_intrinsics()、get_point_cloud() 使用同一組 frame。
+
+        上層 service 不應直接依賴 pyrealsense2 型別。
         """
 
         with self._frame_lock:
@@ -700,11 +717,20 @@ class D405Driver:
                 )
 
             color_image = None
+            depth_image = None
 
             if color_frame is not None:
                 color_image = (
                     np.asanyarray(
                         color_frame
+                        .get_data()
+                    )
+                )
+
+            if depth_frame is not None:
+                depth_image = (
+                    np.asanyarray(
+                        depth_frame
                         .get_data()
                     )
                 )
@@ -719,14 +745,19 @@ class D405Driver:
                 timestamp = None
 
             return {
+                # Generic camera-service contract
+                "timestamp":
+                    timestamp,
+
                 "color_image":
                     color_image,
 
+                "depth_image":
+                    depth_image,
+
+                # D405-specific opaque object
                 "depth_frame":
                     depth_frame,
-
-                "timestamp":
-                    timestamp,
             }
 
 
@@ -943,6 +974,7 @@ class D405Driver:
             float(point[2]),
         ]
 
+
     # ========================================================
     # Intrinsics
     # ========================================================
@@ -966,8 +998,9 @@ class D405Driver:
                 "coeffs": list[float],
             }
 
-        若 depth 已 align 到 color，優先使用 aligned depth frame
-        的 profile，確保 intrinsics 與 YOLO 的 color pixel 對齊。
+        若 depth 已 align 到 color，
+        優先使用 aligned depth frame 的 profile，
+        確保 intrinsics 與 YOLO 的 color pixel 對齊。
         """
 
         self._require_running()
@@ -1096,7 +1129,8 @@ class D405Driver:
             dtype: float32
             unit: meter
 
-        若傳入 frame，使用該次 get_frame() 的 depth_frame，
+        若傳入 frame，
+        使用該次 get_frame() 的 depth_frame，
         讓 RGB / Depth / Point Cloud 使用同一組 frame。
         """
 

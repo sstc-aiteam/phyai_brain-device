@@ -1,8 +1,8 @@
+import atexit
 import logging
 import math
 import threading
 import time
-import atexit
 
 from rtde_control import RTDEControlInterface
 from rtde_receive import RTDEReceiveInterface
@@ -11,14 +11,10 @@ from rtde_receive import RTDEReceiveInterface
 logger = logging.getLogger(__name__)
 
 
-# =========================
-# UR5 Driver Defaults
-# =========================
+# ============================================================
+# Driver defaults
+# ============================================================
 
-# Driver fallback defaults.
-# Normally arm_service passes per-arm values into this Driver.
-# These values are used only when the Driver is called directly
-# or the upper layer explicitly passes None.
 DEFAULT_TRAJECTORY_DT = 0.1
 DEFAULT_SPEED = 0.1
 DEFAULT_ACCELERATION = 0.1
@@ -26,63 +22,70 @@ DEFAULT_ACCELERATION = 0.1
 DEFAULT_JOG_LINEAR_SPEED = 0.05
 DEFAULT_JOG_ANGULAR_SPEED = 0.10
 DEFAULT_JOG_ACCELERATION = 0.10
-DEFAULT_JOG_TIMEOUT = 0.2
+DEFAULT_JOG_TIMEOUT = 0.20
 
 
-# =========================
-# UR5 Hard Safety Limits
-# =========================
+# ============================================================
+# UR5 hard safety limits
+# ============================================================
+#
+# arm_service may impose narrower, deployment-specific soft limits.
+# These limits are the final driver-side guard and must not be widened by the
+# service layer.
 
-# Absolute Driver-side safety boundary.
-# arm_service may impose a narrower per-arm soft safety range,
-# but it must never widen these Driver hard limits.
 UR5_HARD_X_RANGE = (-3.0, 3.0)
 UR5_HARD_Y_RANGE = (-3.0, 3.0)
 UR5_HARD_Z_RANGE = (-3.0, 3.0)
 
-# =========================
-# Hard Limits
-# =========================
-
 ARM_JOINT_LIMITS = [
-    (-2 * math.pi, 2 * math.pi),
-    (-2 * math.pi, 2 * math.pi),
-    (-2 * math.pi, 2 * math.pi),
-    (-2 * math.pi, 2 * math.pi),
-    (-2 * math.pi, 2 * math.pi),
-    (-2 * math.pi, 2 * math.pi),
+    (-2.0 * math.pi, 2.0 * math.pi),
+    (-2.0 * math.pi, 2.0 * math.pi),
+    (-2.0 * math.pi, 2.0 * math.pi),
+    (-2.0 * math.pi, 2.0 * math.pi),
+    (-2.0 * math.pi, 2.0 * math.pi),
+    (-2.0 * math.pi, 2.0 * math.pi),
 ]
 
 MIN_SPEED = 0.01
-MAX_SPEED = 3
+MAX_SPEED = 3.0
 
 MIN_ACCELERATION = 0.01
-MAX_ACCELERATION = 3
+MAX_ACCELERATION = 3.0
 
-MIN_STOP_ACCELERATION = 0.1
-MAX_STOP_ACCELERATION = 0.5
+MIN_STOP_ACCELERATION = 0.10
+MAX_STOP_ACCELERATION = 0.50
 
 MIN_TRAJECTORY_DT = 0.001
-MAX_TRAJECTORY_DT = 0.5
+MAX_TRAJECTORY_DT = 0.50
 
-MIN_SERVOJ_LOOKAHEAD_TIME = 0.03
-MAX_SERVOJ_LOOKAHEAD_TIME = 10
+MIN_SERVO_LOOKAHEAD_TIME = 0.03
+MAX_SERVO_LOOKAHEAD_TIME = 0.20
 
-MIN_SERVOJ_GAIN = 100
-MAX_SERVOJ_GAIN = 1000
+MIN_SERVO_GAIN = 100
+MAX_SERVO_GAIN = 2000
 
-MAX_TRAJECTORY_POINTS = 1000000
+MAX_TRAJECTORY_POINTS = 1_000_000
 
-ARM_POSE_TOLERANCE = 0.005
-ARM_ROTATION_TOLERANCE = 0.03
-ARM_JOINT_TOLERANCE = 0.01
-ARM_WAIT_TIMEOUT = 15
 
-FINAL_HOLD_SECONDS = 0.2
+# ============================================================
+# Feedback / reached detection
+# ============================================================
 
-# =========================
-# RTDE Receive Monitor
-# =========================
+ARM_POSE_TOLERANCE = 0.005          # m
+ARM_ROTATION_TOLERANCE = 0.03       # rad
+ARM_JOINT_TOLERANCE = 0.01          # rad
+ARM_WAIT_TIMEOUT = 15.0             # s
+
+MOVING_TCP_SPEED_THRESHOLD = 1e-3
+MOVING_JOINT_SPEED_THRESHOLD = 1e-3
+
+FINAL_HOLD_SECONDS = 0.20
+FEEDBACK_POLL_INTERVAL = 0.05
+
+
+# ============================================================
+# RTDE Receive monitor
+# ============================================================
 
 RTDE_RECEIVE_MONITOR_HZ = 20.0
 RTDE_RECEIVE_MONITOR_INTERVAL = 1.0 / RTDE_RECEIVE_MONITOR_HZ
@@ -93,9 +96,7 @@ RTDE_RECEIVE_ERROR_RETRY_INTERVAL = 1.0
 
 
 class UR5Driver:
-    """
-    Universal Robots UR5 RTDE driver。
-    """
+    """Universal Robots UR5 RTDE arm driver."""
 
     ARM_DOF = 6
 
@@ -109,34 +110,37 @@ class UR5Driver:
             "pose",
             "joints",
             "move_pose",
-            "servo_l",
             "move_joints",
             "joint_trajectory",
+            "pose_trajectory",
             "jog",
             "freedrive",
             "stop",
+            "reconnect",
         ],
     }
 
     def __init__(self, ip):
         if not isinstance(ip, str) or not ip.strip():
-            raise ValueError("ip 必須是非空字串")
+            raise ValueError("ip must be a non-empty string")
 
         self.ip = ip.strip()
 
-        # Control 與 Receive 分開鎖定。
+        # RTDE channels have independent locks.
         self._rtde_control_lock = threading.RLock()
         self._rtde_receive_lock = threading.RLock()
+
+        # All motion lifecycle transitions are serialized here.
         self._motion_lock = threading.RLock()
 
         self._rtde_c = None
         self._rtde_r = None
+
         self._motion_command_id = 0
         self._motion_mode = None
-
         self._jog_direction = None
 
-        # Receive monitor / cache
+        # Receive monitor/cache.
         self._state_lock = threading.RLock()
         self._state_condition = threading.Condition(self._state_lock)
         self._receive_monitor_lock = threading.RLock()
@@ -146,14 +150,15 @@ class UR5Driver:
         self._receive_last_progress_monotonic = None
         self._latest_state = self._empty_receive_state()
 
+        # Lifecycle.
         self._shutdown_lock = threading.RLock()
         self._shutdown_done = False
 
         atexit.register(self.shutdown)
 
-    # =========================
-    # Communication
-    # =========================
+    # ========================================================
+    # Receive state/cache
+    # ========================================================
 
     def _empty_receive_state(self, error=None):
         return {
@@ -167,10 +172,13 @@ class UR5Driver:
             "data_age_seconds": None,
             "receive_error": error,
             "arm_mode": None,
-            "is_emergency_stopped": None,
-            "is_protective_stopped": None,
+            "safety_mode": None,
+            "emergency_stop": None,
+            "protective_stop": None,
             "pose": None,
             "joints": None,
+            "tcp_speed": None,
+            "joint_speed": None,
         }
 
     def _reset_receive_state(self, error=None):
@@ -182,18 +190,15 @@ class UR5Driver:
     def _copy_receive_state_locked(self):
         state = dict(self._latest_state)
 
-        if state["pose"] is not None:
-            state["pose"] = list(state["pose"])
-
-        if state["joints"] is not None:
-            state["joints"] = list(state["joints"])
+        for key in ("pose", "joints", "tcp_speed", "joint_speed"):
+            if state.get(key) is not None:
+                state[key] = list(state[key])
 
         last_progress = state.get("last_progress_monotonic")
         if last_progress is not None:
-            state["data_age_seconds"] = time.monotonic() - last_progress
-            state["data_stale"] = (
-                state["data_age_seconds"] > RTDE_RECEIVE_STALE_TIMEOUT
-            )
+            age = time.monotonic() - last_progress
+            state["data_age_seconds"] = age
+            state["data_stale"] = age > RTDE_RECEIVE_STALE_TIMEOUT
             if state["data_stale"]:
                 state["data_valid"] = False
 
@@ -203,31 +208,24 @@ class UR5Driver:
         with self._shutdown_lock:
             if self._shutdown_done:
                 raise RuntimeError(
-                    "UR5 Driver 已 shutdown，不能重新啟動 Receive monitor"
+                    "UR5Driver is already shutdown and cannot restart the receive monitor"
                 )
 
         with self._receive_monitor_lock:
             thread = self._receive_monitor_thread
-
             if thread is not None and thread.is_alive():
                 return True
 
             self._receive_monitor_stop_event.clear()
-
             thread = threading.Thread(
                 target=self._receive_monitor_loop,
                 name=f"UR5ReceiveMonitor-{self.ip}",
                 daemon=True,
             )
-
             self._receive_monitor_thread = thread
             thread.start()
 
-        logger.info(
-            "[UR5] RTDE receive monitor started: %s",
-            self.ip,
-        )
-
+        logger.info("[UR5] RTDE receive monitor started: %s", self.ip)
         return True
 
     def _stop_receive_monitor(self):
@@ -242,7 +240,7 @@ class UR5Driver:
 
         if thread.is_alive():
             raise RuntimeError(
-                "RTDE Receive monitor 無法正常停止，禁止 disconnect RTDE object"
+                "RTDE Receive monitor did not stop; refusing to disconnect receive object"
             )
 
         with self._receive_monitor_lock:
@@ -254,11 +252,10 @@ class UR5Driver:
 
     def _receive_monitor_loop(self):
         """
-        RTDEReceiveInterface 的唯一 I/O owner。
+        The only owner that performs I/O on RTDEReceiveInterface.
 
-        Receive monitor 全程常駐並持續讀取 UR 狀態。
-        其他 function 不得直接操作 RTDEReceiveInterface，
-        只能透過 _get_receive_state() 讀取 _latest_state cache。
+        All public/read/feedback methods consume the cache through
+        _get_receive_state(); they never touch RTDEReceiveInterface directly.
         """
         previous_controller_timestamp = None
 
@@ -270,21 +267,36 @@ class UR5Driver:
                     with self._rtde_receive_lock:
                         rtde_r = self._get_receive_for_monitor()
 
-                        controller_timestamp = float(
-                            rtde_r.getTimestamp()
+                        controller_timestamp = float(rtde_r.getTimestamp())
+                        pose = list(rtde_r.getActualTCPPose())
+                        joints = list(rtde_r.getActualQ())
+
+                        tcp_speed = self._read_optional_rtde_vector(
+                            rtde_r,
+                            "getActualTCPSpeed",
+                            expected_length=6,
                         )
-                        pose = list(
-                            rtde_r.getActualTCPPose()
+                        joint_speed = self._read_optional_rtde_vector(
+                            rtde_r,
+                            "getActualQd",
+                            expected_length=self.ARM_DOF,
                         )
-                        joints = list(
-                            rtde_r.getActualQ()
+
+                        arm_mode = self._read_optional_rtde_value(
+                            rtde_r,
+                            "getRobotMode",
                         )
-                        arm_mode = rtde_r.getRobotMode()
-                        is_emergency_stopped = bool(
-                            rtde_r.isEmergencyStopped()
+                        safety_mode = self._read_optional_rtde_value(
+                            rtde_r,
+                            "getSafetyMode",
                         )
-                        is_protective_stopped = bool(
-                            rtde_r.isProtectiveStopped()
+                        emergency_stop = self._read_optional_rtde_bool(
+                            rtde_r,
+                            "isEmergencyStopped",
+                        )
+                        protective_stop = self._read_optional_rtde_bool(
+                            rtde_r,
+                            "isProtectiveStopped",
                         )
 
                     now = time.monotonic()
@@ -325,10 +337,13 @@ class UR5Driver:
                                 else None
                             ),
                             "arm_mode": arm_mode,
-                            "is_emergency_stopped": is_emergency_stopped,
-                            "is_protective_stopped": is_protective_stopped,
+                            "safety_mode": safety_mode,
+                            "emergency_stop": emergency_stop,
+                            "protective_stop": protective_stop,
                             "pose": pose,
                             "joints": joints,
+                            "tcp_speed": tcp_speed,
+                            "joint_speed": joint_speed,
                         }
                         self._state_condition.notify_all()
 
@@ -345,7 +360,7 @@ class UR5Driver:
                         )
                         self._state_condition.notify_all()
 
-                    # Receive 的斷線 / 重建只能由 monitor 自己處理。
+                    # Receive reconnection is owned only by this monitor.
                     with self._rtde_receive_lock:
                         self._disconnect_receive_for_monitor()
 
@@ -364,7 +379,6 @@ class UR5Driver:
                         break
 
         finally:
-            # monitor 結束時，由 monitor 自己關閉 Receive connection。
             with self._rtde_receive_lock:
                 self._disconnect_receive_for_monitor()
 
@@ -372,25 +386,61 @@ class UR5Driver:
                 error="RTDE Receive monitor stopped"
             )
 
+    @staticmethod
+    def _read_optional_rtde_value(rtde_r, method_name):
+        method = getattr(rtde_r, method_name, None)
+        if not callable(method):
+            return None
+        try:
+            return method()
+        except Exception:
+            logger.debug(
+                "[UR5] optional RTDE receive method unavailable: %s",
+                method_name,
+                exc_info=True,
+            )
+            return None
+
+    @classmethod
+    def _read_optional_rtde_bool(cls, rtde_r, method_name):
+        value = cls._read_optional_rtde_value(rtde_r, method_name)
+        return None if value is None else bool(value)
+
+    @classmethod
+    def _read_optional_rtde_vector(
+        cls,
+        rtde_r,
+        method_name,
+        expected_length,
+    ):
+        value = cls._read_optional_rtde_value(rtde_r, method_name)
+        if value is None:
+            return None
+        try:
+            value = list(value)
+        except TypeError:
+            return None
+        if len(value) != expected_length:
+            return None
+        try:
+            return [float(item) for item in value]
+        except (TypeError, ValueError):
+            return None
+
     def _wait_for_receive_state(
         self,
         timeout=RTDE_RECEIVE_INITIAL_TIMEOUT,
         after_sequence=None,
     ):
-        """
-        等待 Receive monitor 提供有效且未 stale 的最新資料。
-        """
-        timeout = float(timeout)
-        if timeout <= 0:
-            raise ValueError("timeout 必須大於 0")
+        timeout = self._check_positive_number("timeout", timeout)
 
-        # Receive monitor 採常駐模式；若尚未啟動則啟動。
         self._start_receive_monitor()
         deadline = time.monotonic() + timeout
 
         with self._state_condition:
             while True:
                 state = self._copy_receive_state_locked()
+
                 sequence_valid = (
                     after_sequence is None
                     or state["sequence"] > after_sequence
@@ -413,7 +463,7 @@ class UR5Driver:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise RuntimeError(
-                        "RTDE Receive 無有效新資料："
+                        "RTDE Receive has no valid fresh data: "
                         f"connected={state['connected']}, "
                         f"data_valid={state['data_valid']}, "
                         f"data_stale={state['data_stale']}, "
@@ -425,26 +475,42 @@ class UR5Driver:
                 self._state_condition.wait(timeout=remaining)
 
     def _get_receive_state(self):
-        """
-        取得 Receive monitor cache 中最新且有效的狀態。
-
-        此 function 不直接操作 RTDEReceiveInterface。
-        """
         return self._wait_for_receive_state(
             timeout=RTDE_RECEIVE_INITIAL_TIMEOUT
         )
 
-    # =========================
-    # Control Channel
-    # =========================
+    # ========================================================
+    # RTDE Receive connection - monitor only
+    # ========================================================
+
+    def _get_receive_for_monitor(self):
+        if self._rtde_r is None:
+            logger.info(
+                "[UR5] connect RTDEReceiveInterface: %s",
+                self.ip,
+            )
+            self._rtde_r = RTDEReceiveInterface(self.ip)
+        return self._rtde_r
+
+    def _disconnect_receive_for_monitor(self):
+        rtde_r = self._rtde_r
+        self._rtde_r = None
+
+        if rtde_r is not None:
+            try:
+                rtde_r.disconnect()
+            except Exception:
+                logger.exception(
+                    "[UR5] RTDE receive disconnect failed"
+                )
+
+        return True
+
+    # ========================================================
+    # RTDE Control gateway
+    # ========================================================
 
     def _get_control_for_gateway(self):
-        """
-        取得或建立 RTDEControlInterface。
-
-        只有 Control Gateway 內部可以使用這個 function。
-        一般 motion function 應統一透過 _call_control() 發送命令。
-        """
         with self._rtde_control_lock:
             if self._rtde_c is None:
                 logger.info(
@@ -452,15 +518,9 @@ class UR5Driver:
                     self.ip,
                 )
                 self._rtde_c = RTDEControlInterface(self.ip)
-
             return self._rtde_c
 
-    def _ensure_control_ready(self, force_reupload=False):
-        """
-        確認 RTDE Control socket 與 control script 可正常使用。
-
-        Receive Channel 完全不受此 function 影響。
-        """
+    def _ensure_control_ready(self):
         with self._rtde_control_lock:
             rtde_c = self._get_control_for_gateway()
 
@@ -473,7 +533,7 @@ class UR5Driver:
                         "RTDE Control reconnect failed"
                     )
 
-            if force_reupload or not rtde_c.isProgramRunning():
+            if not rtde_c.isProgramRunning():
                 logger.warning(
                     "[UR5] RTDE control script is not running; reuploading"
                 )
@@ -481,10 +541,7 @@ class UR5Driver:
                     raise RuntimeError(
                         "RTDE control script reupload failed"
                     )
-                if not self._wait_for_control_program(rtde_c):
-                    raise RuntimeError(
-                        "RTDE control script did not start within 2 seconds"
-                    )
+                time.sleep(0.2)
 
             if not rtde_c.isConnected():
                 raise ConnectionError(
@@ -498,16 +555,6 @@ class UR5Driver:
 
         return True
 
-    @staticmethod
-    def _wait_for_control_program(rtde_c, timeout=2.0):
-        """Allow the controller time to start an accepted RTDE script."""
-        deadline = time.monotonic() + float(timeout)
-        while time.monotonic() < deadline:
-            if rtde_c.isConnected() and rtde_c.isProgramRunning():
-                return True
-            time.sleep(0.1)
-        return False
-
     def _call_control(
         self,
         method_name,
@@ -515,19 +562,10 @@ class UR5Driver:
         ensure_ready=True,
         **kwargs,
     ):
-        """
-        RTDEControlInterface 的唯一命令 Gateway。
-
-        一般命令預設先確認 Control ready。
-        ServoJ trajectory 等高頻串流只在第一個 Control command
-        執行 readiness check，後續 sample 以 ensure_ready=False 發送，
-        避免每個 trajectory point 都額外檢查 Control 狀態。
-        """
         if not isinstance(method_name, str) or not method_name.strip():
-            raise ValueError("method_name 必須是非空字串")
-
+            raise ValueError("method_name must be a non-empty string")
         if not isinstance(ensure_ready, bool):
-            raise ValueError("ensure_ready 必須是 bool")
+            raise ValueError("ensure_ready must be bool")
 
         method_name = method_name.strip()
 
@@ -547,17 +585,13 @@ class UR5Driver:
                 return method(*args, **kwargs)
             except Exception as exc:
                 logger.exception(
-                    "[UR5] RTDE control method failed: "
-                    "method=%s error=%s",
+                    "[UR5] RTDE control method failed: method=%s error=%s",
                     method_name,
                     exc,
                 )
                 raise
 
     def _disconnect_control(self):
-        """
-        關閉並清除 RTDEControlInterface。
-        """
         with self._rtde_control_lock:
             rtde_c = self._rtde_c
             self._rtde_c = None
@@ -572,84 +606,31 @@ class UR5Driver:
 
         return True
 
-    # =========================
-    # Receive Channel
-    # =========================
-
-    def _get_receive_for_monitor(self):
+    def _get_program_running_status(self):
         """
-        取得或建立 RTDEReceiveInterface。
+        Status-only best effort.
 
-        僅允許 _receive_monitor_loop() 使用。
+        Do not create a new Control connection just to answer get_arm_status().
+        If the Control channel has not been used yet, return None.
         """
-        with self._rtde_receive_lock:
-            if self._rtde_r is None:
-                logger.info(
-                    "[UR5] connect RTDEReceiveInterface: %s",
-                    self.ip,
-                )
-                self._rtde_r = RTDEReceiveInterface(self.ip)
-
-            return self._rtde_r
-
-    def _disconnect_receive_for_monitor(self):
-        """
-        關閉並清除 RTDEReceiveInterface。
-
-        僅由 Receive monitor 自己呼叫。
-        """
-        rtde_r = self._rtde_r
-        self._rtde_r = None
-
-        if rtde_r is not None:
+        with self._rtde_control_lock:
+            rtde_c = self._rtde_c
+            if rtde_c is None:
+                return None
             try:
-                rtde_r.disconnect()
+                if not rtde_c.isConnected():
+                    return False
+                return bool(rtde_c.isProgramRunning())
             except Exception:
-                logger.exception(
-                    "[UR5] RTDE receive disconnect failed"
+                logger.debug(
+                    "[UR5] unable to read control program status",
+                    exc_info=True,
                 )
+                return None
 
-        return True
-
-    # =========================
-    # Connection Lifecycle
-    # =========================
-
-    def reconnect_arm(self):
-        """
-        重建 Control Channel，並確認 Receive monitor 持續運作。
-
-        Receive monitor 不會因 Control reconnect 而停止。
-        如果 Receive 自己發生錯誤，會由 monitor 自動重連。
-        """
-        with self._motion_lock:
-            logger.warning(
-                "[UR5] reconnecting RTDE Control: %s",
-                self.ip,
-            )
-            self._disconnect_control()
-            time.sleep(0.5)
-            try:
-                # isProgramRunning() can refer to a Robotiq script injected
-                # through port 30002, so reconnect must always reupload RTDE.
-                self._ensure_control_ready(force_reupload=True)
-            except RuntimeError as exc:
-                status = self.get_arm_status()
-                raise RuntimeError(
-                    "RTDE control script is not running after reconnect; "
-                    f"arm_mode={status.get('arm_mode')}, "
-                    f"emergency_stopped={status.get('is_emergency_stopped')}, "
-                    f"protective_stopped={status.get('is_protective_stopped')}, "
-                    f"data_stale={status.get('data_stale')}"
-                ) from exc
-
-        self._start_receive_monitor()
-
-        logger.info(
-            "[UR5] RTDE Control reconnected; Receive monitor active: %s",
-            self.ip,
-        )
-        return True
+    # ========================================================
+    # Motion lifecycle
+    # ========================================================
 
     def _generate_command_id(self):
         self._motion_command_id += 1
@@ -659,48 +640,48 @@ class UR5Driver:
         with self._motion_lock:
             return command_id == self._motion_command_id
 
-
-    # 建立手臂動的類型
     def _set_motion_mode(self, mode):
-        allowed_modes = {None, "move_j", "move_l", "servo_j", "servo_l", "speed_l", "jog", "freedrive",}
-
+        allowed_modes = {
+            None,
+            "move_j",
+            "move_l",
+            "servo_j",
+            "servo_l",
+            "speed_l",
+            "freedrive",
+        }
         if mode not in allowed_modes:
-            raise ValueError(
-                f"invalid motion mode: {mode}"
-            )
-
+            raise ValueError(f"invalid motion mode: {mode}")
         self._motion_mode = mode
 
-    # 清楚手臂動的類型
-    def _clear_motion_mode(self, command_id=None, expected_mode=None):
-        """
-        僅在目前仍是同一個 command 時清除 motion mode，
-        避免舊動作結束後清掉新動作的狀態。
-        """
+    def _clear_motion_mode(
+        self,
+        command_id=None,
+        expected_mode=None,
+    ):
         with self._motion_lock:
-            if (command_id is not None and command_id != self._motion_command_id):
+            if (
+                command_id is not None
+                and command_id != self._motion_command_id
+            ):
                 return False
-            if (expected_mode is not None and self._motion_mode != expected_mode):
+
+            if (
+                expected_mode is not None
+                and self._motion_mode != expected_mode
+            ):
                 return False
 
             self._motion_mode = None
             return True
-            
-    # 依照不同動的類型 去停止手臂
-    def _stop_motion(self, acceleration=None):
 
+    def _stop_motion(self, acceleration=None):
         if acceleration is None:
             acceleration = DEFAULT_JOG_ACCELERATION
 
         motion_mode = self._motion_mode
-
         if motion_mode is None:
             return True
-
-        logger.info(
-            "[UR5] stop current motion mode=%s",
-            motion_mode,
-        )
 
         acceleration = self._check_value_range(
             "stop_acceleration",
@@ -709,10 +690,17 @@ class UR5Driver:
             MAX_STOP_ACCELERATION,
         )
 
-        if motion_mode in ("servo_j", "servo_l"):
-            self._call_control(
-                "servoStop",
-            )
+        logger.info(
+            "[UR5] stop current motion mode=%s",
+            motion_mode,
+        )
+
+        if motion_mode == "servo_j":
+            self._call_control("servoStop")
+
+        elif motion_mode == "servo_l":
+            # servoStop() stops servoJ/servoL control loops in ur_rtde.
+            self._call_control("servoStop")
 
         elif motion_mode == "speed_l":
             self._call_control(
@@ -720,15 +708,8 @@ class UR5Driver:
                 float(acceleration),
             )
 
-        elif motion_mode == "jog":
-            self._call_control(
-                "jogStop",
-            )
-
         elif motion_mode == "freedrive":
-            self._call_control(
-                "endTeachMode"
-            )
+            self._call_control("endTeachMode")
 
         elif motion_mode == "move_j":
             self._call_control(
@@ -748,58 +729,96 @@ class UR5Driver:
             )
 
         self._motion_mode = None
-
-        if motion_mode in ("speed_l", "jog"):
+        if motion_mode == "speed_l":
             self._jog_direction = None
 
         return True
 
     def _begin_motion(self, new_mode, stop_acceleration=None):
-
         if stop_acceleration is None:
             stop_acceleration = DEFAULT_JOG_ACCELERATION
 
-        allowed_modes = {"move_j", "move_l", "servo_j", "servo_l", "speed_l", "jog", "freedrive"}
-
+        allowed_modes = {
+            "move_j",
+            "move_l",
+            "servo_j",
+            "servo_l",
+            "speed_l",
+            "freedrive",
+        }
         if new_mode not in allowed_modes:
             raise ValueError(f"invalid new motion mode: {new_mode}")
+
         command_id = self._generate_command_id()
         previous_mode = self._motion_mode
 
-        logger.info("[UR5] begin motion command_id=%s previous_mode=%s new_mode=%s", command_id, previous_mode, new_mode)
+        logger.info(
+            "[UR5] begin motion command_id=%s previous_mode=%s new_mode=%s",
+            command_id,
+            previous_mode,
+            new_mode,
+        )
 
         if previous_mode is not None:
             self._stop_motion(acceleration=stop_acceleration)
             time.sleep(0.05)
 
         self._set_motion_mode(new_mode)
-
         return command_id
 
-    # =========================
+    # ========================================================
     # Validation
-    # =========================
+    # ========================================================
+
+    @staticmethod
+    def _check_positive_number(name, value):
+        try:
+            number = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{name} must be numeric") from exc
+
+        if not math.isfinite(number):
+            raise ValueError(f"{name} must be finite")
+        if number <= 0:
+            raise ValueError(f"{name} must be > 0")
+        return number
+
+    @staticmethod
+    def _check_value_range(name, value, min_value, max_value):
+        try:
+            number = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{name} must be numeric") from exc
+
+        if not math.isfinite(number):
+            raise ValueError(f"{name} must be finite")
+
+        if not min_value <= number <= max_value:
+            raise ValueError(
+                f"{name} out of range: {number}; "
+                f"allowed {min_value} ~ {max_value}"
+            )
+
+        return number
 
     def _normalize_pose(self, pose):
         if not isinstance(pose, (list, tuple)) or len(pose) != 6:
             raise ValueError(
-                "pose 必須是包含 6 個值的 list 或 tuple："
-                "[x, y, z, rx, ry, rz]"
+                "pose must contain 6 values: [x, y, z, rx, ry, rz]"
             )
 
         normalized = []
-
         for index, value in enumerate(pose):
             try:
                 number = float(value)
             except (TypeError, ValueError) as exc:
                 raise ValueError(
-                    f"pose[{index}] 必須是數值"
+                    f"pose[{index}] must be numeric"
                 ) from exc
 
             if not math.isfinite(number):
                 raise ValueError(
-                    f"pose[{index}] 必須是有限數值"
+                    f"pose[{index}] must be finite"
                 )
 
             normalized.append(number)
@@ -812,64 +831,75 @@ class UR5Driver:
             or len(joints) != self.ARM_DOF
         ):
             raise ValueError(
-                f"joints 必須是包含 {self.ARM_DOF} 個關節角度的 "
-                "list 或 tuple"
+                f"joints must contain {self.ARM_DOF} values"
             )
 
         normalized = []
-
         for index, value in enumerate(joints):
             try:
                 number = float(value)
             except (TypeError, ValueError) as exc:
                 raise ValueError(
-                    f"joints[{index}] 必須是數值"
+                    f"joints[{index}] must be numeric"
                 ) from exc
 
             if not math.isfinite(number):
                 raise ValueError(
-                    f"joints[{index}] 必須是有限數值"
+                    f"joints[{index}] must be finite"
                 )
 
             normalized.append(number)
 
         return normalized
 
-    @staticmethod
-    def _check_value_range(name, value, min_value, max_value):
-        try:
-            number = float(value)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"{name} 必須是數值") from exc
+    def _check_pose_range(self, pose):
+        pose = self._normalize_pose(pose)
+        x, y, z = pose[:3]
 
-        if not math.isfinite(number):
-            raise ValueError(f"{name} 必須是有限數值")
+        for axis, value, allowed in (
+            ("x", x, UR5_HARD_X_RANGE),
+            ("y", y, UR5_HARD_Y_RANGE),
+            ("z", z, UR5_HARD_Z_RANGE),
+        ):
+            if not allowed[0] <= value <= allowed[1]:
+                raise ValueError(
+                    f"{axis} out of UR5 hard safety range: {value}; "
+                    f"allowed {allowed}"
+                )
 
-        if not min_value <= number <= max_value:
-            raise ValueError(f"{name} 超出允許範圍：{number}，允許範圍 {min_value} ~ {max_value}")
+        return True
 
-        return number
+    def _check_joint_range(self, joints):
+        joints = self._normalize_joints(joints)
 
-    def _normalize_joint_trajectory(self, joint_trajectory, dt=None):
-        if dt is None:
-            dt = DEFAULT_TRAJECTORY_DT
-
-        if not isinstance(joint_trajectory, (list, tuple)):
-            raise ValueError(
-                "joint_trajectory 必須是 list 或 tuple"
+        if len(ARM_JOINT_LIMITS) != self.ARM_DOF:
+            raise RuntimeError(
+                "ARM_JOINT_LIMITS must contain ARM_DOF ranges"
             )
 
-        if not joint_trajectory:
-            raise ValueError("joint_trajectory 不可為空")
+        for index, joint_rad in enumerate(joints):
+            min_rad, max_rad = ARM_JOINT_LIMITS[index]
+            if not min_rad <= joint_rad <= max_rad:
+                raise ValueError(
+                    f"J{index + 1} out of hard range: "
+                    f"{joint_rad:.4f} rad; "
+                    f"allowed {min_rad:.4f} ~ {max_rad:.4f} rad"
+                )
 
+        return True
+
+    def _normalize_joint_trajectory(self, joint_trajectory, dt):
+        if not isinstance(joint_trajectory, (list, tuple)):
+            raise ValueError("joint_trajectory must be list or tuple")
+        if not joint_trajectory:
+            raise ValueError("joint_trajectory must not be empty")
         if len(joint_trajectory) > MAX_TRAJECTORY_POINTS:
             raise ValueError(
-                f"joint_trajectory 筆數過多："
-                f"{len(joint_trajectory)}，"
-                f"最多允許 {MAX_TRAJECTORY_POINTS} 筆"
+                f"too many trajectory points: {len(joint_trajectory)}; "
+                f"max={MAX_TRAJECTORY_POINTS}"
             )
 
-        normalized_samples = []
+        normalized = []
         previous_time = None
 
         for index, sample in enumerate(joint_trajectory):
@@ -881,83 +911,120 @@ class UR5Driver:
                 ):
                     sample_time = float(sample[0])
                     joints = sample[1]
+
                 elif isinstance(sample, dict) and "q_arm" in sample:
                     sample_time = float(sample.get("t", index * dt))
                     joints = sample["q_arm"]
+
                 else:
                     sample_time = index * dt
                     joints = sample
 
                 if not math.isfinite(sample_time):
-                    raise ValueError("sample time 必須是有限數值")
+                    raise ValueError("sample time must be finite")
+                if sample_time < 0:
+                    raise ValueError("sample time must be >= 0")
                 if previous_time is not None and sample_time < previous_time:
-                    raise ValueError("sample time 必須依序遞增")
+                    raise ValueError("sample time must be non-decreasing")
 
-                target_joints = self._normalize_joints(joints)
-                self._check_joint_range(target_joints)
-                normalized_samples.append((sample_time, target_joints))
+                joints = self._normalize_joints(joints)
+                self._check_joint_range(joints)
+
+                normalized.append((sample_time, joints))
                 previous_time = sample_time
 
             except Exception as exc:
                 raise ValueError(
-                    f"joint_trajectory 第 {index} 筆資料錯誤：{exc}"
+                    f"invalid joint_trajectory sample {index}: {exc}"
                 ) from exc
 
-        return normalized_samples
+        return normalized
 
-    def _check_pose_range(self, pose):
-        pose = self._normalize_pose(pose)
-
-        x, y, z = pose[:3]
-
-        x_min, x_max = UR5_HARD_X_RANGE
-        y_min, y_max = UR5_HARD_Y_RANGE
-        z_min, z_max = UR5_HARD_Z_RANGE
-
-        if not x_min <= x <= x_max:
+    def _normalize_pose_trajectory(self, pose_trajectory, dt):
+        if not isinstance(pose_trajectory, (list, tuple)):
+            raise ValueError("pose_trajectory must be list or tuple")
+        if not pose_trajectory:
+            raise ValueError("pose_trajectory must not be empty")
+        if len(pose_trajectory) > MAX_TRAJECTORY_POINTS:
             raise ValueError(
-                f"x 超出安全範圍：{x}，"
-                f"允許範圍 {UR5_HARD_X_RANGE}"
+                f"too many trajectory points: {len(pose_trajectory)}; "
+                f"max={MAX_TRAJECTORY_POINTS}"
             )
 
-        if not y_min <= y <= y_max:
-            raise ValueError(
-                f"y 超出安全範圍：{y}，"
-                f"允許範圍 {UR5_HARD_Y_RANGE}"
-            )
+        normalized = []
+        previous_time = None
 
-        if not z_min <= z <= z_max:
-            raise ValueError(
-                f"z 超出安全範圍：{z}，"
-                f"允許範圍 {UR5_HARD_Z_RANGE}"
-            )
+        for index, sample in enumerate(pose_trajectory):
+            try:
+                if (
+                    isinstance(sample, (list, tuple))
+                    and len(sample) == 2
+                    and isinstance(sample[1], (list, tuple))
+                ):
+                    sample_time = float(sample[0])
+                    pose = sample[1]
 
-        return True
+                elif isinstance(sample, dict) and "pose" in sample:
+                    sample_time = float(sample.get("t", index * dt))
+                    pose = sample["pose"]
 
-    def _check_joint_range(self, joints):
-        joints = self._normalize_joints(joints)
+                else:
+                    sample_time = index * dt
+                    pose = sample
 
-        if len(ARM_JOINT_LIMITS) != self.ARM_DOF:
-            raise RuntimeError(
-                "ARM_JOINT_LIMITS 必須包含 ARM_DOF 組限制"
-            )
+                if not math.isfinite(sample_time):
+                    raise ValueError("sample time must be finite")
+                if sample_time < 0:
+                    raise ValueError("sample time must be >= 0")
+                if previous_time is not None and sample_time < previous_time:
+                    raise ValueError("sample time must be non-decreasing")
 
-        for index, joint_rad in enumerate(joints):
-            min_rad, max_rad = ARM_JOINT_LIMITS[index]
+                pose = self._normalize_pose(pose)
+                self._check_pose_range(pose)
 
-            if not min_rad <= joint_rad <= max_rad:
+                normalized.append((sample_time, pose))
+                previous_time = sample_time
+
+            except Exception as exc:
                 raise ValueError(
-                    f"J{index + 1} 超出安全範圍："
-                    f"{joint_rad:.4f} rad，"
-                    f"允許範圍 "
-                    f"{min_rad:.4f} ~ {max_rad:.4f} rad"
-                )
+                    f"invalid pose_trajectory sample {index}: {exc}"
+                ) from exc
 
+        return normalized
+
+    # ========================================================
+    # Public: connection lifecycle
+    # ========================================================
+
+    def reconnect_arm(self):
+        """
+        Rebuild the RTDE Control channel.
+
+        The Receive monitor is independent and remains active; if Receive itself
+        fails, the monitor owns its own reconnect cycle.
+        """
+        with self._motion_lock:
+            logger.warning(
+                "[UR5] reconnecting RTDE Control: %s",
+                self.ip,
+            )
+
+            self._disconnect_control()
+            time.sleep(0.5)
+            self._ensure_control_ready()
+
+        self._start_receive_monitor()
+        self._get_receive_state()
+
+        logger.info(
+            "[UR5] RTDE Control reconnected; Receive monitor active: %s",
+            self.ip,
+        )
         return True
 
-    # =========================
-    # RTDE Read
-    # =========================
+    # ========================================================
+    # Public: state
+    # ========================================================
 
     def get_arm_pose(self):
         state = self._get_receive_state()
@@ -974,327 +1041,700 @@ class UR5Driver:
         return list(joints)
 
     def get_arm_status(self):
+        """
+        Return the generic status schema expected by arm_service.
+
+        Required service-facing keys:
+            connected, ready, moving, protective_stop, emergency_stop,
+            fault, program_running, arm_mode, safety_mode, pose, joints
+        """
         try:
             state = self._get_receive_state()
         except Exception as exc:
             return {
                 "connected": False,
+                "ready": False,
+                "moving": None,
+                "protective_stop": None,
+                "emergency_stop": None,
+                "fault": None,
+                "program_running": self._get_program_running_status(),
+                "arm_mode": None,
+                "safety_mode": None,
+                "pose": None,
+                "joints": None,
                 "data_valid": False,
                 "data_stale": True,
                 "data_age_seconds": None,
                 "controller_timestamp": None,
                 "sequence": None,
                 "receive_error": str(exc),
-                "arm_mode": None,
-                "is_emergency_stopped": None,
-                "is_protective_stopped": None,
-                "pose": None,
-                "joints": None,
             }
 
+        emergency_stop = state.get("emergency_stop")
+        protective_stop = state.get("protective_stop")
+
+        moving = self._derive_moving(state)
+        ready = bool(
+            state.get("connected")
+            and state.get("data_valid")
+            and not state.get("data_stale")
+            and emergency_stop is not True
+            and protective_stop is not True
+        )
+
+        # Generic fault is intentionally conservative.  UR protective/emergency
+        # stop are exposed separately, but either means the arm is not in a
+        # healthy executable state from the generic service perspective.
+        fault = bool(
+            emergency_stop is True
+            or protective_stop is True
+        )
+
         return {
-            "connected": state["connected"],
-            "data_valid": state["data_valid"],
-            "data_stale": state["data_stale"],
-            "data_age_seconds": state["data_age_seconds"],
-            "controller_timestamp": state["controller_timestamp"],
-            "sequence": state["sequence"],
-            "receive_error": state["receive_error"],
-            "arm_mode": state["arm_mode"],
-            "is_emergency_stopped": state["is_emergency_stopped"],
-            "is_protective_stopped": state["is_protective_stopped"],
+            "connected": bool(state["connected"]),
+            "ready": ready,
+            "moving": moving,
+            "protective_stop": protective_stop,
+            "emergency_stop": emergency_stop,
+            "fault": fault,
+            "program_running": self._get_program_running_status(),
+            "arm_mode": state.get("arm_mode"),
+            "safety_mode": state.get("safety_mode"),
             "pose": (
                 list(state["pose"])
-                if state["pose"] is not None
+                if state.get("pose") is not None
                 else None
             ),
             "joints": (
                 list(state["joints"])
-                if state["joints"] is not None
+                if state.get("joints") is not None
                 else None
             ),
+            # Extra low-level diagnostics. arm_service may ignore these.
+            "data_valid": bool(state["data_valid"]),
+            "data_stale": bool(state["data_stale"]),
+            "data_age_seconds": state.get("data_age_seconds"),
+            "controller_timestamp": state.get("controller_timestamp"),
+            "sequence": state.get("sequence"),
+            "receive_error": state.get("receive_error"),
         }
 
-    def move_arm_pose(self, x, y, z, rx, ry, rz, speed=None, acceleration=None, wait=True):
+    def _derive_moving(self, state):
+        tcp_speed = state.get("tcp_speed")
+        joint_speed = state.get("joint_speed")
+
+        if tcp_speed is not None:
+            if any(
+                abs(float(value)) > MOVING_TCP_SPEED_THRESHOLD
+                for value in tcp_speed
+            ):
+                return True
+
+        if joint_speed is not None:
+            if any(
+                abs(float(value)) > MOVING_JOINT_SPEED_THRESHOLD
+                for value in joint_speed
+            ):
+                return True
+
+        if tcp_speed is not None or joint_speed is not None:
+            return False
+
+        return None
+
+    # ========================================================
+    # Public: move pose / joints
+    # ========================================================
+
+    def move_arm_pose(
+        self,
+        x,
+        y,
+        z,
+        rx,
+        ry,
+        rz,
+        speed=None,
+        acceleration=None,
+        wait=True,
+    ):
         if speed is None:
             speed = DEFAULT_SPEED
-
         if acceleration is None:
             acceleration = DEFAULT_ACCELERATION
-
         if not isinstance(wait, bool):
-            raise ValueError("wait 必須是 bool")
+            raise ValueError("wait must be bool")
 
-
-        # 檢查格式以及範圍
-        target_pose = self._normalize_pose([x, y, z, rx, ry, rz])
+        target_pose = self._normalize_pose(
+            [x, y, z, rx, ry, rz]
+        )
         self._check_pose_range(target_pose)
-        speed = self._check_value_range("speed", speed, MIN_SPEED, MAX_SPEED)
-        acceleration = self._check_value_range("acceleration", acceleration, MIN_ACCELERATION, MAX_ACCELERATION)
 
-        # 開始運動前上鎖
+        speed = self._check_value_range(
+            "speed",
+            speed,
+            MIN_SPEED,
+            MAX_SPEED,
+        )
+        acceleration = self._check_value_range(
+            "acceleration",
+            acceleration,
+            MIN_ACCELERATION,
+            MAX_ACCELERATION,
+        )
+
         with self._motion_lock:
-            command_id = self._begin_motion( new_mode="move_l", stop_acceleration=acceleration)
-            logger.info("[UR5] RTDE moveL target: %s", target_pose)
+            command_id = self._begin_motion(
+                new_mode="move_l",
+                stop_acceleration=acceleration,
+            )
+
+            logger.info(
+                "[UR5] moveL command_id=%s target=%s",
+                command_id,
+                target_pose,
+            )
 
             try:
-                self._call_control("moveL", target_pose, speed, acceleration, True)
+                # Always asynchronous at the RTDE layer.  This lets this driver
+                # own completion detection using RTDE feedback instead of
+                # delegating completion semantics to arm_service.
+                accepted = bool(
+                    self._call_control(
+                        "moveL",
+                        target_pose,
+                        speed,
+                        acceleration,
+                        True,
+                    )
+                )
+                if not accepted:
+                    raise RuntimeError("RTDE moveL command was rejected")
+
             except Exception:
-                self._clear_motion_mode(command_id=command_id, expected_mode="move_l")
+                self._clear_motion_mode(
+                    command_id=command_id,
+                    expected_mode="move_l",
+                )
                 raise
-        # 結束解鎖
 
         if not wait:
             return True
-        reached = self.wait_until_pose_reached(target_pose=target_pose, command_id=command_id)
-        self._clear_motion_mode(command_id=command_id, expected_mode="move_l")
 
+        reached = self._wait_until_pose_reached(
+            target_pose=target_pose,
+            command_id=command_id,
+        )
+
+        self._clear_motion_mode(
+            command_id=command_id,
+            expected_mode="move_l",
+        )
         return reached
 
-    def move_arm_joints(self, joints, speed=None, acceleration=None, wait=True):
+    def move_arm_joints(
+        self,
+        joints,
+        speed=None,
+        acceleration=None,
+        wait=True,
+    ):
         if speed is None:
             speed = DEFAULT_SPEED
-
         if acceleration is None:
             acceleration = DEFAULT_ACCELERATION
-
         if not isinstance(wait, bool):
-            raise ValueError("wait 必須是 bool")
+            raise ValueError("wait must be bool")
 
-        # 檢查格式以及範圍
         target_joints = self._normalize_joints(joints)
         self._check_joint_range(target_joints)
-        speed = self._check_value_range("speed", speed, MIN_SPEED, MAX_SPEED)
-        acceleration = self._check_value_range("acceleration", acceleration, MIN_ACCELERATION, MAX_ACCELERATION)
 
-        # 開始運動前上鎖
+        speed = self._check_value_range(
+            "speed",
+            speed,
+            MIN_SPEED,
+            MAX_SPEED,
+        )
+        acceleration = self._check_value_range(
+            "acceleration",
+            acceleration,
+            MIN_ACCELERATION,
+            MAX_ACCELERATION,
+        )
+
         with self._motion_lock:
-            command_id = self._begin_motion(new_mode="move_j", stop_acceleration=acceleration)
-            logger.info("[UR5] RTDE moveJ target: %s", target_joints,)
+            command_id = self._begin_motion(
+                new_mode="move_j",
+                stop_acceleration=acceleration,
+            )
+
+            logger.info(
+                "[UR5] moveJ command_id=%s target=%s",
+                command_id,
+                target_joints,
+            )
 
             try:
-                reached = bool(self._call_control(
-                    "moveJ",
-                    target_joints,
-                    speed,
-                    acceleration,
-                    not wait,
-                ))
+                accepted = bool(
+                    self._call_control(
+                        "moveJ",
+                        target_joints,
+                        speed,
+                        acceleration,
+                        True,
+                    )
+                )
+                if not accepted:
+                    raise RuntimeError("RTDE moveJ command was rejected")
+
             except Exception:
-                self._clear_motion_mode(command_id=command_id, expected_mode="move_j")
+                self._clear_motion_mode(
+                    command_id=command_id,
+                    expected_mode="move_j",
+                )
                 raise
 
         if not wait:
             return True
 
-        self._clear_motion_mode(command_id=command_id, expected_mode="move_j")
+        reached = self._wait_until_joints_reached(
+            target_joints=target_joints,
+            command_id=command_id,
+        )
+
+        self._clear_motion_mode(
+            command_id=command_id,
+            expected_mode="move_j",
+        )
         return reached
 
-    def servoL(self, pose, dt=None, speed=None, acceleration=None, lookahead_time=0.1, gain=300):
-        """Send one ServoL setpoint while retaining Cartesian servo mode."""
+    # ========================================================
+    # Public: joint trajectory / pose trajectory
+    # ========================================================
+
+    def move_arm_joint_trajectory(
+        self,
+        joint_trajectory,
+        dt=None,
+        speed=None,
+        acceleration=None,
+        lookahead_time=0.1,
+        gain=300,
+        wait=True,
+        move_to_start=True,
+        move_to_start_speed=None,
+        move_to_start_acceleration=None,
+    ):
+        """
+        Stream a joint trajectory using moveJ -> servoJ.
+
+        arm_service currently supplies a simple list of joint arrays. Structured
+        samples with explicit timestamps are also accepted by the driver.
+
+        `wait=False` skips only final reached verification; the streaming call
+        itself remains synchronous because the caller must continuously feed the
+        real-time servo loop.
+        """
         if dt is None:
             dt = DEFAULT_TRAJECTORY_DT
         if speed is None:
             speed = DEFAULT_SPEED
-        if acceleration is None:
-            acceleration = DEFAULT_ACCELERATION
-
-        target_pose = self._normalize_pose(pose)
-        self._check_pose_range(target_pose)
-        dt = self._check_value_range("dt", dt, MIN_TRAJECTORY_DT, MAX_TRAJECTORY_DT)
-        speed = self._check_value_range("speed", speed, MIN_SPEED, MAX_SPEED)
-        acceleration = self._check_value_range("acceleration", acceleration, MIN_ACCELERATION, MAX_ACCELERATION)
-        lookahead_time = self._check_value_range("lookahead_time", lookahead_time, MIN_SERVOJ_LOOKAHEAD_TIME, MAX_SERVOJ_LOOKAHEAD_TIME)
-        gain = int(self._check_value_range("gain", gain, MIN_SERVOJ_GAIN, MAX_SERVOJ_GAIN))
-
-        with self._motion_lock:
-            if self._motion_mode != "servo_l":
-                self._begin_motion(new_mode="servo_l", stop_acceleration=acceleration)
-            logger.debug("[UR5] RTDE servoL target: %s", target_pose)
-            try:
-                return bool(self._call_control(
-                    "servoL", target_pose, speed, acceleration, dt,
-                    lookahead_time, gain,
-                ))
-            except Exception:
-                self._motion_mode = None
-                raise
-
-
-    def move_arm_joint_trajectory(self, joint_trajectory, dt=None, speed=None, acceleration=None, lookahead_time=0.1, gain=300, wait=True, move_to_start=True, move_to_start_speed=None, move_to_start_acceleration=None):
-        """依 sample timestamp 串流多點 ServoJ trajectory。"""
-        if dt is None:
-            dt = DEFAULT_TRAJECTORY_DT
-
-        if speed is None:
-            speed = DEFAULT_SPEED
-
         if acceleration is None:
             acceleration = DEFAULT_ACCELERATION
 
         if not isinstance(wait, bool):
-            raise ValueError("wait 必須是 bool")
+            raise ValueError("wait must be bool")
         if not isinstance(move_to_start, bool):
-            raise ValueError("move_to_start 必須是 bool")
+            raise ValueError("move_to_start must be bool")
 
-        dt = self._check_value_range("dt", dt, MIN_TRAJECTORY_DT, MAX_TRAJECTORY_DT)
-        speed = self._check_value_range("speed", speed, MIN_SPEED, MAX_SPEED)
-        acceleration = self._check_value_range("acceleration", acceleration, MIN_ACCELERATION, MAX_ACCELERATION)
+        dt = self._check_value_range(
+            "dt",
+            dt,
+            MIN_TRAJECTORY_DT,
+            MAX_TRAJECTORY_DT,
+        )
+        speed = self._check_value_range(
+            "speed",
+            speed,
+            MIN_SPEED,
+            MAX_SPEED,
+        )
+        acceleration = self._check_value_range(
+            "acceleration",
+            acceleration,
+            MIN_ACCELERATION,
+            MAX_ACCELERATION,
+        )
+        lookahead_time = self._check_value_range(
+            "lookahead_time",
+            lookahead_time,
+            MIN_SERVO_LOOKAHEAD_TIME,
+            MAX_SERVO_LOOKAHEAD_TIME,
+        )
+        gain = int(
+            self._check_value_range(
+                "gain",
+                gain,
+                MIN_SERVO_GAIN,
+                MAX_SERVO_GAIN,
+            )
+        )
+
         if move_to_start_speed is None:
             move_to_start_speed = speed
         else:
-            move_to_start_speed = self._check_value_range("move_to_start_speed", move_to_start_speed, MIN_SPEED, MAX_SPEED)
+            move_to_start_speed = self._check_value_range(
+                "move_to_start_speed",
+                move_to_start_speed,
+                MIN_SPEED,
+                MAX_SPEED,
+            )
+
         if move_to_start_acceleration is None:
             move_to_start_acceleration = acceleration
         else:
-            move_to_start_acceleration = self._check_value_range("move_to_start_acceleration", move_to_start_acceleration, MIN_ACCELERATION, MAX_ACCELERATION)
-        lookahead_time = self._check_value_range("lookahead_time", lookahead_time, MIN_SERVOJ_LOOKAHEAD_TIME, MAX_SERVOJ_LOOKAHEAD_TIME)
-        gain = int(self._check_value_range("gain", gain, MIN_SERVOJ_GAIN, MAX_SERVOJ_GAIN))
-        samples = self._normalize_joint_trajectory(joint_trajectory, dt=dt)
-        first_joints = samples[0][1]
+            move_to_start_acceleration = self._check_value_range(
+                "move_to_start_acceleration",
+                move_to_start_acceleration,
+                MIN_ACCELERATION,
+                MAX_ACCELERATION,
+            )
 
-        # 整段 moveJ + servoJ 共用同一個 motion lock，防止 Flask 的
-        # jog/stop 請求在 trajectory 執行期間插隊並取消動作。
-        # Receive monitor 不停止，trajectory 執行期間仍持續更新狀態 cache。
+        samples = self._normalize_joint_trajectory(
+            joint_trajectory,
+            dt=dt,
+        )
+        first_joints = samples[0][1]
+        final_joints = samples[-1][1]
+
         with self._motion_lock:
-            command_id = self._begin_motion(new_mode="move_j", stop_acceleration=acceleration)
-            logger.info("[UR5] stream ServoJ command_id=%s points=%s dt=%s", command_id, len(samples), dt)
+            command_id = self._begin_motion(
+                new_mode="move_j" if move_to_start else "servo_j",
+                stop_acceleration=acceleration,
+            )
+
+            logger.info(
+                "[UR5] joint trajectory command_id=%s points=%s dt=%s",
+                command_id,
+                len(samples),
+                dt,
+            )
 
             try:
                 if move_to_start:
-                    # asynchronous=False：由 RTDE moveJ 阻塞到第一點確實完成。
-                    raw_reached_start = self._call_control(
-                        "moveJ",
-                        first_joints,
-                        move_to_start_speed,
-                        move_to_start_acceleration,
-                        False,
+                    reached_start = bool(
+                        self._call_control(
+                            "moveJ",
+                            first_joints,
+                            move_to_start_speed,
+                            move_to_start_acceleration,
+                            False,
+                        )
                     )
-                    logger.warning(
-                        "[UR5] moveJ first waypoint target=%s result=%r type=%s",
-                        first_joints,
-                        raw_reached_start,
-                        type(raw_reached_start).__name__,
-                    )
-                    reached_start = bool(raw_reached_start)
                     if not reached_start:
-                        raise RuntimeError("moveJ to first waypoint failed before servoJ streaming")
+                        raise RuntimeError(
+                            "moveJ to first joint trajectory waypoint failed"
+                        )
 
-                if not self._check_command_id(command_id):
-                    return False
-                self._set_motion_mode("servo_j")
-
-                # ServoJ 必須依 UR controller 的實際 control step 持續送點。
-                # 錄製資料通常只有 10 Hz，先線性插值到 CB-series 125 Hz
-                # 或 e-Series 500 Hz，並使用 ur_rtde 官方建議的
-                # initPeriod()/waitPeriod() 控制迴圈。
-                self._ensure_control_ready()
-                control_dt = float(self._call_control("getStepTime", ensure_ready=False))
-                if not math.isfinite(control_dt) or control_dt <= 0.0:
-                    # ur_rtde 文件規定 getStepTime() 發生錯誤時回傳 0。
-                    # 這台 UR5 使用 CB-series 的 125 Hz control period。
-                    logger.warning(
-                        "[UR5] getStepTime returned %r; fallback to CB-series 125 Hz",
-                        control_dt,
-                    )
-                    control_dt = 1.0 / 125.0
-
-                first_sample_time = samples[0][0]
-                last_sample_time = samples[-1][0]
-                servo_samples = []
-                segment_index = 0
-                servo_time = first_sample_time
-                while servo_time < last_sample_time:
-                    while (
-                        segment_index + 1 < len(samples) - 1
-                        and samples[segment_index + 1][0] < servo_time
-                    ):
-                        segment_index += 1
-                    t0, q0 = samples[segment_index]
-                    t1, q1 = samples[min(segment_index + 1, len(samples) - 1)]
-                    ratio = 0.0 if t1 <= t0 else min(1.0, max(0.0, (servo_time - t0) / (t1 - t0)))
-                    servo_samples.append([
-                        start + (end - start) * ratio
-                        for start, end in zip(q0, q1)
-                    ])
-                    servo_time += control_dt
-                servo_samples.append(samples[-1][1])
-
-                logger.info(
-                    "[UR5] resampled ServoJ points=%s control_dt=%s duration=%s",
-                    len(servo_samples), control_dt, last_sample_time - first_sample_time,
-                )
-                stream_ready = False
-                consecutive_servo_failures = 0
-
-                for sample_index, joints in enumerate(servo_samples):
                     if not self._check_command_id(command_id):
-                        logger.info("[UR5] ServoJ stream interrupted command_id=%s", command_id)
                         return False
 
-                    cycle_start = self._call_control("initPeriod", ensure_ready=not stream_ready)
-                    result = bool(self._call_control(
-                        "servoJ",
-                        joints,
-                        speed,
-                        acceleration,
-                        control_dt,
-                        lookahead_time,
-                        gain,
-                        ensure_ready=False,
-                    ))
+                    self._set_motion_mode("servo_j")
+
+                first_sample_time = samples[0][0]
+                wall_start = time.monotonic()
+                stream_ready = False
+
+                for sample_index, (sample_time, target_joints) in enumerate(samples):
+                    if not self._check_command_id(command_id):
+                        logger.info(
+                            "[UR5] servoJ stream interrupted command_id=%s",
+                            command_id,
+                        )
+                        return False
+
+                    target_wall_time = (
+                        wall_start
+                        + max(0.0, sample_time - first_sample_time)
+                    )
+                    sleep_seconds = target_wall_time - time.monotonic()
+                    if sleep_seconds > 0:
+                        time.sleep(sleep_seconds)
+
+                    result = bool(
+                        self._call_control(
+                            "servoJ",
+                            target_joints,
+                            speed,
+                            acceleration,
+                            dt,
+                            lookahead_time,
+                            gain,
+                            ensure_ready=not stream_ready,
+                        )
+                    )
                     stream_ready = True
 
-                    if result:
-                        consecutive_servo_failures = 0
-                    else:
-                        consecutive_servo_failures += 1
-                        logger.warning(
-                            "[UR5] ServoJ transient failure sample=%s consecutive=%s",
-                            sample_index,
-                            consecutive_servo_failures,
+                    if not result:
+                        raise RuntimeError(
+                            f"servoJ failed at sample index {sample_index}"
                         )
-                        if consecutive_servo_failures >= 3:
-                            raise RuntimeError(
-                                "servoJ failed for 3 consecutive control cycles "
-                                f"ending at sample index {sample_index}"
-                            )
-                    self._call_control("waitPeriod", cycle_start, ensure_ready=False)
 
-                time.sleep(max(control_dt, 0.03))
-                logger.info("[UR5] ServoJ stream completed command_id=%s", command_id)
-                return True
+                time.sleep(max(dt, 0.03))
+
             finally:
-                if self._check_command_id(command_id) and self._motion_mode == "servo_j":
+                if (
+                    self._check_command_id(command_id)
+                    and self._motion_mode == "servo_j"
+                ):
                     try:
-                        self._call_control("servoStop", ensure_ready=False)
+                        self._call_control(
+                            "servoStop",
+                            ensure_ready=False,
+                        )
                     finally:
                         self._motion_mode = None
-                elif self._check_command_id(command_id) and self._motion_mode == "move_j":
+
+                elif (
+                    self._check_command_id(command_id)
+                    and self._motion_mode == "move_j"
+                ):
                     self._motion_mode = None
 
-    # =========================
-    # Jog Control
-    # =========================
-    def start_arm_jog(self, direction, linear_speed=None, angular_speed=None, acceleration=None, timeout=None):
+        if not wait:
+            return True
 
+        return self._wait_until_joints_reached(
+            target_joints=final_joints,
+            command_id=command_id,
+        )
+
+    def move_arm_pose_trajectory(
+        self,
+        pose_trajectory,
+        dt=None,
+        speed=None,
+        acceleration=None,
+        lookahead_time=0.1,
+        gain=300,
+        wait=True,
+        move_to_start=True,
+        move_to_start_speed=None,
+        move_to_start_acceleration=None,
+    ):
+        """
+        Stream a Cartesian trajectory using moveL -> servoL.
+
+        This method exists because the generic arm_service exposes
+        move_arm_pose_trajectory as an optional capability.
+        """
+        if dt is None:
+            dt = DEFAULT_TRAJECTORY_DT
+        if speed is None:
+            speed = DEFAULT_SPEED
+        if acceleration is None:
+            acceleration = DEFAULT_ACCELERATION
+
+        if not isinstance(wait, bool):
+            raise ValueError("wait must be bool")
+        if not isinstance(move_to_start, bool):
+            raise ValueError("move_to_start must be bool")
+
+        dt = self._check_value_range(
+            "dt",
+            dt,
+            MIN_TRAJECTORY_DT,
+            MAX_TRAJECTORY_DT,
+        )
+        speed = self._check_value_range(
+            "speed",
+            speed,
+            MIN_SPEED,
+            MAX_SPEED,
+        )
+        acceleration = self._check_value_range(
+            "acceleration",
+            acceleration,
+            MIN_ACCELERATION,
+            MAX_ACCELERATION,
+        )
+        lookahead_time = self._check_value_range(
+            "lookahead_time",
+            lookahead_time,
+            MIN_SERVO_LOOKAHEAD_TIME,
+            MAX_SERVO_LOOKAHEAD_TIME,
+        )
+        gain = int(
+            self._check_value_range(
+                "gain",
+                gain,
+                MIN_SERVO_GAIN,
+                MAX_SERVO_GAIN,
+            )
+        )
+
+        if move_to_start_speed is None:
+            move_to_start_speed = speed
+        else:
+            move_to_start_speed = self._check_value_range(
+                "move_to_start_speed",
+                move_to_start_speed,
+                MIN_SPEED,
+                MAX_SPEED,
+            )
+
+        if move_to_start_acceleration is None:
+            move_to_start_acceleration = acceleration
+        else:
+            move_to_start_acceleration = self._check_value_range(
+                "move_to_start_acceleration",
+                move_to_start_acceleration,
+                MIN_ACCELERATION,
+                MAX_ACCELERATION,
+            )
+
+        samples = self._normalize_pose_trajectory(
+            pose_trajectory,
+            dt=dt,
+        )
+        first_pose = samples[0][1]
+        final_pose = samples[-1][1]
+
+        with self._motion_lock:
+            command_id = self._begin_motion(
+                new_mode="move_l" if move_to_start else "servo_l",
+                stop_acceleration=acceleration,
+            )
+
+            logger.info(
+                "[UR5] pose trajectory command_id=%s points=%s dt=%s",
+                command_id,
+                len(samples),
+                dt,
+            )
+
+            try:
+                if move_to_start:
+                    reached_start = bool(
+                        self._call_control(
+                            "moveL",
+                            first_pose,
+                            move_to_start_speed,
+                            move_to_start_acceleration,
+                            False,
+                        )
+                    )
+                    if not reached_start:
+                        raise RuntimeError(
+                            "moveL to first pose trajectory waypoint failed"
+                        )
+
+                    if not self._check_command_id(command_id):
+                        return False
+
+                    self._set_motion_mode("servo_l")
+
+                first_sample_time = samples[0][0]
+                wall_start = time.monotonic()
+                stream_ready = False
+
+                for sample_index, (sample_time, target_pose) in enumerate(samples):
+                    if not self._check_command_id(command_id):
+                        logger.info(
+                            "[UR5] servoL stream interrupted command_id=%s",
+                            command_id,
+                        )
+                        return False
+
+                    target_wall_time = (
+                        wall_start
+                        + max(0.0, sample_time - first_sample_time)
+                    )
+                    sleep_seconds = target_wall_time - time.monotonic()
+                    if sleep_seconds > 0:
+                        time.sleep(sleep_seconds)
+
+                    result = bool(
+                        self._call_control(
+                            "servoL",
+                            target_pose,
+                            speed,
+                            acceleration,
+                            dt,
+                            lookahead_time,
+                            gain,
+                            ensure_ready=not stream_ready,
+                        )
+                    )
+                    stream_ready = True
+
+                    if not result:
+                        raise RuntimeError(
+                            f"servoL failed at sample index {sample_index}"
+                        )
+
+                time.sleep(max(dt, 0.03))
+
+            finally:
+                if (
+                    self._check_command_id(command_id)
+                    and self._motion_mode == "servo_l"
+                ):
+                    try:
+                        self._call_control(
+                            "servoStop",
+                            ensure_ready=False,
+                        )
+                    finally:
+                        self._motion_mode = None
+
+                elif (
+                    self._check_command_id(command_id)
+                    and self._motion_mode == "move_l"
+                ):
+                    self._motion_mode = None
+
+        if not wait:
+            return True
+
+        return self._wait_until_pose_reached(
+            target_pose=final_pose,
+            command_id=command_id,
+        )
+
+    # ========================================================
+    # Public: jog
+    # ========================================================
+
+    def start_arm_jog(
+        self,
+        direction,
+        linear_speed=None,
+        angular_speed=None,
+        acceleration=None,
+        timeout=None,
+    ):
         if linear_speed is None:
             linear_speed = DEFAULT_JOG_LINEAR_SPEED
-
         if angular_speed is None:
             angular_speed = DEFAULT_JOG_ANGULAR_SPEED
-
         if acceleration is None:
             acceleration = DEFAULT_JOG_ACCELERATION
-
         if timeout is None:
             timeout = DEFAULT_JOG_TIMEOUT
 
         linear_speed = self._check_value_range(
-            "linear_speed", linear_speed, 0.001, 3.0
+            "linear_speed",
+            linear_speed,
+            0.001,
+            3.0,
         )
         angular_speed = self._check_value_range(
-            "angular_speed", angular_speed, 0.001, 3.0
+            "angular_speed",
+            angular_speed,
+            0.001,
+            3.0,
         )
         acceleration = self._check_value_range(
             "jog_acceleration",
@@ -1303,14 +1743,16 @@ class UR5Driver:
             MAX_ACCELERATION,
         )
         timeout = self._check_value_range(
-            "jog_timeout", timeout, 0.01, 10.0
+            "jog_timeout",
+            timeout,
+            0.01,
+            10.0,
         )
 
         if not isinstance(direction, str) or not direction.strip():
-            raise ValueError("direction 必須是非空字串")
+            raise ValueError("direction must be a non-empty string")
 
         direction = direction.lower().strip()
-
         direction_map = {
             "x+": (0, linear_speed),
             "x-": (0, -linear_speed),
@@ -1328,24 +1770,22 @@ class UR5Driver:
 
         if direction not in direction_map:
             raise ValueError(
-                f"不支援的 jog direction: {direction}"
+                f"unsupported jog direction: {direction}"
             )
 
         speed_vector = [0.0] * 6
         index, jog_speed = direction_map[direction]
         speed_vector[index] = float(jog_speed)
 
-        # 所有 Receive 狀態只從 monitor cache 取得。
         state = self._get_receive_state()
 
-        if state.get("is_emergency_stopped"):
+        if state.get("emergency_stop") is True:
             raise RuntimeError(
-                "手臂目前是 Emergency Stop，請先在示教器確認並解除"
+                "arm is in Emergency Stop"
             )
-
-        if state.get("is_protective_stopped"):
+        if state.get("protective_stop") is True:
             raise RuntimeError(
-                "手臂目前是 Protective Stop，請先在示教器確認安全後解除"
+                "arm is in Protective Stop"
             )
 
         current_pose = state.get("pose")
@@ -1355,26 +1795,19 @@ class UR5Driver:
         current_pose = self._normalize_pose(current_pose)
         predicted_pose = list(current_pose)
 
-        # speedL 與 UR TCP pose 的平移單位都是 m / m/s。
+        # Translation components of speedL are m/s. Rotation safety cannot be
+        # validated by simply adding rotvec components, so only XYZ hard-range
+        # prediction is performed here.
         if index <= 2:
-            predicted_pose[index] += (
-                float(jog_speed) * float(timeout)
-            )
-
-        self._check_pose_range(predicted_pose)
+            predicted_pose[index] += float(jog_speed) * float(timeout)
+            self._check_pose_range(predicted_pose)
 
         with self._motion_lock:
-
-            # 相同方向已在移動：重送 speedL 速度向量。
+            # Heartbeat refresh for the same jog direction.
             if (
                 self._jog_direction == direction
                 and self._motion_mode == "speed_l"
             ):
-                logger.debug(
-                    "[UR5] jog heartbeat direction=%s",
-                    direction,
-                )
-
                 result = bool(
                     self._call_control(
                         "speedL",
@@ -1383,12 +1816,10 @@ class UR5Driver:
                         float(timeout),
                     )
                 )
-
                 if not result:
                     raise RuntimeError(
-                        "RTDE speedL heartbeat 執行失敗"
+                        "RTDE speedL jog heartbeat failed"
                     )
-
                 return True
 
             command_id = self._begin_motion(
@@ -1397,8 +1828,7 @@ class UR5Driver:
             )
 
             logger.info(
-                "[UR5] start jog "
-                "direction=%s command_id=%s speed_vector=%s",
+                "[UR5] start jog direction=%s command_id=%s vector=%s",
                 direction,
                 command_id,
                 speed_vector,
@@ -1413,10 +1843,9 @@ class UR5Driver:
                         float(timeout),
                     )
                 )
-
                 if not result:
                     raise RuntimeError(
-                        "RTDE speedL Jog 執行失敗"
+                        "RTDE speedL jog failed"
                     )
 
             except Exception:
@@ -1432,107 +1861,98 @@ class UR5Driver:
         return True
 
     def stop_arm_jog(self):
-
         with self._motion_lock:
-
-            if (self._jog_direction is None and self._motion_mode != "speed_l"):
+            if (
+                self._jog_direction is None
+                and self._motion_mode != "speed_l"
+            ):
                 return True
 
-            stopped_direction = self._jog_direction
-            command_id = self._generate_command_id()
+            self._generate_command_id()
+            return self._stop_motion(
+                acceleration=DEFAULT_JOG_ACCELERATION
+            )
 
-            logger.info("[UR5] stop jog direction=%s command_id=%s", stopped_direction, command_id)
-
-            return self._stop_motion(acceleration=DEFAULT_JOG_ACCELERATION)
-                
-    # =========================
-    # Freedrive / Manual Mode
-    # =========================
+    # ========================================================
+    # Public: freedrive
+    # ========================================================
 
     def start_arm_freedrive(self):
-
         with self._motion_lock:
-
-            # 先停止目前任何 motion
-            if self._motion_mode is not None:
-                self._stop_motion(
-                    acceleration=DEFAULT_JOG_ACCELERATION
-                )
-
-                time.sleep(0.05)
-
-            command_id = self._generate_command_id()
+            command_id = self._begin_motion(
+                new_mode="freedrive",
+                stop_acceleration=DEFAULT_JOG_ACCELERATION,
+            )
 
             logger.info(
                 "[UR5] start freedrive command_id=%s",
                 command_id,
             )
 
-            result = self._call_control(
-                "teachMode"
-            )
-
-            if not result:
-                raise RuntimeError(
-                    "RTDE teachMode Freedrive 執行失敗"
+            try:
+                result = bool(
+                    self._call_control("teachMode")
                 )
-
-            self._set_motion_mode(
-                "freedrive"
-            )
+                if not result:
+                    raise RuntimeError(
+                        "RTDE teachMode freedrive failed"
+                    )
+            except Exception:
+                self._clear_motion_mode(
+                    command_id=command_id,
+                    expected_mode="freedrive",
+                )
+                raise
 
             return True
 
-
     def stop_arm_freedrive(self):
-
         with self._motion_lock:
-
             if self._motion_mode != "freedrive":
                 return True
 
-            command_id = self._generate_command_id()
-
-            logger.info(
-                "[UR5] stop freedrive command_id=%s",
-                command_id,
+            self._generate_command_id()
+            result = bool(
+                self._call_control("endTeachMode")
             )
-
-            result = self._call_control(
-                "endTeachMode"
-            )
-
             if not result:
                 raise RuntimeError(
-                    "RTDE endTeachMode Freedrive 執行失敗"
+                    "RTDE endTeachMode freedrive failed"
                 )
 
             self._motion_mode = None
-
             return True
-            
-    # =========================
-    # Stop / Safety
-    # =========================
+
+    # ========================================================
+    # Public: stop
+    # ========================================================
 
     def stop_arm(self, acceleration=None):
         if acceleration is None:
             acceleration = DEFAULT_JOG_ACCELERATION
 
-        acceleration = self._check_value_range("acceleration", acceleration, MIN_STOP_ACCELERATION, MAX_STOP_ACCELERATION)
+        acceleration = self._check_value_range(
+            "stop_acceleration",
+            acceleration,
+            MIN_STOP_ACCELERATION,
+            MAX_STOP_ACCELERATION,
+        )
 
         with self._motion_lock:
             command_id = self._generate_command_id()
+            logger.info(
+                "[UR5] stop motion command_id=%s",
+                command_id,
+            )
+            return self._stop_motion(
+                acceleration=acceleration
+            )
 
-            logger.info("[UR5] stop motion command_id=%s", command_id)
+    # ========================================================
+    # Private: feedback/reached math
+    # ========================================================
 
-            return self._stop_motion(acceleration=acceleration)
-
-    # =========================
-    # Feedback
-    # =========================
-
-    def pose_distance(self, pose1, pose2):
+    def _pose_distance(self, pose1, pose2):
         pose1 = self._normalize_pose(pose1)
         pose2 = self._normalize_pose(pose2)
 
@@ -1540,21 +1960,16 @@ class UR5Driver:
         dy = pose1[1] - pose2[1]
         dz = pose1[2] - pose2[2]
 
-        return math.sqrt(
-            dx * dx + dy * dy + dz * dz
-        )
+        return math.sqrt(dx * dx + dy * dy + dz * dz)
 
-    def rotation_distance(self, pose1, pose2):
+    def _rotation_distance(self, pose1, pose2):
         pose1 = self._normalize_pose(pose1)
         pose2 = self._normalize_pose(pose2)
 
-        rotation1 = self._rotvec_to_matrix(
-            pose1[3:6]
-        )
-        rotation2 = self._rotvec_to_matrix(
-            pose2[3:6]
-        )
+        rotation1 = self._rotvec_to_matrix(pose1[3:6])
+        rotation2 = self._rotvec_to_matrix(pose2[3:6])
 
+        # R_relative = R2^T * R1
         relative_rotation = [
             [
                 sum(
@@ -1573,17 +1988,13 @@ class UR5Driver:
         )
 
         cos_angle = (trace_value - 1.0) / 2.0
-        cos_angle = max(
-            -1.0,
-            min(1.0, cos_angle),
-        )
-
+        cos_angle = max(-1.0, min(1.0, cos_angle))
         return math.acos(cos_angle)
 
     @staticmethod
     def _rotvec_to_matrix(rotvec):
         angle = math.sqrt(
-            sum(value * value for value in rotvec)
+            sum(float(value) * float(value) for value in rotvec)
         )
 
         if angle < 1e-12:
@@ -1593,11 +2004,7 @@ class UR5Driver:
                 [0.0, 0.0, 1.0],
             ]
 
-        x, y, z = [
-            value / angle
-            for value in rotvec
-        ]
-
+        x, y, z = [float(value) / angle for value in rotvec]
         cos_value = math.cos(angle)
         sin_value = math.sin(angle)
         one_minus_cos = 1.0 - cos_value
@@ -1620,7 +2027,7 @@ class UR5Driver:
             ],
         ]
 
-    def joint_distance(self, joints1, joints2):
+    def _joint_distance(self, joints1, joints2):
         joints1 = self._normalize_joints(joints1)
         joints2 = self._normalize_joints(joints2)
 
@@ -1629,7 +2036,7 @@ class UR5Driver:
             for index in range(self.ARM_DOF)
         )
 
-    def wait_until_pose_reached(
+    def _wait_until_pose_reached(
         self,
         target_pose,
         timeout=ARM_WAIT_TIMEOUT,
@@ -1638,210 +2045,157 @@ class UR5Driver:
         command_id=None,
     ):
         target_pose = self._normalize_pose(target_pose)
+        timeout = self._check_positive_number("timeout", timeout)
+        position_tolerance = self._check_positive_number(
+            "position_tolerance",
+            position_tolerance,
+        )
+        rotation_tolerance = self._check_positive_number(
+            "rotation_tolerance",
+            rotation_tolerance,
+        )
 
-        timeout = float(timeout)
-        position_tolerance = float(position_tolerance)
-        rotation_tolerance = float(rotation_tolerance)
-
-        if timeout <= 0:
-            raise ValueError("timeout 必須大於 0")
-
-        if position_tolerance <= 0:
-            raise ValueError(
-                "position_tolerance 必須大於 0"
-            )
-
-        if rotation_tolerance <= 0:
-            raise ValueError(
-                "rotation_tolerance 必須大於 0"
-            )
-
-        start_time = time.monotonic()
+        deadline = time.monotonic() + timeout
         current_pose = None
+        stable_since = None
 
-        while time.monotonic() - start_time < timeout:
+        while time.monotonic() < deadline:
             if (
                 command_id is not None
                 and not self._check_command_id(command_id)
             ):
                 logger.info(
-                    "[UR5] pose wait interrupted "
-                    "command_id=%s",
+                    "[UR5] pose wait interrupted command_id=%s",
                     command_id,
                 )
                 return False
 
             try:
                 state = self._get_receive_state()
-                current_pose = state["pose"]
+                current_pose = state.get("pose")
             except Exception as exc:
                 logger.warning(
-                    "[UR5] wait pose state unavailable: %s",
+                    "[UR5] pose feedback unavailable while waiting: %s",
                     exc,
                 )
-                time.sleep(0.1)
+                time.sleep(FEEDBACK_POLL_INTERVAL)
                 continue
 
-            if (
-                not isinstance(current_pose, (list, tuple))
-                or len(current_pose) != 6
-            ):
-                time.sleep(0.1)
+            if current_pose is None:
+                time.sleep(FEEDBACK_POLL_INTERVAL)
                 continue
 
-            current_pose = self._normalize_pose(
-                current_pose
+            current_pose = self._normalize_pose(current_pose)
+            position_error = self._pose_distance(
+                current_pose,
+                target_pose,
             )
-
-            position_error = self.pose_distance(
+            rotation_error = self._rotation_distance(
                 current_pose,
                 target_pose,
             )
 
-            rotation_error = self.rotation_distance(
-                current_pose,
-                target_pose,
-            )
-
-            if (
+            inside_tolerance = (
                 position_error <= position_tolerance
                 and rotation_error <= rotation_tolerance
-            ):
-                return True
+            )
 
-            time.sleep(0.1)
+            if inside_tolerance:
+                if stable_since is None:
+                    stable_since = time.monotonic()
+                elif time.monotonic() - stable_since >= FINAL_HOLD_SECONDS:
+                    return True
+            else:
+                stable_since = None
+
+            time.sleep(FEEDBACK_POLL_INTERVAL)
 
         logger.warning(
-            "[UR5] wait_until_pose_reached timeout"
-        )
-        logger.warning(
-            "[UR5] target pose: %s",
+            "[UR5] pose target not reached before timeout: "
+            "target=%s current=%s",
             target_pose,
-        )
-        logger.warning(
-            "[UR5] current pose: %s",
             current_pose,
         )
-
-        if current_pose is not None:
-            logger.warning(
-                "[UR5] position error: %s",
-                self.pose_distance(
-                    current_pose,
-                    target_pose,
-                ),
-            )
-            logger.warning(
-                "[UR5] rotation error: %s",
-                self.rotation_distance(
-                    current_pose,
-                    target_pose,
-                ),
-            )
-
         return False
 
-    def wait_until_joints_reached(
+    def _wait_until_joints_reached(
         self,
         target_joints,
         timeout=ARM_WAIT_TIMEOUT,
         tolerance=ARM_JOINT_TOLERANCE,
         command_id=None,
     ):
-        target_joints = self._normalize_joints(
-            target_joints
+        target_joints = self._normalize_joints(target_joints)
+        timeout = self._check_positive_number("timeout", timeout)
+        tolerance = self._check_positive_number(
+            "tolerance",
+            tolerance,
         )
 
-        timeout = float(timeout)
-        tolerance = float(tolerance)
-
-        if timeout <= 0:
-            raise ValueError("timeout 必須大於 0")
-
-        if tolerance <= 0:
-            raise ValueError("tolerance 必須大於 0")
-
-        start_time = time.monotonic()
+        deadline = time.monotonic() + timeout
         current_joints = None
+        stable_since = None
 
-        while time.monotonic() - start_time < timeout:
+        while time.monotonic() < deadline:
             if (
                 command_id is not None
                 and not self._check_command_id(command_id)
             ):
                 logger.info(
-                    "[UR5] joints wait interrupted "
-                    "command_id=%s",
+                    "[UR5] joints wait interrupted command_id=%s",
                     command_id,
                 )
                 return False
 
             try:
                 state = self._get_receive_state()
-                current_joints = state["joints"]
+                current_joints = state.get("joints")
             except Exception as exc:
                 logger.warning(
-                    "[UR5] wait joints state unavailable: %s",
+                    "[UR5] joint feedback unavailable while waiting: %s",
                     exc,
                 )
-                time.sleep(0.1)
+                time.sleep(FEEDBACK_POLL_INTERVAL)
                 continue
 
-            if (
-                not isinstance(current_joints, (list, tuple))
-                or len(current_joints) != self.ARM_DOF
-            ):
-                time.sleep(0.1)
+            if current_joints is None:
+                time.sleep(FEEDBACK_POLL_INTERVAL)
                 continue
 
-            current_joints = self._normalize_joints(
-                current_joints
-            )
-
-            error_value = self.joint_distance(
+            current_joints = self._normalize_joints(current_joints)
+            error = self._joint_distance(
                 current_joints,
                 target_joints,
             )
 
-            if error_value <= tolerance:
-                return True
+            if error <= tolerance:
+                if stable_since is None:
+                    stable_since = time.monotonic()
+                elif time.monotonic() - stable_since >= FINAL_HOLD_SECONDS:
+                    return True
+            else:
+                stable_since = None
 
-            time.sleep(0.1)
+            time.sleep(FEEDBACK_POLL_INTERVAL)
 
         logger.warning(
-            "[UR5] wait_until_joints_reached timeout"
-        )
-        logger.warning(
-            "[UR5] target joints: %s",
+            "[UR5] joint target not reached before timeout: "
+            "target=%s current=%s",
             target_joints,
-        )
-        logger.warning(
-            "[UR5] current joints: %s",
             current_joints,
         )
-
-        if current_joints is not None:
-            logger.warning(
-                "[UR5] joint error: %s",
-                self.joint_distance(
-                    current_joints,
-                    target_joints,
-                ),
-            )
-
         return False
+
+    # ========================================================
+    # Public: shutdown
+    # ========================================================
 
     def shutdown(self):
         """
-        正常關閉 UR5 Driver。
-
-        關閉順序：
-        1. 停止 Receive monitor
-        2. 等待 Receive thread 完整結束
-        3. Receive monitor 自己 disconnect RTDEReceiveInterface
-        4. 關閉 RTDEControlInterface
-
-        此 function 可重複呼叫。
+        Idempotent shutdown order:
+            1. stop current motion best-effort
+            2. stop Receive monitor and let it disconnect Receive
+            3. disconnect RTDE Control
         """
         with self._shutdown_lock:
             if self._shutdown_done:
@@ -1853,16 +2207,23 @@ class UR5Driver:
             )
 
             try:
-                # 先停止 Receive monitor。
-                #
-                # _stop_receive_monitor() 會：
-                #   set stop_event
-                #   join thread
-                #
-                # monitor 的 finally 區塊會自行 disconnect Receive。
+                # Motion stop is best-effort during process teardown.  Do not
+                # fail shutdown solely because the controller is already gone.
+                try:
+                    with self._motion_lock:
+                        if self._motion_mode is not None:
+                            self._generate_command_id()
+                            self._stop_motion(
+                                acceleration=DEFAULT_JOG_ACCELERATION
+                            )
+                except Exception:
+                    logger.warning(
+                        "[UR5] motion stop failed during shutdown",
+                        exc_info=True,
+                    )
+
                 self._stop_receive_monitor()
 
-                # Receive 完全結束後才關閉 Control。
                 with self._motion_lock:
                     self._disconnect_control()
 
@@ -1876,7 +2237,6 @@ class UR5Driver:
                     "[UR5] driver shutdown completed: %s",
                     self.ip,
                 )
-
                 return True
 
             except Exception:

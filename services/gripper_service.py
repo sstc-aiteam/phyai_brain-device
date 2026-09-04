@@ -1,8 +1,13 @@
+import math
 import config
-from control.loader import (get_gripper_driver, get_gripper_driver_name)
-from utils.response import (success, error)
+from control import loader
+from utils import response
 
 MODULE = "gripper"
+
+# ============================================================
+# Gripper Context
+# ============================================================
 
 def _normalize_gripper_name(
     gripper_name,
@@ -10,10 +15,9 @@ def _normalize_gripper_name(
     if not isinstance(
         gripper_name,
         str,
-    ) or not gripper_name.strip():
+    ):
         raise ValueError(
-            "gripper_name must be "
-            "a non-empty string"
+            "gripper_name must be a string"
         )
 
     gripper_name = (
@@ -22,9 +26,12 @@ def _normalize_gripper_name(
         .lower()
     )
 
-    if gripper_name not in (
-        config.GRIPPERS
-    ):
+    if not gripper_name:
+        raise ValueError(
+            "gripper_name must not be empty"
+        )
+
+    if gripper_name not in config.GRIPPERS:
         raise ValueError(
             f"Unsupported gripper: "
             f"{gripper_name}. "
@@ -51,13 +58,13 @@ def _get_gripper_context(
     )
 
     gripper = (
-        get_gripper_driver(
+        loader.get_gripper_driver(
             gripper_name
         )
     )
 
     driver = (
-        get_gripper_driver_name(
+        loader.get_gripper_driver_name(
             gripper_name
         )
     )
@@ -67,21 +74,6 @@ def _get_gripper_context(
         gripper,
         driver,
         gripper_config,
-    )
-
-
-def _service_error(
-    action,
-    exc,
-    driver=None,
-):
-    return error(
-        MODULE,
-        action,
-        error=exc,
-        driver=driver,
-        error_type=
-            type(exc).__name__,
     )
 
 
@@ -100,7 +92,66 @@ def _get_target_gripper_names(
     ]
 
 
-def _resolve_motion(
+# ============================================================
+# Validation Helpers
+# ============================================================
+
+def _normalize_number(
+    name,
+    value,
+):
+    try:
+        number = float(
+            value
+        )
+
+    except (
+        TypeError,
+        ValueError,
+    ) as exc:
+        raise ValueError(
+            f"{name} 必須是數值"
+        ) from exc
+
+    if not math.isfinite(
+        number
+    ):
+        raise ValueError(
+            f"{name} 必須是有限數值"
+        )
+
+    return number
+
+
+def _normalize_ratio(
+    name,
+    value,
+):
+    value = (
+        _normalize_number(
+            name,
+            value,
+        )
+    )
+
+    if not (
+        0.0
+        <= value
+        <= 1.0
+    ):
+        raise ValueError(
+            f"{name} 必須介於 "
+            f"0.0 ~ 1.0"
+        )
+
+    return value
+
+
+# ============================================================
+# Config Helpers
+# ============================================================
+
+def _get_motion_params(
     gripper_config,
     speed=None,
     force=None,
@@ -116,14 +167,12 @@ def _resolve_motion(
 
     if speed is None:
         speed = motion.get(
-            "speed",
-            255,
+            "speed"
         )
 
     if force is None:
         force = motion.get(
-            "force",
-            150,
+            "force"
         )
 
     if wait is None:
@@ -134,8 +183,52 @@ def _resolve_motion(
 
     if timeout is None:
         timeout = motion.get(
+            "timeout"
+        )
+
+    if speed is None:
+        raise ValueError(
+            "motion.speed is not configured"
+        )
+
+    if force is None:
+        raise ValueError(
+            "motion.force is not configured"
+        )
+
+    if timeout is None:
+        raise ValueError(
+            "motion.timeout is not configured"
+        )
+
+    speed = _normalize_ratio(
+        "speed",
+        speed,
+    )
+
+    force = _normalize_ratio(
+        "force",
+        force,
+    )
+
+    if not isinstance(
+        wait,
+        bool,
+    ):
+        raise ValueError(
+            "wait must be bool"
+        )
+
+    timeout = (
+        _normalize_number(
             "timeout",
-            5.0,
+            timeout,
+        )
+    )
+
+    if timeout <= 0:
+        raise ValueError(
+            "timeout 必須大於 0"
         )
 
     return (
@@ -146,9 +239,14 @@ def _resolve_motion(
     )
 
 
+# ============================================================
+# GET STATUS
+# ============================================================
+
 def get_gripper_status(
     gripper_name=None,
 ):
+
     action = "get_gripper_status"
 
     try:
@@ -173,41 +271,114 @@ def get_gripper_status(
                     )
                 )
 
-                status = (
+                raw_status = (
                     gripper
                     .get_gripper_status()
                 )
 
-                grippers.append({
-                    "gripper_name":
-                        current_name,
-                    "driver":
-                        driver,
-                    **status,
-                })
+                if not isinstance(
+                    raw_status,
+                    dict,
+                ):
+                    raise RuntimeError(
+                        f"gripper driver "
+                        f"'{driver}' "
+                        f"get_gripper_status() "
+                        f"must return dict"
+                    )
 
-            except Exception as exc:
-                if gripper_name is not None:
-                    return (
-                        _service_error(
-                            action,
-                            exc,
-                            driver,
+                position = (
+                    raw_status.get(
+                        "position"
+                    )
+                )
+
+                if position is not None:
+                    position = (
+                        _normalize_ratio(
+                            "position",
+                            position,
                         )
                     )
 
-                grippers.append({
-                    "gripper_name":
-                        name,
-                    "driver":
-                        driver,
+                status = {
                     "connected":
-                        False,
-                    "error":
-                        str(exc),
-                })
+                        bool(
+                            raw_status.get(
+                                "connected",
+                                False,
+                            )
+                        ),
 
-        return success(
+                    "ready":
+                        raw_status.get(
+                            "ready"
+                        ),
+
+                    "moving":
+                        raw_status.get(
+                            "moving"
+                        ),
+
+                    "position":
+                        position,
+
+                    "object_detected":
+                        raw_status.get(
+                            "object_detected"
+                        ),
+
+                    "fault":
+                        raw_status.get(
+                            "fault"
+                        ),
+                }
+
+                grippers.append(
+                    {
+                        "gripper_name":
+                            current_name,
+
+                        "driver":
+                            driver,
+
+                        "status":
+                            status,
+                    }
+                )
+
+            except Exception:
+                grippers.append(
+                    {
+                        "gripper_name":
+                            name,
+
+                        "driver":
+                            driver,
+
+                        "status": {
+                            "connected":
+                                False,
+
+                            "ready":
+                                None,
+
+                            "moving":
+                                None,
+
+                            "position":
+                                None,
+
+                            "object_detected":
+                                None,
+
+                            "fault":
+                                None,
+                        },
+                    }
+                )
+
+        return response.success(
             MODULE,
             action,
             result=True,
@@ -218,31 +389,18 @@ def get_gripper_status(
         )
 
     except Exception as exc:
-        return _service_error(
+        return response.error(
+            MODULE,
             action,
-            exc,
+            error=exc,
+            error_type=
+                type(exc).__name__,
         )
 
 
-def get_gripper_status_value(
-    gripper_name,
-):
-    (
-        _,
-        gripper,
-        _,
-        _,
-    ) = (
-        _get_gripper_context(
-            gripper_name
-        )
-    )
-
-    return (
-        gripper
-        .get_gripper_status()
-    )
-
+# ============================================================
+# MOVE
+# ============================================================
 
 def move_gripper(
     gripper_name,
@@ -252,6 +410,18 @@ def move_gripper(
     wait=None,
     timeout=None,
 ):
+    """
+    position:
+        0.0 = fully open
+        1.0 = fully closed
+
+    speed:
+        0.0 ~ 1.0
+
+    force:
+        0.0 ~ 1.0
+    """
+
     action = "move_gripper"
     driver = None
 
@@ -267,13 +437,20 @@ def move_gripper(
             )
         )
 
+        position = (
+            _normalize_ratio(
+                "position",
+                position,
+            )
+        )
+
         (
             speed,
             force,
             wait,
             timeout,
         ) = (
-            _resolve_motion(
+            _get_motion_params(
                 gripper_config,
                 speed,
                 force,
@@ -281,6 +458,20 @@ def move_gripper(
                 timeout,
             )
         )
+
+        if not callable(
+            getattr(
+                gripper,
+                "move_gripper",
+                None,
+            )
+        ):
+            raise NotImplementedError(
+                f"gripper driver "
+                f"'{driver}' "
+                f"does not support "
+                f"move_gripper"
+            )
 
         result = (
             gripper.move_gripper(
@@ -292,7 +483,7 @@ def move_gripper(
             )
         )
 
-        return success(
+        return response.success(
             MODULE,
             action,
             result=bool(
@@ -301,23 +492,33 @@ def move_gripper(
             data={
                 "gripper_name":
                     gripper_name,
-                "position":
-                    int(position),
+
+                "target_position":
+                    position,
+
                 "speed":
-                    int(speed),
+                    speed,
+
                 "force":
-                    int(force),
+                    force,
             },
             driver=driver,
         )
 
     except Exception as exc:
-        return _service_error(
+        return response.error(
+            MODULE,
             action,
-            exc,
-            driver,
+            error=exc,
+            driver=driver,
+            error_type=
+                type(exc).__name__,
         )
 
+
+# ============================================================
+# OPEN
+# ============================================================
 
 def open_gripper(
     gripper_name,
@@ -347,7 +548,7 @@ def open_gripper(
             wait,
             timeout,
         ) = (
-            _resolve_motion(
+            _get_motion_params(
                 gripper_config,
                 speed,
                 force,
@@ -355,6 +556,20 @@ def open_gripper(
                 timeout,
             )
         )
+
+        if not callable(
+            getattr(
+                gripper,
+                "open_gripper",
+                None,
+            )
+        ):
+            raise NotImplementedError(
+                f"gripper driver "
+                f"'{driver}' "
+                f"does not support "
+                f"open_gripper"
+            )
 
         result = (
             gripper.open_gripper(
@@ -365,7 +580,7 @@ def open_gripper(
             )
         )
 
-        return success(
+        return response.success(
             MODULE,
             action,
             result=bool(
@@ -374,23 +589,33 @@ def open_gripper(
             data={
                 "gripper_name":
                     gripper_name,
-                "position":
-                    0,
+
+                "target_position":
+                    0.0,
+
                 "speed":
-                    int(speed),
+                    speed,
+
                 "force":
-                    int(force),
+                    force,
             },
             driver=driver,
         )
 
     except Exception as exc:
-        return _service_error(
+        return response.error(
+            MODULE,
             action,
-            exc,
-            driver,
+            error=exc,
+            driver=driver,
+            error_type=
+                type(exc).__name__,
         )
 
+
+# ============================================================
+# CLOSE
+# ============================================================
 
 def close_gripper(
     gripper_name,
@@ -420,7 +645,7 @@ def close_gripper(
             wait,
             timeout,
         ) = (
-            _resolve_motion(
+            _get_motion_params(
                 gripper_config,
                 speed,
                 force,
@@ -428,6 +653,20 @@ def close_gripper(
                 timeout,
             )
         )
+
+        if not callable(
+            getattr(
+                gripper,
+                "close_gripper",
+                None,
+            )
+        ):
+            raise NotImplementedError(
+                f"gripper driver "
+                f"'{driver}' "
+                f"does not support "
+                f"close_gripper"
+            )
 
         result = (
             gripper.close_gripper(
@@ -438,7 +677,7 @@ def close_gripper(
             )
         )
 
-        return success(
+        return response.success(
             MODULE,
             action,
             result=bool(
@@ -447,23 +686,33 @@ def close_gripper(
             data={
                 "gripper_name":
                     gripper_name,
-                "position":
-                    255,
+
+                "target_position":
+                    1.0,
+
                 "speed":
-                    int(speed),
+                    speed,
+
                 "force":
-                    int(force),
+                    force,
             },
             driver=driver,
         )
 
     except Exception as exc:
-        return _service_error(
+        return response.error(
+            MODULE,
             action,
-            exc,
-            driver,
+            error=exc,
+            driver=driver,
+            error_type=
+                type(exc).__name__,
         )
 
+
+# ============================================================
+# STOP
+# ============================================================
 
 def stop_gripper(
     gripper_name,
@@ -483,11 +732,25 @@ def stop_gripper(
             )
         )
 
+        if not callable(
+            getattr(
+                gripper,
+                "stop_gripper",
+                None,
+            )
+        ):
+            raise NotImplementedError(
+                f"gripper driver "
+                f"'{driver}' "
+                f"does not support "
+                f"stop_gripper"
+            )
+
         result = (
             gripper.stop_gripper()
         )
 
-        return success(
+        return response.success(
             MODULE,
             action,
             result=bool(
@@ -501,8 +764,11 @@ def stop_gripper(
         )
 
     except Exception as exc:
-        return _service_error(
+        return response.error(
+            MODULE,
             action,
-            exc,
-            driver,
+            error=exc,
+            driver=driver,
+            error_type=
+                type(exc).__name__,
         )

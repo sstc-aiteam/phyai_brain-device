@@ -1,31 +1,25 @@
+import logging
 import math
 import config
-from control.loader import (get_arm_driver, get_arm_driver_name,)
-from utils.response import success, error
+from control import loader
+from utils import response
+
 
 MODULE = "arm"
+logger = logging.getLogger(__name__)
 
 
 # ============================================================
 # Arm Context
 # ============================================================
 
-def _normalize_arm_name(
-    arm_name,
-):
-    if not isinstance(
-        arm_name,
-        str,
-    ):
+def _normalize_arm_name(arm_name):
+    if not isinstance(arm_name, str):
         raise ValueError(
             "arm_name must be a string"
         )
 
-    arm_name = (
-        arm_name
-        .strip()
-        .lower()
-    )
+    arm_name = arm_name.strip().lower()
 
     if not arm_name:
         raise ValueError(
@@ -42,31 +36,21 @@ def _normalize_arm_name(
     return arm_name
 
 
-def _get_arm_context(
-    arm_name,
-):
-    arm_name = (
-        _normalize_arm_name(
-            arm_name
-        )
+def _get_arm_context(arm_name):
+    arm_name = _normalize_arm_name(
+        arm_name
     )
 
-    arm_config = (
-        config.ARMS[
-            arm_name
-        ]
+    arm_config = config.ARMS[
+        arm_name
+    ]
+
+    arm = loader.get_arm_driver(
+        arm_name
     )
 
-    arm = (
-        get_arm_driver(
-            arm_name
-        )
-    )
-
-    driver = (
-        get_arm_driver_name(
-            arm_name
-        )
+    driver = loader.get_arm_driver_name(
+        arm_name
     )
 
     return (
@@ -93,24 +77,8 @@ def _get_target_arm_names(
 
 
 # ============================================================
-# Response Helpers
+# Response Helper
 # ============================================================
-
-def _service_error(
-    action,
-    exc,
-    driver=None,
-):
-    return error(
-        MODULE,
-        action,
-        error=exc,
-        driver=driver,
-        error_type=type(
-            exc
-        ).__name__,
-    )
-
 
 def _execution_results(
     action,
@@ -131,7 +99,7 @@ def _execution_results(
         )
 
     if not reached:
-        return success(
+        return response.success(
             MODULE,
             action,
             result=False,
@@ -144,7 +112,7 @@ def _execution_results(
             **kwargs,
         )
 
-    return success(
+    return response.success(
         MODULE,
         action,
         result=True,
@@ -214,10 +182,13 @@ def _normalize_joints(
     joints,
     arm_dof,
 ):
-    if not isinstance(
-        arm_dof,
-        int,
-    ) or arm_dof <= 0:
+    if (
+        not isinstance(
+            arm_dof,
+            int,
+        )
+        or arm_dof <= 0
+    ):
         raise RuntimeError(
             "Driver ARM_DOF invalid"
         )
@@ -253,25 +224,19 @@ def _get_motion_params(
     speed=None,
     acceleration=None,
 ):
-    motion = (
-        arm_config.get(
-            "motion",
-            {}
-        )
+    motion = arm_config.get(
+        "motion",
+        {},
     )
 
     if speed is None:
-        speed = (
-            motion.get(
-                "speed"
-            )
+        speed = motion.get(
+            "speed"
         )
 
     if acceleration is None:
-        acceleration = (
-            motion.get(
-                "acceleration"
-            )
+        acceleration = motion.get(
+            "acceleration"
         )
 
     if speed is None:
@@ -306,7 +271,7 @@ def _get_trajectory_dt(
             arm_config
             .get(
                 "motion",
-                {}
+                {},
             )
             .get(
                 "dt"
@@ -318,10 +283,17 @@ def _get_trajectory_dt(
             "motion.dt is not configured"
         )
 
-    return _normalize_number(
+    dt = _normalize_number(
         "dt",
         dt,
     )
+
+    if dt <= 0:
+        raise ValueError(
+            "dt 必須大於 0"
+        )
+
+    return dt
 
 
 def _get_jog_params(
@@ -331,48 +303,41 @@ def _get_jog_params(
     acceleration=None,
     timeout=None,
 ):
-    jog = (
-        arm_config.get(
-            "jog",
-            {}
-        )
+    jog = arm_config.get(
+        "jog",
+        {},
     )
 
     if linear_speed is None:
-        linear_speed = (
-            jog.get(
-                "linear_speed"
-            )
+        linear_speed = jog.get(
+            "linear_speed"
         )
 
     if angular_speed is None:
-        angular_speed = (
-            jog.get(
-                "angular_speed"
-            )
+        angular_speed = jog.get(
+            "angular_speed"
         )
 
     if acceleration is None:
-        acceleration = (
-            jog.get(
-                "acceleration"
-            )
+        acceleration = jog.get(
+            "acceleration"
         )
 
     if timeout is None:
-        timeout = (
-            jog.get(
-                "timeout"
-            )
+        timeout = jog.get(
+            "timeout"
         )
 
     required = {
         "linear_speed":
             linear_speed,
+
         "angular_speed":
             angular_speed,
+
         "acceleration":
             acceleration,
+
         "timeout":
             timeout,
     }
@@ -406,53 +371,41 @@ def _get_jog_params(
     )
 
 
+# ============================================================
+# Safety
+# ============================================================
+
 def _check_pose_safety(
     pose,
     arm_config,
 ):
-    pose = (
-        _normalize_pose(
-            pose
-        )
+    pose = _normalize_pose(
+        pose
     )
 
-    safety = (
-        arm_config.get(
-            "safety",
-            {}
-        )
-    )
-
-    x_range = (
-        safety.get(
-            "x_range"
-        )
-    )
-
-    y_range = (
-        safety.get(
-            "y_range"
-        )
-    )
-
-    z_range = (
-        safety.get(
-            "z_range"
-        )
+    safety = arm_config.get(
+        "safety",
+        {},
     )
 
     ranges = {
         "x": (
             pose[0],
-            x_range,
+            safety.get(
+                "x_range"
+            ),
         ),
         "y": (
             pose[1],
-            y_range,
+            safety.get(
+                "y_range"
+            ),
         ),
         "z": (
             pose[2],
-            z_range,
+            safety.get(
+                "z_range"
+            ),
         ),
     }
 
@@ -516,9 +469,7 @@ def _get_connected_arm_context(
         arm_name
     )
 
-    status = (
-        arm.get_arm_status()
-    )
+    status = arm.get_arm_status()
 
     if not isinstance(
         status,
@@ -549,9 +500,17 @@ def _get_connected_arm_context(
 # GET STATUS
 # ============================================================
 
+# ============================================================
+# GET STATUS
+# ============================================================
+
 def get_arm_status(
     arm_name=None,
 ):
+    """
+    取得所有手臂的狀態。
+    """
+
     action = "get_arm_status"
 
     try:
@@ -562,47 +521,179 @@ def get_arm_status(
                 arm_name
             )
         ):
+            driver = None
+
             try:
-                context = (
-                    _get_connected_arm_context(
-                        name
-                    )
-                )
-
-                if context is None:
-                    continue
-
                 (
                     current_name,
-                    _,
+                    arm,
                     driver,
                     _,
-                    status,
-                ) = context
+                ) = _get_arm_context(
+                    name
+                )
+
+                raw_status = (
+                    arm.get_arm_status()
+                )
+
+                if not isinstance(
+                    raw_status,
+                    dict,
+                ):
+                    raise RuntimeError(
+                        f"arm driver "
+                        f"'{driver}' "
+                        f"get_arm_status() "
+                        f"must return dict"
+                    )
+
+                pose = raw_status.get(
+                    "pose"
+                )
+
+                if pose is not None:
+                    pose = (
+                        _normalize_pose(
+                            pose
+                        )
+                    )
+
+                joints = raw_status.get(
+                    "joints"
+                )
+
+                if joints is not None:
+                    joints = (
+                        _normalize_joints(
+                            joints,
+                            arm.ARM_DOF,
+                        )
+                    )
+
+                status = {
+                    "connected":
+                        bool(
+                            raw_status.get(
+                                "connected",
+                                False,
+                            )
+                        ),
+
+                    "ready":
+                        raw_status.get(
+                            "ready"
+                        ),
+
+                    "moving":
+                        raw_status.get(
+                            "moving"
+                        ),
+
+                    "protective_stop":
+                        raw_status.get(
+                            "protective_stop"
+                        ),
+
+                    "emergency_stop":
+                        raw_status.get(
+                            "emergency_stop"
+                        ),
+
+                    "fault":
+                        raw_status.get(
+                            "fault"
+                        ),
+
+                    "program_running":
+                        raw_status.get(
+                            "program_running"
+                        ),
+
+                    "arm_mode":
+                        raw_status.get(
+                            "arm_mode"
+                        ),
+
+                    "safety_mode":
+                        raw_status.get(
+                            "safety_mode"
+                        ),
+
+                    "pose":
+                        pose,
+
+                    "joints":
+                        joints,
+                }
 
                 arms.append(
                     {
                         "arm_name":
                             current_name,
+
                         "driver":
                             driver,
+
                         "status":
                             status,
                     }
                 )
 
             except Exception as exc:
-                if arm_name is not None:
-                    return (
-                        _service_error(
-                            action,
-                            exc,
-                        )
-                    )
+                logger.warning(
+                    "arm status unavailable: "
+                    "arm_name=%s, error=%s",
+                    name,
+                    exc,
+                )
 
-                continue
+                arms.append(
+                    {
+                        "arm_name":
+                            name,
 
-        return success(
+                        "driver":
+                            driver,
+
+                        "status": {
+                            "connected":
+                                False,
+
+                            "ready":
+                                None,
+
+                            "moving":
+                                None,
+
+                            "protective_stop":
+                                None,
+
+                            "emergency_stop":
+                                None,
+
+                            "fault":
+                                None,
+
+                            "program_running":
+                                None,
+
+                            "arm_mode":
+                                None,
+
+                            "safety_mode":
+                                None,
+
+                            "pose":
+                                None,
+
+                            "joints":
+                                None,
+                        },
+                    }
+                )
+
+        return response.success(
             MODULE,
             action,
             result=True,
@@ -612,9 +703,12 @@ def get_arm_status(
         )
 
     except Exception as exc:
-        return _service_error(
+        return response.error(
+            MODULE,
             action,
-            exc,
+            error=exc,
+            error_type=
+                type(exc).__name__,
         )
 
 
@@ -653,10 +747,8 @@ def get_arm_pose(
                     status,
                 ) = context
 
-                pose = (
-                    status.get(
-                        "pose"
-                    )
+                pose = status.get(
+                    "pose"
                 )
 
                 if pose is None:
@@ -666,18 +758,18 @@ def get_arm_pose(
                         f"pose unavailable"
                     )
 
-                pose = (
-                    _normalize_pose(
-                        pose
-                    )
+                pose = _normalize_pose(
+                    pose
                 )
 
                 arms.append(
                     {
                         "arm_name":
                             current_name,
+
                         "driver":
                             driver,
+
                         "pose":
                             pose,
                     }
@@ -685,16 +777,17 @@ def get_arm_pose(
 
             except Exception as exc:
                 if arm_name is not None:
-                    return (
-                        _service_error(
-                            action,
-                            exc,
-                        )
+                    return response.error(
+                        MODULE,
+                        action,
+                        error=exc,
+                        error_type=
+                            type(exc).__name__,
                     )
 
                 continue
 
-        return success(
+        return response.success(
             MODULE,
             action,
             result=True,
@@ -704,9 +797,12 @@ def get_arm_pose(
         )
 
     except Exception as exc:
-        return _service_error(
+        return response.error(
+            MODULE,
             action,
-            exc,
+            error=exc,
+            error_type=
+                type(exc).__name__,
         )
 
 
@@ -745,10 +841,8 @@ def get_arm_joints(
                     status,
                 ) = context
 
-                joints = (
-                    status.get(
-                        "joints"
-                    )
+                joints = status.get(
+                    "joints"
                 )
 
                 if joints is None:
@@ -758,19 +852,19 @@ def get_arm_joints(
                         f"joints unavailable"
                     )
 
-                joints = (
-                    _normalize_joints(
-                        joints,
-                        arm.ARM_DOF,
-                    )
+                joints = _normalize_joints(
+                    joints,
+                    arm.ARM_DOF,
                 )
 
                 arms.append(
                     {
                         "arm_name":
                             current_name,
+
                         "driver":
                             driver,
+
                         "joints":
                             joints,
                     }
@@ -778,16 +872,17 @@ def get_arm_joints(
 
             except Exception as exc:
                 if arm_name is not None:
-                    return (
-                        _service_error(
-                            action,
-                            exc,
-                        )
+                    return response.error(
+                        MODULE,
+                        action,
+                        error=exc,
+                        error_type=
+                            type(exc).__name__,
                     )
 
                 continue
 
-        return success(
+        return response.success(
             MODULE,
             action,
             result=True,
@@ -797,9 +892,12 @@ def get_arm_joints(
         )
 
     except Exception as exc:
-        return _service_error(
+        return response.error(
+            MODULE,
             action,
-            exc,
+            error=exc,
+            error_type=
+                type(exc).__name__,
         )
 
 
@@ -811,7 +909,6 @@ def reconnect_arm(
     arm_name,
 ):
     action = "reconnect_arm"
-
     driver = None
 
     try:
@@ -824,9 +921,19 @@ def reconnect_arm(
             arm_name
         )
 
-        reached = (
-            arm.reconnect_arm()
-        )
+        if not callable(
+            getattr(
+                arm,
+                "reconnect_arm",
+                None,
+            )
+        ):
+            raise NotImplementedError(
+                f"arm driver '{driver}' "
+                f"does not support reconnect_arm"
+            )
+
+        reached = arm.reconnect_arm()
 
         return _execution_results(
             action,
@@ -839,10 +946,13 @@ def reconnect_arm(
         )
 
     except Exception as exc:
-        return _service_error(
+        return response.error(
+            MODULE,
             action,
-            exc,
-            driver,
+            error=exc,
+            driver=driver,
+            error_type=
+                type(exc).__name__,
         )
 
 
@@ -857,7 +967,6 @@ def move_arm_default(
     wait=True,
 ):
     action = "move_arm_default"
-
     driver = None
 
     try:
@@ -879,23 +988,17 @@ def move_arm_default(
             acceleration,
         )
 
-        poses = (
-            arm_config.get(
-                "poses",
-                {}
-            )
+        poses = arm_config.get(
+            "poses",
+            {},
         )
 
-        intermediate = (
-            poses.get(
-                "intermediate_default_joints"
-            )
+        intermediate = poses.get(
+            "intermediate_default_joints"
         )
 
-        default = (
-            poses.get(
-                "default_joints"
-            )
+        default = poses.get(
+            "default_joints"
         )
 
         if intermediate is None:
@@ -925,39 +1028,32 @@ def move_arm_default(
             )
         )
 
-        reached = (
-            arm.move_arm_joints(
-                joints=intermediate,
-                speed=speed,
-                acceleration=
-                    acceleration,
-                wait=wait,
-            )
+        reached = arm.move_arm_joints(
+            joints=intermediate,
+            speed=speed,
+            acceleration=acceleration,
+            wait=wait,
         )
 
         if not reached:
-            return (
-                _execution_results(
-                    action,
-                    reached,
-                    data={
-                        "arm_name":
-                            arm_name,
-                        "target_joints":
-                            intermediate,
-                    },
-                    driver=driver,
-                )
+            return _execution_results(
+                action,
+                reached,
+                data={
+                    "arm_name":
+                        arm_name,
+
+                    "target_joints":
+                        intermediate,
+                },
+                driver=driver,
             )
 
-        reached = (
-            arm.move_arm_joints(
-                joints=default,
-                speed=speed,
-                acceleration=
-                    acceleration,
-                wait=wait,
-            )
+        reached = arm.move_arm_joints(
+            joints=default,
+            speed=speed,
+            acceleration=acceleration,
+            wait=wait,
         )
 
         return _execution_results(
@@ -966,6 +1062,7 @@ def move_arm_default(
             data={
                 "arm_name":
                     arm_name,
+
                 "target_joints":
                     default,
             },
@@ -973,10 +1070,13 @@ def move_arm_default(
         )
 
     except Exception as exc:
-        return _service_error(
+        return response.error(
+            MODULE,
             action,
-            exc,
-            driver,
+            error=exc,
+            driver=driver,
+            error_type=
+                type(exc).__name__,
         )
 
 
@@ -992,7 +1092,6 @@ def move_arm_pose(
     wait=True,
 ):
     action = "move_arm_pose"
-
     driver = None
 
     try:
@@ -1021,14 +1120,11 @@ def move_arm_pose(
             )
         )
 
-        reached = (
-            arm.move_arm_pose(
-                *target_pose,
-                speed=speed,
-                acceleration=
-                    acceleration,
-                wait=wait,
-            )
+        reached = arm.move_arm_pose(
+            *target_pose,
+            speed=speed,
+            acceleration=acceleration,
+            wait=wait,
         )
 
         return _execution_results(
@@ -1037,6 +1133,7 @@ def move_arm_pose(
             data={
                 "arm_name":
                     arm_name,
+
                 "target_pose":
                     target_pose,
             },
@@ -1044,10 +1141,13 @@ def move_arm_pose(
         )
 
     except Exception as exc:
-        return _service_error(
+        return response.error(
+            MODULE,
             action,
-            exc,
-            driver,
+            error=exc,
+            driver=driver,
+            error_type=
+                type(exc).__name__,
         )
 
 
@@ -1065,7 +1165,6 @@ def move_arm_xyz(
     wait=True,
 ):
     action = "move_arm_xyz"
-
     driver = None
 
     try:
@@ -1118,14 +1217,11 @@ def move_arm_xyz(
             )
         )
 
-        reached = (
-            arm.move_arm_pose(
-                *target_pose,
-                speed=speed,
-                acceleration=
-                    acceleration,
-                wait=wait,
-            )
+        reached = arm.move_arm_pose(
+            *target_pose,
+            speed=speed,
+            acceleration=acceleration,
+            wait=wait,
         )
 
         return _execution_results(
@@ -1134,6 +1230,7 @@ def move_arm_xyz(
             data={
                 "arm_name":
                     arm_name,
+
                 "target_pose":
                     target_pose,
             },
@@ -1141,10 +1238,13 @@ def move_arm_xyz(
         )
 
     except Exception as exc:
-        return _service_error(
+        return response.error(
+            MODULE,
             action,
-            exc,
-            driver,
+            error=exc,
+            driver=driver,
+            error_type=
+                type(exc).__name__,
         )
 
 
@@ -1160,7 +1260,6 @@ def move_arm_joints(
     wait=True,
 ):
     action = "move_arm_joints"
-
     driver = None
 
     try:
@@ -1206,6 +1305,7 @@ def move_arm_joints(
             data={
                 "arm_name":
                     arm_name,
+
                 "target_joints":
                     target_joints,
             },
@@ -1213,15 +1313,18 @@ def move_arm_joints(
         )
 
     except Exception as exc:
-        return _service_error(
+        return response.error(
+            MODULE,
             action,
-            exc,
-            driver,
+            error=exc,
+            driver=driver,
+            error_type=
+                type(exc).__name__,
         )
 
 
 # ============================================================
-# JOINT TRAJECTORY
+# TRAJECTORY
 # ============================================================
 
 def move_arm_joint_trajectory(
@@ -1230,8 +1333,6 @@ def move_arm_joint_trajectory(
     dt=None,
     speed=None,
     acceleration=None,
-    lookahead_time=0.1,
-    gain=300,
     wait=True,
     move_to_start=True,
     move_to_start_speed=None,
@@ -1253,6 +1354,19 @@ def move_arm_joint_trajectory(
             arm_name
         )
 
+        if not callable(
+            getattr(
+                arm,
+                "move_arm_joint_trajectory",
+                None,
+            )
+        ):
+            raise NotImplementedError(
+                f"arm driver '{driver}' "
+                f"does not support "
+                f"move_arm_joint_trajectory"
+            )
+
         (
             speed,
             acceleration,
@@ -1262,11 +1376,9 @@ def move_arm_joint_trajectory(
             acceleration,
         )
 
-        dt = (
-            _get_trajectory_dt(
-                arm_config,
-                dt,
-            )
+        dt = _get_trajectory_dt(
+            arm_config,
+            dt,
         )
 
         if not isinstance(
@@ -1283,22 +1395,35 @@ def move_arm_joint_trajectory(
                 "joint_trajectory 不可為空"
             )
 
+        target_trajectory = [
+            _normalize_joints(
+                joints,
+                arm.ARM_DOF,
+            )
+            for joints
+            in joint_trajectory
+        ]
+
         reached = (
             arm.move_arm_joint_trajectory(
                 joint_trajectory=
-                    joint_trajectory,
+                    target_trajectory,
+
                 dt=dt,
+
                 speed=speed,
+
                 acceleration=
                     acceleration,
-                lookahead_time=
-                    lookahead_time,
-                gain=gain,
+
                 wait=wait,
+
                 move_to_start=
                     move_to_start,
+
                 move_to_start_speed=
                     move_to_start_speed,
+
                 move_to_start_acceleration=
                     move_to_start_acceleration,
             )
@@ -1310,19 +1435,151 @@ def move_arm_joint_trajectory(
             data={
                 "arm_name":
                     arm_name,
+
                 "trajectory_points":
                     len(
-                        joint_trajectory
+                        target_trajectory
                     ),
             },
             driver=driver,
         )
 
     except Exception as exc:
-        return _service_error(
+        return response.error(
+            MODULE,
             action,
-            exc,
+            error=exc,
+            driver=driver,
+            error_type=
+                type(exc).__name__,
+        )
+
+
+def move_arm_pose_trajectory(
+    arm_name,
+    pose_trajectory,
+    dt=None,
+    speed=None,
+    acceleration=None,
+    wait=True,
+    move_to_start=True,
+    move_to_start_speed=None,
+    move_to_start_acceleration=None,
+):
+    action = (
+        "move_arm_pose_trajectory"
+    )
+
+    driver = None
+
+    try:
+        (
+            arm_name,
+            arm,
             driver,
+            arm_config,
+        ) = _get_arm_context(
+            arm_name
+        )
+
+        if not callable(
+            getattr(
+                arm,
+                "move_arm_pose_trajectory",
+                None,
+            )
+        ):
+            raise NotImplementedError(
+                f"arm driver '{driver}' "
+                f"does not support "
+                f"move_arm_pose_trajectory"
+            )
+
+        (
+            speed,
+            acceleration,
+        ) = _get_motion_params(
+            arm_config,
+            speed,
+            acceleration,
+        )
+
+        dt = _get_trajectory_dt(
+            arm_config,
+            dt,
+        )
+
+        if not isinstance(
+            pose_trajectory,
+            (list, tuple),
+        ):
+            raise ValueError(
+                "pose_trajectory "
+                "必須是 list 或 tuple"
+            )
+
+        if not pose_trajectory:
+            raise ValueError(
+                "pose_trajectory 不可為空"
+            )
+
+        target_trajectory = [
+            _check_pose_safety(
+                pose,
+                arm_config,
+            )
+            for pose
+            in pose_trajectory
+        ]
+
+        reached = (
+            arm.move_arm_pose_trajectory(
+                pose_trajectory=
+                    target_trajectory,
+
+                dt=dt,
+
+                speed=speed,
+
+                acceleration=
+                    acceleration,
+
+                wait=wait,
+
+                move_to_start=
+                    move_to_start,
+
+                move_to_start_speed=
+                    move_to_start_speed,
+
+                move_to_start_acceleration=
+                    move_to_start_acceleration,
+            )
+        )
+
+        return _execution_results(
+            action,
+            reached,
+            data={
+                "arm_name":
+                    arm_name,
+
+                "trajectory_points":
+                    len(
+                        target_trajectory
+                    ),
+            },
+            driver=driver,
+        )
+
+    except Exception as exc:
+        return response.error(
+            MODULE,
+            action,
+            error=exc,
+            driver=driver,
+            error_type=
+                type(exc).__name__,
         )
 
 
@@ -1339,7 +1596,6 @@ def move_arm_step(
     wait=True,
 ):
     action = "move_arm_step"
-
     driver = None
 
     try:
@@ -1366,7 +1622,7 @@ def move_arm_step(
                 arm_config
                 .get(
                     "motion",
-                    {}
+                    {},
                 )
                 .get(
                     "dx"
@@ -1379,11 +1635,9 @@ def move_arm_step(
                 "is not configured"
             )
 
-        distance = (
-            _normalize_number(
-                "distance",
-                distance,
-            )
+        distance = _normalize_number(
+            "distance",
+            distance,
         )
 
         if distance < 0:
@@ -1468,10 +1722,13 @@ def move_arm_step(
             data={
                 "arm_name":
                     arm_name,
+
                 "direction":
                     direction,
+
                 "distance":
                     distance,
+
                 "target_pose":
                     target_pose,
             },
@@ -1479,10 +1736,13 @@ def move_arm_step(
         )
 
     except Exception as exc:
-        return _service_error(
+        return response.error(
+            MODULE,
             action,
-            exc,
-            driver,
+            error=exc,
+            driver=driver,
+            error_type=
+                type(exc).__name__,
         )
 
 
@@ -1499,7 +1759,6 @@ def move_arm_rotate(
     wait=True,
 ):
     action = "move_arm_rotate"
-
     driver = None
 
     try:
@@ -1526,7 +1785,7 @@ def move_arm_rotate(
                 arm_config
                 .get(
                     "motion",
-                    {}
+                    {},
                 )
                 .get(
                     "dr"
@@ -1539,11 +1798,9 @@ def move_arm_rotate(
                 "is not configured"
             )
 
-        angle = (
-            _normalize_number(
-                "angle",
-                angle,
-            )
+        angle = _normalize_number(
+            "angle",
+            angle,
         )
 
         if angle < 0:
@@ -1628,10 +1885,13 @@ def move_arm_rotate(
             data={
                 "arm_name":
                     arm_name,
+
                 "direction":
                     direction,
+
                 "angle":
                     angle,
+
                 "target_pose":
                     target_pose,
             },
@@ -1639,10 +1899,13 @@ def move_arm_rotate(
         )
 
     except Exception as exc:
-        return _service_error(
+        return response.error(
+            MODULE,
             action,
-            exc,
-            driver,
+            error=exc,
+            driver=driver,
+            error_type=
+                type(exc).__name__,
         )
 
 
@@ -1659,7 +1922,6 @@ def start_arm_jog(
     timeout=None,
 ):
     action = "start_arm_jog"
-
     driver = None
 
     try:
@@ -1671,6 +1933,18 @@ def start_arm_jog(
         ) = _get_arm_context(
             arm_name
         )
+
+        if not callable(
+            getattr(
+                arm,
+                "start_arm_jog",
+                None,
+            )
+        ):
+            raise NotImplementedError(
+                f"arm driver '{driver}' "
+                f"does not support jog"
+            )
 
         (
             linear_speed,
@@ -1688,12 +1962,16 @@ def start_arm_jog(
         reached = (
             arm.start_arm_jog(
                 direction=direction,
+
                 linear_speed=
                     linear_speed,
+
                 angular_speed=
                     angular_speed,
+
                 acceleration=
                     acceleration,
+
                 timeout=timeout,
             )
         )
@@ -1704,6 +1982,7 @@ def start_arm_jog(
             data={
                 "arm_name":
                     arm_name,
+
                 "direction":
                     direction,
             },
@@ -1711,10 +1990,13 @@ def start_arm_jog(
         )
 
     except Exception as exc:
-        return _service_error(
+        return response.error(
+            MODULE,
             action,
-            exc,
-            driver,
+            error=exc,
+            driver=driver,
+            error_type=
+                type(exc).__name__,
         )
 
 
@@ -1722,7 +2004,6 @@ def stop_arm_jog(
     arm_name,
 ):
     action = "stop_arm_jog"
-
     driver = None
 
     try:
@@ -1734,6 +2015,18 @@ def stop_arm_jog(
         ) = _get_arm_context(
             arm_name
         )
+
+        if not callable(
+            getattr(
+                arm,
+                "stop_arm_jog",
+                None,
+            )
+        ):
+            raise NotImplementedError(
+                f"arm driver '{driver}' "
+                f"does not support jog"
+            )
 
         reached = (
             arm.stop_arm_jog()
@@ -1750,10 +2043,13 @@ def stop_arm_jog(
         )
 
     except Exception as exc:
-        return _service_error(
+        return response.error(
+            MODULE,
             action,
-            exc,
-            driver,
+            error=exc,
+            driver=driver,
+            error_type=
+                type(exc).__name__,
         )
 
 
@@ -1780,6 +2076,18 @@ def start_arm_freedrive(
             arm_name
         )
 
+        if not callable(
+            getattr(
+                arm,
+                "start_arm_freedrive",
+                None,
+            )
+        ):
+            raise NotImplementedError(
+                f"arm driver '{driver}' "
+                f"does not support freedrive"
+            )
+
         reached = (
             arm.start_arm_freedrive()
         )
@@ -1798,10 +2106,13 @@ def start_arm_freedrive(
         )
 
     except Exception as exc:
-        return _service_error(
+        return response.error(
+            MODULE,
             action,
-            exc,
-            driver,
+            error=exc,
+            driver=driver,
+            error_type=
+                type(exc).__name__,
         )
 
 
@@ -1824,6 +2135,18 @@ def stop_arm_freedrive(
             arm_name
         )
 
+        if not callable(
+            getattr(
+                arm,
+                "stop_arm_freedrive",
+                None,
+            )
+        ):
+            raise NotImplementedError(
+                f"arm driver '{driver}' "
+                f"does not support freedrive"
+            )
+
         reached = (
             arm.stop_arm_freedrive()
         )
@@ -1842,12 +2165,16 @@ def stop_arm_freedrive(
         )
 
     except Exception as exc:
-        return _service_error(
+        return response.error(
+            MODULE,
             action,
-            exc,
-            driver,
+            error=exc,
+            driver=driver,
+            error_type=
+                type(exc).__name__,
         )
-        
+
+
 # ============================================================
 # STOP
 # ============================================================
@@ -1857,7 +2184,6 @@ def stop_arm(
     acceleration=None,
 ):
     action = "stop_arm"
-
     driver = None
 
     try:
@@ -1870,15 +2196,47 @@ def stop_arm(
             arm_name
         )
 
+        if not callable(
+            getattr(
+                arm,
+                "stop_arm",
+                None,
+            )
+        ):
+            raise NotImplementedError(
+                f"arm driver '{driver}' "
+                f"does not support stop_arm"
+            )
+
+        if acceleration is None:
+            acceleration = (
+                arm_config
+                .get(
+                    "motion",
+                    {},
+                )
+                .get(
+                    "stop_acceleration"
+                )
+            )
+
         if acceleration is None:
             acceleration = (
                 arm_config
                 .get(
                     "jog",
-                    {}
+                    {},
                 )
                 .get(
                     "acceleration"
+                )
+            )
+
+        if acceleration is not None:
+            acceleration = (
+                _normalize_number(
+                    "stop_acceleration",
+                    acceleration,
                 )
             )
 
@@ -1900,8 +2258,11 @@ def stop_arm(
         )
 
     except Exception as exc:
-        return _service_error(
+        return response.error(
+            MODULE,
             action,
-            exc,
-            driver,
+            error=exc,
+            driver=driver,
+            error_type=
+                type(exc).__name__,
         )

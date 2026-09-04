@@ -1,40 +1,45 @@
-import socket
-import struct
+import logging
+import math
 import threading
+import time
 
-from control.robotiq_preamble import (
-    ROBOTIQ_PREAMBLE,
-)
+import rtde_receive
+
+from control.robotiq_preamble import ROBOTIQ_PREAMBLE
 
 
-MIN_POSITION = 0
-MAX_POSITION = 255
+logger = logging.getLogger(__name__)
 
-MIN_SPEED = 0
-MAX_SPEED = 255
 
-MIN_FORCE = 0
-MAX_FORCE = 255
+MIN_RAW = 0
+MAX_RAW = 255
 
-DEFAULT_SCRIPT_PORT = 30002
 DEFAULT_TIMEOUT = 5.0
+DEFAULT_STATUS_CACHE_TTL = 0.15
+DEFAULT_REGISTER_BASE = 36
 
 
 class RobotiqESeriesDriver:
+    """
+    Robotiq 2F gripper controlled by URScript.
+
+    Public gripper contract:
+        position: 0.0 = fully open, 1.0 = fully closed
+        speed:    0.0 ~ 1.0
+        force:    0.0 ~ 1.0
+    """
 
     DRIVER_METADATA = {
-        "name": "robotiq_eseries",
+        "name": "robotiq_urscript",
         "manufacturer": "Robotiq",
         "model": "2F Gripper",
-        "robot_family": "Universal Robots e-Series",
-        "interface": "urscript_tcp_30002_callback",
+        "interface": "urscript_via_arm_rtde_gateway",
         "capabilities": {
             "status": True,
             "position": True,
             "speed": True,
             "force": True,
             "object_detection": True,
-            "fault_code": True,
             "open": True,
             "close": True,
             "stop": True,
@@ -47,434 +52,609 @@ class RobotiqESeriesDriver:
         port=None,
         timeout=DEFAULT_TIMEOUT,
         auto_activate=True,
-        callback_host=None,
-        script_port=DEFAULT_SCRIPT_PORT,
+        arm_name=None,
+        register_base=DEFAULT_REGISTER_BASE,
+        status_cache_ttl=DEFAULT_STATUS_CACHE_TTL,
     ):
+        """
+        Parameters
+        ----------
+        host:
+            UR controller IP.
+
+        port:
+            Accepted for config compatibility only.  URScript mode does not
+            connect from Python to Robotiq port 63352.
+
+        arm_name:
+            Optional explicit arm name from config.ARMS.  If omitted, this
+            driver resolves the arm by matching config.ARMS[*].kwargs.ip to
+            host.
+
+        register_base:
+            Four consecutive RTDE output integer registers are used:
+                base + 0 : actual gripper position [0..255]
+                base + 1 : activated [0/1]
+                base + 2 : OBJ status [0..3]
+                base + 3 : FLT code
+        """
         _ = port
 
-        self._host = str(host)
-        self._timeout = float(timeout)
+        self._host = str(host).strip()
+        if not self._host:
+            raise ValueError("host must not be empty")
+
+        self._timeout = self._normalize_positive_number(
+            "timeout",
+            timeout,
+        )
+
         self._auto_activate = bool(auto_activate)
 
-        self._callback_host = (
-            str(callback_host)
-            if callback_host
-            else None
+        self._arm_name = (
+            None
+            if arm_name is None
+            else str(arm_name).strip().lower()
         )
 
-        self._script_port = int(
-            script_port
+        self._register_base = int(register_base)
+        if self._register_base < 0:
+            raise ValueError("register_base must be >= 0")
+
+        self.REG_POSITION = self._register_base
+        self.REG_ACTIVATED = self._register_base + 1
+        self.REG_OBJECT_STATUS = self._register_base + 2
+        self.REG_FAULT_CODE = self._register_base + 3
+
+        self._status_cache_ttl = self._normalize_nonnegative_number(
+            "status_cache_ttl",
+            status_cache_ttl,
         )
 
-        self._lock = (
-            threading.RLock()
-        )
+        self._lock = threading.RLock()
+        self._receive_lock = threading.RLock()
+
+        self._rtde_r = None
+        self._arm_driver = None
+        self._resolved_arm_name = None
+
+        self._requested_position = None
+        self._speed = None
+        self._force = None
+
+        self._status_cache = None
+        self._status_cache_time = None
 
         if self._auto_activate:
             try:
-                self.activate_gripper()
-
+                self.activate_gripper(
+                    timeout=self._timeout
+                )
             except Exception:
-                pass
-
+                # Keep application startup alive when robot/gripper is
+                # temporarily unavailable.
+                logger.exception(
+                    "[Robotiq URScript] auto activation failed: host=%s",
+                    self._host,
+                )
 
     # ========================================================
-    # Validation
+    # Validation / conversion
     # ========================================================
 
     @staticmethod
-    def _normalize_int(
-        value,
-        minimum,
-        maximum,
-        name,
-    ):
+    def _normalize_ratio(value, name):
         try:
-            value = int(value)
-
-        except (
-            TypeError,
-            ValueError,
-        ) as exc:
+            value = float(value)
+        except (TypeError, ValueError) as exc:
             raise ValueError(
-                f"{name} must be an integer"
+                f"{name} must be a number"
             ) from exc
 
-        if not minimum <= value <= maximum:
+        if not math.isfinite(value):
             raise ValueError(
-                f"{name} must be between "
-                f"{minimum} and {maximum}"
+                f"{name} must be finite"
+            )
+
+        if not 0.0 <= value <= 1.0:
+            raise ValueError(
+                f"{name} must be between 0.0 and 1.0"
             )
 
         return value
 
-
-    # ========================================================
-    # Connection
-    # ========================================================
-
-    def _check_connection(
-        self,
-    ):
+    @staticmethod
+    def _normalize_positive_number(name, value):
         try:
-            with socket.create_connection(
-                (
-                    self._host,
-                    self._script_port,
-                ),
-                timeout=self._timeout,
-            ):
-                return True
+            value = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"{name} must be a number"
+            ) from exc
 
-        except OSError:
-            return False
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError(
+                f"{name} must be greater than 0"
+            )
 
-
-    def _is_connected(
-        self,
-    ):
-        return self._check_connection()
-
-
-    def reconnect_gripper(
-        self,
-    ):
-        return self._check_connection()
-
-
-    # ========================================================
-    # URScript
-    # ========================================================
+        return value
 
     @staticmethod
-    def _indent_script(
-        text,
-    ):
-        return "\n".join(
-            (
-                "  " + line
-                if line.strip()
-                else ""
+    def _normalize_nonnegative_number(name, value):
+        try:
+            value = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"{name} must be a number"
+            ) from exc
+
+        if not math.isfinite(value) or value < 0:
+            raise ValueError(
+                f"{name} must be >= 0"
             )
-            for line
-            in text.splitlines()
+
+        return value
+
+    @staticmethod
+    def _ratio_to_raw(value):
+        return int(
+            round(
+                float(value)
+                * MAX_RAW
+            )
         )
 
+    @staticmethod
+    def _raw_to_ratio(value):
+        return float(value) / float(MAX_RAW)
 
-    def _build_script(
+    # ========================================================
+    # Arm resolution / shared RTDE control owner
+    # ========================================================
+
+    def _resolve_arm_driver(self):
+        """
+        Resolve the existing arm driver managed by control.loader.
+
+        The gripper does NOT create RTDEControlInterface itself.
+        """
+        with self._lock:
+            if self._arm_driver is not None:
+                return self._arm_driver
+
+            # Lazy imports avoid import cycles during loader startup.
+            import config
+            from control import loader
+
+            arm_name = self._arm_name
+
+            if arm_name is None:
+                matched = []
+
+                for name, arm_config in config.ARMS.items():
+                    kwargs = arm_config.get(
+                        "kwargs",
+                        {},
+                    )
+
+                    ip = kwargs.get("ip")
+
+                    if (
+                        ip is not None
+                        and str(ip).strip() == self._host
+                    ):
+                        matched.append(name)
+
+                if len(matched) == 1:
+                    arm_name = matched[0]
+
+                elif not matched:
+                    raise RuntimeError(
+                        "Unable to resolve arm for Robotiq URScript driver: "
+                        f"no config.ARMS entry uses IP {self._host}. "
+                        "Pass arm_name explicitly in gripper kwargs."
+                    )
+
+                else:
+                    raise RuntimeError(
+                        "Unable to resolve arm for Robotiq URScript driver: "
+                        f"multiple arms use IP {self._host}: {matched}. "
+                        "Pass arm_name explicitly in gripper kwargs."
+                    )
+
+            arm = loader.get_arm_driver(
+                arm_name
+            )
+
+            required = (
+                "_motion_lock",
+                "_motion_mode",
+                "_call_control",
+                "_ensure_control_ready",
+            )
+
+            missing = [
+                name
+                for name in required
+                if not hasattr(arm, name)
+            ]
+
+            if missing:
+                raise RuntimeError(
+                    f"arm driver '{arm_name}' does not expose the "
+                    "URScript coordination hooks required by "
+                    f"robotiq_urscript: {', '.join(missing)}"
+                )
+
+            self._arm_driver = arm
+            self._resolved_arm_name = arm_name
+
+            return arm
+
+    # ========================================================
+    # Receive-only RTDE status channel
+    # ========================================================
+
+    def _get_receive(self):
+        with self._receive_lock:
+            if self._rtde_r is not None:
+                try:
+                    if self._rtde_r.isConnected():
+                        return self._rtde_r
+                except Exception:
+                    pass
+
+                try:
+                    self._rtde_r.disconnect()
+                except Exception:
+                    pass
+
+                self._rtde_r = None
+
+            self._rtde_r = (
+                rtde_receive
+                .RTDEReceiveInterface(
+                    self._host,
+                    -1.0,
+                    [],
+                    False,
+                    True,
+                )
+            )
+
+            return self._rtde_r
+
+    def _disconnect_receive(self):
+        with self._receive_lock:
+            rtde_r = self._rtde_r
+            self._rtde_r = None
+
+            if rtde_r is not None:
+                try:
+                    rtde_r.disconnect()
+                except Exception:
+                    logger.debug(
+                        "[Robotiq URScript] RTDE receive disconnect failed",
+                        exc_info=True,
+                    )
+
+        return True
+
+    def reconnect_gripper(self):
+        """
+        Rebuild only the gripper's receive-only RTDE channel.
+
+        Arm RTDE Control remains owned by the Arm Driver.
+        """
+        self._disconnect_receive()
+        self._arm_driver = None
+        self._resolved_arm_name = None
+
+        self._resolve_arm_driver()
+        self._get_receive()
+
+        return True
+
+    # ========================================================
+    # RTDE recovery
+    # ========================================================
+
+    def _recover_arm_control(self, arm):
+        """
+        Restore ur_rtde's default control script after custom URScript.
+
+        First try the existing control object.  If that fails, delegate the
+        full reconnect to the Arm Driver.
+        """
+        try:
+            arm._ensure_control_ready()
+            return True
+
+        except Exception as first_exc:
+            logger.warning(
+                "[Robotiq URScript] control script recovery failed; "
+                "trying arm reconnect: %s",
+                first_exc,
+            )
+
+        reconnect = getattr(
+            arm,
+            "reconnect_arm",
+            None,
+        )
+
+        if not callable(reconnect):
+            raise RuntimeError(
+                "Arm RTDE control script could not be recovered and "
+                "arm driver does not support reconnect_arm()"
+            )
+
+        result = reconnect()
+
+        if not result:
+            raise RuntimeError(
+                "Arm reconnect returned False after Robotiq URScript"
+            )
+
+        arm._ensure_control_ready()
+        return True
+
+    # ========================================================
+    # URScript transaction
+    # ========================================================
+
+    def _execute_script(
         self,
         function_name,
         body,
+        restore_freedrive=True,
     ):
-        script_body = (
-            ROBOTIQ_PREAMBLE.rstrip()
+        """
+        Execute a Robotiq custom script through the existing Arm Driver.
+
+        Transaction:
+            acquire arm motion lock
+            -> reject active normal motion
+            -> temporarily leave Freedrive if needed
+            -> sendCustomScriptFunction()
+            -> recover RTDE control script
+            -> restore Freedrive if it was active
+        """
+        if (
+            not isinstance(function_name, str)
+            or not function_name.strip()
+        ):
+            raise ValueError(
+                "function_name must be a non-empty string"
+            )
+
+        if not isinstance(body, str) or not body.strip():
+            raise ValueError(
+                "body must be a non-empty string"
+            )
+
+        arm = self._resolve_arm_driver()
+
+        script = (
+            ROBOTIQ_PREAMBLE
             + "\n"
             + body.strip()
-        )
-
-        return (
-            f"def {function_name}():\n"
-            f"{self._indent_script(script_body)}\n"
-            "end\n"
-        )
-
-
-    def _send_script(
-        self,
-        function_name,
-        body,
-    ):
-        script = self._build_script(
-            function_name,
-            body,
-        )
-
-        payload = script.encode(
-            "utf-8"
+            + "\n"
         )
 
         with self._lock:
+            with arm._motion_lock:
+                previous_mode = arm._motion_mode
 
-            try:
-                with socket.create_connection(
-                    (
-                        self._host,
-                        self._script_port,
-                    ),
-                    timeout=self._timeout,
-                ) as sock:
+                # Freedrive can be deterministically restored.
+                was_freedrive = (
+                    previous_mode == "freedrive"
+                )
 
-                    sock.settimeout(
-                        0.25
+                # Normal motion cannot be safely resumed after a custom
+                # primary URScript replaces the RTDE control program.
+                if (
+                    previous_mode is not None
+                    and not was_freedrive
+                ):
+                    raise RuntimeError(
+                        "Robotiq URScript command rejected because arm "
+                        f"motion is active: {previous_mode}. "
+                        "Wait for the arm motion to finish or stop it first."
                     )
 
-                    sock.sendall(
-                        payload
+                script_error = None
+                recovery_error = None
+                freedrive_restore_error = None
+
+                if was_freedrive:
+                    stop_freedrive = getattr(
+                        arm,
+                        "stop_arm_freedrive",
+                        None,
                     )
 
-                    try:
-                        sock.recv(
-                            4096
+                    if not callable(stop_freedrive):
+                        raise RuntimeError(
+                            "Arm is in Freedrive but driver cannot "
+                            "stop_arm_freedrive()"
                         )
 
-                    except socket.timeout:
-                        pass
+                    if not stop_freedrive():
+                        raise RuntimeError(
+                            "Unable to leave Freedrive before "
+                            "Robotiq URScript"
+                        )
 
-            except OSError as exc:
-                raise ConnectionError(
-                    f"Failed to send URScript to "
-                    f"{self._host}:"
-                    f"{self._script_port}: "
-                    f"{exc}"
-                ) from exc
+                    # Let controller finish the mode transition.
+                    time.sleep(0.05)
 
-        return True
+                try:
+                    result = arm._call_control(
+                        "sendCustomScriptFunction",
+                        function_name.strip(),
+                        script,
+                    )
 
+                    if not bool(result):
+                        raise RuntimeError(
+                            "sendCustomScriptFunction returned False: "
+                            f"{function_name}"
+                        )
+
+                except Exception as exc:
+                    script_error = exc
+
+                finally:
+                    # A custom URScript program can stop the default ur_rtde
+                    # control program.  Recover it regardless of command result.
+                    try:
+                        self._recover_arm_control(
+                            arm
+                        )
+                    except Exception as exc:
+                        recovery_error = exc
+
+                    if (
+                        was_freedrive
+                        and restore_freedrive
+                        and recovery_error is None
+                    ):
+                        try:
+                            start_freedrive = getattr(
+                                arm,
+                                "start_arm_freedrive",
+                                None,
+                            )
+
+                            if not callable(
+                                start_freedrive
+                            ):
+                                raise RuntimeError(
+                                    "Arm driver cannot "
+                                    "start_arm_freedrive()"
+                                )
+
+                            if not start_freedrive():
+                                raise RuntimeError(
+                                    "start_arm_freedrive() "
+                                    "returned False"
+                                )
+
+                        except Exception as exc:
+                            freedrive_restore_error = exc
+
+                if recovery_error is not None:
+                    raise RuntimeError(
+                        "Robotiq URScript finished/failed, but RTDE "
+                        "control recovery also failed"
+                    ) from recovery_error
+
+                if freedrive_restore_error is not None:
+                    raise RuntimeError(
+                        "Robotiq URScript completed and RTDE control was "
+                        "recovered, but Freedrive could not be restored"
+                    ) from freedrive_restore_error
+
+                if script_error is not None:
+                    raise script_error
+
+                return True
 
     # ========================================================
-    # Callback status
+    # Status register helpers
     # ========================================================
 
-    def _detect_callback_host(
-        self,
-    ):
-        if self._callback_host:
-            return self._callback_host
+    def _status_write_body(self):
+        return f"""
+rq_status_pos = rq_current_pos()
+rq_status_obj = rq_get_var("OBJ")
+rq_status_flt = rq_get_var("FLT")
 
-        sock = socket.socket(
-            socket.AF_INET,
-            socket.SOCK_DGRAM,
-        )
+if rq_is_gripper_activated():
+    rq_status_act = 1
+else:
+    rq_status_act = 0
+end
 
-        try:
-            sock.connect(
-                (
-                    self._host,
-                    self._script_port,
-                )
-            )
-
-            local_ip = (
-                sock.getsockname()[0]
-            )
-
-        finally:
-            sock.close()
-
-        if not local_ip:
-            raise RuntimeError(
-                "Unable to determine callback host IP"
-            )
-
-        return local_ip
-
-
-    @staticmethod
-    def _recv_exact(
-        conn,
-        size,
-    ):
-        data = b""
-
-        while len(data) < size:
-
-            chunk = conn.recv(
-                size - len(data)
-            )
-
-            if not chunk:
-                raise ConnectionError(
-                    "Status callback closed before "
-                    "all data arrived"
-                )
-
-            data += chunk
-
-        return data
-
-
-    def _read_raw_status(
-        self,
-    ):
-        callback_host = (
-            self._detect_callback_host()
-        )
-
-        server = socket.socket(
-            socket.AF_INET,
-            socket.SOCK_STREAM,
-        )
-
-        server.setsockopt(
-            socket.SOL_SOCKET,
-            socket.SO_REUSEADDR,
-            1,
-        )
-
-        server.settimeout(
-            self._timeout
-        )
-
-        payload = None
-
-        try:
-            server.bind(
-                (
-                    callback_host,
-                    0,
-                )
-            )
-
-            server.listen(
-                1
-            )
-
-            callback_port = (
-                server.getsockname()[1]
-            )
-
-            body = f"""
-rq_sta = rq_get_var("STA")
-rq_pos = rq_get_var("POS")
-rq_pre = rq_get_var("PRE")
-rq_spe = rq_get_var("SPE")
-rq_for = rq_get_var("FOR")
-rq_obj = rq_get_var("OBJ")
-rq_flt = rq_get_var("FLT")
-
-rq_callback_connected = socket_open(
-    "{callback_host}",
-    {callback_port},
-    "rq_status_callback"
+write_output_integer_register(
+    {self.REG_POSITION},
+    rq_status_pos
 )
 
-if rq_callback_connected:
+write_output_integer_register(
+    {self.REG_ACTIVATED},
+    rq_status_act
+)
 
-    socket_send_int(
-        rq_sta,
-        "rq_status_callback"
-    )
+write_output_integer_register(
+    {self.REG_OBJECT_STATUS},
+    rq_status_obj
+)
 
-    socket_send_int(
-        rq_pos,
-        "rq_status_callback"
-    )
-
-    socket_send_int(
-        rq_pre,
-        "rq_status_callback"
-    )
-
-    socket_send_int(
-        rq_spe,
-        "rq_status_callback"
-    )
-
-    socket_send_int(
-        rq_for,
-        "rq_status_callback"
-    )
-
-    socket_send_int(
-        rq_obj,
-        "rq_status_callback"
-    )
-
-    socket_send_int(
-        rq_flt,
-        "rq_status_callback"
-    )
-
-    socket_close(
-        "rq_status_callback"
-    )
-
-end
+write_output_integer_register(
+    {self.REG_FAULT_CODE},
+    rq_status_flt
+)
 """
 
-            self._send_script(
-                "robotiq_eseries_read_status",
-                body,
+    def _refresh_status_registers(self):
+        self._execute_script(
+            "robotiq_read_status",
+            self._status_write_body(),
+            restore_freedrive=True,
+        )
+
+    def _read_status_registers(self):
+        rtde_r = self._get_receive()
+
+        position = int(
+            rtde_r.getOutputIntRegister(
+                self.REG_POSITION
             )
+        )
 
-            conn, _ = (
-                server.accept()
+        activated = bool(
+            int(
+                rtde_r.getOutputIntRegister(
+                    self.REG_ACTIVATED
+                )
             )
+        )
 
-            with conn:
+        object_status = int(
+            rtde_r.getOutputIntRegister(
+                self.REG_OBJECT_STATUS
+            )
+        )
 
-                conn.settimeout(
-                    self._timeout
-                )
+        fault_code = int(
+            rtde_r.getOutputIntRegister(
+                self.REG_FAULT_CODE
+            )
+        )
 
-                payload = (
-                    self._recv_exact(
-                        conn,
-                        28,
-                    )
-                )
-
-        finally:
-            server.close()
-
-        if payload is None:
+        # Sanity-check register content.  This also helps detect wrong/conflicting
+        # register allocation.
+        if not MIN_RAW <= position <= MAX_RAW:
             raise RuntimeError(
-                "Robotiq status callback returned no data"
+                f"invalid Robotiq position register value: {position}"
             )
 
-        (
-            sta,
-            pos,
-            pre,
-            spe,
-            force,
-            obj,
-            flt,
-        ) = struct.unpack(
-            "!7i",
-            payload,
+        if object_status not in (0, 1, 2, 3):
+            raise RuntimeError(
+                f"invalid Robotiq OBJ register value: {object_status}"
+            )
+
+        return (
+            position,
+            activated,
+            object_status,
+            fault_code,
         )
-
-        return {
-            "STA": int(sta),
-            "POS": int(pos),
-            "PRE": int(pre),
-            "SPE": int(spe),
-            "FOR": int(force),
-            "OBJ": int(obj),
-            "FLT": int(flt),
-        }
-
-
-    # ========================================================
-    # Activation
-    # ========================================================
-
-    def activate_gripper(
-        self,
-        timeout=5.0,
-    ):
-        _ = timeout
-
-        self._send_script(
-            "robotiq_eseries_activate",
-            """
-rq_reset()
-rq_activate_and_wait()
-""",
-        )
-
-        return True
-
-
-    # ========================================================
-    # Status
-    # ========================================================
 
     @staticmethod
-    def _decode_object_status(
-        object_status,
-    ):
+    def _decode_object_status(object_status):
         return {
             0: "moving",
             1: "object_detected_opening",
@@ -485,130 +665,184 @@ rq_activate_and_wait()
             "unknown",
         )
 
+    def _cache_status(self, status):
+        self._status_cache = dict(status)
+        self._status_cache_time = time.monotonic()
 
-    @staticmethod
-    def _unavailable_status(
-        connected,
-        error=None,
-    ):
-        result = {
-            "connected":
-                bool(connected),
+    def _get_cached_status(self):
+        if (
+            self._status_cache is None
+            or self._status_cache_time is None
+        ):
+            return None
 
-            "activated":
-                False,
+        age = (
+            time.monotonic()
+            - self._status_cache_time
+        )
 
-            "position":
-                None,
+        if age > self._status_cache_ttl:
+            return None
 
-            "requested_position":
-                None,
+        return dict(
+            self._status_cache
+        )
 
-            "speed":
-                None,
+    # ========================================================
+    # Activation
+    # ========================================================
 
-            "force":
-                None,
-
-            "object_detected":
-                False,
-
-            "object_status":
-                None,
-
-            "object_status_name":
-                "unavailable",
-
-            "fault_code":
-                None,
-
-            "gripper_status":
-                None,
-        }
-
-        if error is not None:
-            result["error"] = str(
-                error
-            )
-
-            result["error_type"] = (
-                type(error).__name__
-            )
-
-        return result
-
-
-    def get_gripper_status(
+    def activate_gripper(
         self,
+        timeout=DEFAULT_TIMEOUT,
     ):
-        if not self._is_connected():
-            return self._unavailable_status(
-                connected=False
-            )
+        timeout = self._normalize_positive_number(
+            "timeout",
+            timeout,
+        )
 
+        # rq_activate_and_wait() contains its own bounded wait.  Keep timeout
+        # argument for common driver compatibility.
+        _ = timeout
+
+        body = (
+            """
+rq_reset()
+rq_activate_and_wait()
+"""
+            + self._status_write_body()
+        )
+
+        self._execute_script(
+            "robotiq_activate",
+            body,
+            restore_freedrive=True,
+        )
+
+        # Populate Python-side cache immediately.
         try:
-            raw = (
-                self._read_raw_status()
+            status = self._status_from_registers(
+                refresh=False
             )
-
-        except Exception as exc:
-            return self._unavailable_status(
-                connected=
-                    self._is_connected(),
-
-                error=
-                    exc,
+            self._cache_status(
+                status
             )
+        except Exception:
+            pass
 
-        gripper_status = (
-            raw["STA"]
+        return True
+
+    # ========================================================
+    # Public status
+    # ========================================================
+
+    def _status_from_registers(
+        self,
+        refresh=True,
+    ):
+        if refresh:
+            self._refresh_status_registers()
+
+        (
+            raw_position,
+            activated,
+            object_status,
+            fault_code,
+        ) = self._read_status_registers()
+
+        fault = (
+            fault_code != 0
         )
 
-        object_status = (
-            raw["OBJ"]
-        )
+        status = {
+            # Generic gripper_service contract
+            "connected": True,
+            "ready": (
+                activated
+                and not fault
+            ),
+            "moving": (
+                object_status == 0
+            ),
+            "position": self._raw_to_ratio(
+                raw_position
+            ),
+            "object_detected": (
+                object_status in (1, 2)
+            ),
+            "fault": fault,
 
-        return {
-            "connected":
-                True,
-
-            "activated":
-                gripper_status == 3,
-
-            "position":
-                raw["POS"],
-
+            # Robotiq diagnostics
+            "activated": activated,
             "requested_position":
-                raw["PRE"],
-
+                self._requested_position,
             "speed":
-                raw["SPE"],
-
+                self._speed,
             "force":
-                raw["FOR"],
-
-            "object_detected":
-                object_status
-                in (
-                    1,
-                    2,
-                ),
-
+                self._force,
             "object_status":
                 object_status,
-
             "object_status_name":
                 self._decode_object_status(
                     object_status
                 ),
-
             "fault_code":
-                raw["FLT"],
-
-            "gripper_status":
-                gripper_status,
+                fault_code,
+            "arm_name":
+                self._resolved_arm_name,
         }
 
+        return status
+
+    def get_gripper_status(self):
+        cached = self._get_cached_status()
+
+        if cached is not None:
+            return cached
+
+        try:
+            status = self._status_from_registers(
+                refresh=True
+            )
+
+            self._cache_status(
+                status
+            )
+
+            return status
+
+        except Exception as exc:
+            logger.warning(
+                "[Robotiq URScript] status unavailable: %s",
+                exc,
+            )
+
+            self._disconnect_receive()
+
+            return {
+                "connected": False,
+                "ready": False,
+                "moving": None,
+                "position": None,
+                "object_detected": None,
+                "fault": None,
+
+                "activated": False,
+                "requested_position":
+                    self._requested_position,
+                "speed":
+                    self._speed,
+                "force":
+                    self._force,
+                "object_status":
+                    None,
+                "object_status_name":
+                    "unavailable",
+                "fault_code":
+                    None,
+                "arm_name":
+                    self._resolved_arm_name,
+            }
 
     # ========================================================
     # Motion
@@ -617,100 +851,155 @@ rq_activate_and_wait()
     def move_gripper(
         self,
         position,
-        speed=255,
-        force=150,
+        speed=1.0,
+        force=0.6,
         wait=True,
-        timeout=5.0,
+        timeout=DEFAULT_TIMEOUT,
     ):
-        position = (
-            self._normalize_int(
-                position,
-                MIN_POSITION,
-                MAX_POSITION,
-                "position",
+        position = self._normalize_ratio(
+            position,
+            "position",
+        )
+
+        speed = self._normalize_ratio(
+            speed,
+            "speed",
+        )
+
+        force = self._normalize_ratio(
+            force,
+            "force",
+        )
+
+        if not isinstance(wait, bool):
+            raise ValueError(
+                "wait must be bool"
             )
+
+        timeout = self._normalize_positive_number(
+            "timeout",
+            timeout,
         )
 
-        speed = (
-            self._normalize_int(
-                speed,
-                MIN_SPEED,
-                MAX_SPEED,
-                "speed",
+        raw_position = self._ratio_to_raw(
+            position
+        )
+
+        raw_speed = self._ratio_to_raw(
+            speed
+        )
+
+        raw_force = self._ratio_to_raw(
+            force
+        )
+
+        self._requested_position = position
+        self._speed = speed
+        self._force = force
+
+        if wait:
+            move_line = (
+                f"rq_move_and_wait({raw_position})"
             )
-        )
-
-        force = (
-            self._normalize_int(
-                force,
-                MIN_FORCE,
-                MAX_FORCE,
-                "force",
+        else:
+            move_line = (
+                f"rq_move({raw_position})"
             )
-        )
-
-        _ = timeout
-
-        move_command = (
-            f"rq_move_and_wait({position})"
-            if wait
-            else f"rq_move({position})"
-        )
 
         body = f"""
-rq_set_speed({speed})
-rq_set_force({force})
-{move_command}
-"""
+if not rq_is_gripper_activated():
+    rq_activate_and_wait()
+end
 
-        self._send_script(
-            "robotiq_eseries_move",
+rq_set_speed({raw_speed})
+rq_set_force({raw_force})
+{move_line}
+""" + self._status_write_body()
+
+        self._execute_script(
+            "robotiq_move",
             body,
+            restore_freedrive=True,
         )
+
+        # sendCustomScriptFunction is synchronous for this transaction.
+        # timeout is retained for the common gripper interface.  The bounded
+        # wait inside rq_move_and_wait() is implemented by the preamble.
+        _ = timeout
+
+        try:
+            status = self._status_from_registers(
+                refresh=False
+            )
+            self._cache_status(
+                status
+            )
+        except Exception:
+            self._status_cache = None
+            self._status_cache_time = None
 
         return True
 
-
     def open_gripper(
         self,
-        speed=255,
-        force=150,
+        speed=1.0,
+        force=0.6,
         wait=True,
-        timeout=5.0,
+        timeout=DEFAULT_TIMEOUT,
     ):
         return self.move_gripper(
-            position=MIN_POSITION,
+            position=0.0,
             speed=speed,
             force=force,
             wait=wait,
             timeout=timeout,
         )
-
 
     def close_gripper(
         self,
-        speed=255,
-        force=150,
+        speed=1.0,
+        force=0.6,
         wait=True,
-        timeout=5.0,
+        timeout=DEFAULT_TIMEOUT,
     ):
         return self.move_gripper(
-            position=MAX_POSITION,
+            position=1.0,
             speed=speed,
             force=force,
             wait=wait,
             timeout=timeout,
         )
 
-
-    def stop_gripper(
-        self,
-    ):
-        self._send_script(
-            "robotiq_eseries_stop",
-            """
+    def stop_gripper(self):
+        body = """
 rq_stop()
-""",
+""" + self._status_write_body()
+
+        self._execute_script(
+            "robotiq_stop",
+            body,
+            restore_freedrive=True,
         )
 
+        try:
+            status = self._status_from_registers(
+                refresh=False
+            )
+            self._cache_status(
+                status
+            )
+        except Exception:
+            self._status_cache = None
+            self._status_cache_time = None
+
+        return True
+
+    # ========================================================
+    # Lifecycle
+    # ========================================================
+
+    def shutdown(self):
+        self._disconnect_receive()
+        self._arm_driver = None
+        self._resolved_arm_name = None
         return True

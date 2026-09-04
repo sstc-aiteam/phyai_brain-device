@@ -1,28 +1,3 @@
-"""
-Minimal Robotiq URScript helper preamble.
-
-This is a compact compatibility layer for:
-    control/robotiq.py
-
-It is intentionally not a copy of Robotiq's full URCap preamble.
-Only the rq_* functions required by this project are implemented.
-
-Architecture:
-    Python / ur_rtde
-        -> sendCustomScriptFunction()
-        -> this URScript preamble
-        -> localhost:63352 on UR controller
-        -> Robotiq URCap daemon
-        -> Robotiq gripper
-
-Required Robotiq URCap variables:
-    ACT, GTO, POS, SPE, FOR, STA, OBJ
-
-Position:
-    0   = fully open
-    255 = fully closed
-"""
-
 ROBOTIQ_PREAMBLE = r"""
 # ============================================================
 # Robotiq 2F - Minimal URScript Helper

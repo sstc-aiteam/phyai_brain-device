@@ -1,2264 +1,1311 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
-
+<html lang="zh-Hant">
 <head>
-    <meta charset="UTF-8">
-
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
-
-    <title>Robot Arm Control</title>
-
-    <style>
-        * {
-            box-sizing: border-box;
-        }
-
-        html,
-        body {
-            overscroll-behavior: none;
-        }
-
-        body {
-            margin: 0;
-            padding: 30px;
-
-            font-family:
-                Arial,
-                "Microsoft JhengHei",
-                sans-serif;
-
-            background: #f5f6f8;
-            color: #222;
-        }
-
-        .container {
-            max-width: 1100px;
-            margin: auto;
-        }
-
-        h1 {
-            margin-bottom: 24px;
-        }
-
-        h2 {
-            margin-top: 0;
-            font-size: 20px;
-        }
-
-        .card {
-            background: white;
-
-            border: 1px solid #ddd;
-            border-radius: 10px;
-
-            padding: 20px;
-            margin-bottom: 20px;
-        }
-
-        .row {
-            display: flex;
-
-            gap: 12px;
-
-            flex-wrap: wrap;
-            align-items: center;
-        }
-
-        .grid {
-            display: grid;
-
-            grid-template-columns:
-                repeat(
-                    auto-fit,
-                    minmax(300px, 1fr)
-                );
-
-            gap: 20px;
-        }
-
-        label {
-            font-weight: bold;
-        }
-
-        select,
-        input,
-        button {
-            font-size: 16px;
-        }
-
-        select,
-        input {
-            padding: 9px;
-
-            border: 1px solid #bbb;
-            border-radius: 6px;
-        }
-
-        button {
-            padding: 10px 16px;
-
-            border: none;
-            border-radius: 6px;
-
-            cursor: pointer;
-
-            background: #333;
-            color: white;
-
-            /*
-             * 手機長按：
-             * 禁止文字選取 / callout
-             */
-            user-select: none;
-            -webkit-user-select: none;
-
-            -webkit-touch-callout: none;
-
-            touch-action: manipulation;
-        }
-
-        button:hover {
-            opacity: 0.85;
-        }
-
-        button:active {
-            transform: scale(0.97);
-        }
-
-        button:disabled {
-            background: #aaa;
-            cursor: not-allowed;
-        }
-
-        .status-line {
-            margin-top: 15px;
-        }
-
-        .connected {
-            color: green;
-            font-weight: bold;
-        }
-
-        .disconnected {
-            color: red;
-            font-weight: bold;
-        }
-
-        .data-display {
-            margin-top: 15px;
-
-            padding: 15px;
-
-            background: #f6f6f6;
-
-            border-radius: 8px;
-
-            font-family: monospace;
-
-            white-space: pre-wrap;
-            word-break: break-word;
-
-            min-height: 60px;
-        }
-
-
-        /* =====================================================
-           Jog
-        ====================================================== */
-
-        .jog-grid {
-            width: 280px;
-
-            display: grid;
-
-            grid-template-columns:
-                repeat(3, 1fr);
-
-            gap: 10px;
-
-            margin-top: 15px;
-        }
-
-        .jog-grid button {
-            height: 60px;
-
-            padding: 0;
-
-            font-size: 18px;
-            font-weight: bold;
-
-            /*
-             * Jog 長按時完全禁止：
-             * - 選取文字
-             * - Safari callout
-             * - Browser touch gesture
-             */
-            user-select: none;
-            -webkit-user-select: none;
-
-            -webkit-touch-callout: none;
-
-            touch-action: none;
-        }
-
-        .jog-grid button.jog-active {
-            opacity: 0.65;
-            transform: scale(0.96);
-        }
-
-        .jog-empty {
-            visibility: hidden;
-        }
-
-
-        /* =====================================================
-           Inputs
-        ====================================================== */
-
-        .xyz-inputs {
-            display: grid;
-
-            grid-template-columns:
-                repeat(3, 1fr);
-
-            gap: 10px;
-        }
-
-        .joint-inputs {
-            display: grid;
-
-            grid-template-columns:
-                repeat(3, 1fr);
-
-            gap: 10px;
-        }
-
-        .input-group {
-            display: flex;
-
-            flex-direction: column;
-
-            gap: 5px;
-        }
-
-        .input-group input {
-            width: 100%;
-        }
-
-        .action-row {
-            display: flex;
-
-            flex-wrap: wrap;
-
-            gap: 10px;
-
-            margin-top: 15px;
-        }
-
-
-        /* =====================================================
-           API Log
-        ====================================================== */
-
-        #apiResponse {
-            max-height: 350px;
-
-            overflow-y: auto;
-        }
-
-
-        /* =====================================================
-           Mobile
-        ====================================================== */
-
-        @media (
-            max-width: 600px
-        ) {
-
-            body {
-                padding: 15px;
-            }
-
-            .card {
-                padding: 16px;
-            }
-
-            .xyz-inputs,
-            .joint-inputs {
-                grid-template-columns: 1fr;
-            }
-
-            .jog-grid {
-                width: 100%;
-                max-width: 320px;
-            }
-
-            .jog-grid button {
-                height: 65px;
-                font-size: 20px;
-            }
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>Arm API Test</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      font-family: Arial, "Noto Sans TC", sans-serif;
+      background: #f5f5f5;
+      color: #222;
+    }
+
+    body {
+      padding: 12px;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .card {
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 14px;
+      margin-bottom: 12px;
+    }
+
+    h1 {
+      font-size: 22px;
+      margin: 0 0 12px;
+    }
+
+    h2 {
+      font-size: 18px;
+      margin: 0 0 12px;
+    }
+
+    h3 {
+      font-size: 15px;
+      margin: 16px 0 8px;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+
+    select,
+    input,
+    textarea,
+    button {
+      width: 100%;
+      font-size: 16px;
+      border-radius: 6px;
+    }
+
+    select,
+    input,
+    textarea {
+      border: 1px solid #bbb;
+      padding: 10px;
+      background: white;
+    }
+
+    textarea {
+      min-height: 130px;
+      resize: vertical;
+      font-family: monospace;
+    }
+
+    button {
+      border: 1px solid #aaa;
+      background: #eee;
+      padding: 11px 8px;
+      cursor: pointer;
+
+      /* 手機長按避免選到文字 */
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+      touch-action: manipulation;
+    }
+
+    button:active {
+      background: #d7d7d7;
+    }
+
+    .danger {
+      background: #ffe4e4;
+      border-color: #d88;
+    }
+
+    .active {
+      background: #d9f4df;
+      border-color: #76aa82;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: 150px 1fr;
+      gap: 7px 10px;
+      font-size: 14px;
+    }
+
+    .status-key {
+      font-weight: bold;
+      color: #555;
+    }
+
+    .mono {
+      font-family: monospace;
+      word-break: break-all;
+    }
+
+    .connected {
+      color: green;
+      font-weight: bold;
+    }
+
+    .disconnected {
+      color: #c00;
+      font-weight: bold;
+    }
+
+    .log {
+      background: #111;
+      color: #eee;
+      min-height: 100px;
+      max-height: 250px;
+      overflow: auto;
+      white-space: pre-wrap;
+      padding: 10px;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 13px;
+    }
+
+    .small {
+      font-size: 12px;
+      color: #666;
+      margin-top: 6px;
+    }
+
+    .section {
+      border-top: 1px solid #eee;
+      margin-top: 16px;
+      padding-top: 14px;
+    }
+
+    @media (max-width: 650px) {
+      body {
+        padding: 8px;
+      }
+
+      .grid-4 {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .grid-3 {
+        grid-template-columns: repeat(3, 1fr);
+      }
+
+      .status-grid {
+        grid-template-columns: 110px 1fr;
+      }
+
+      button {
+        min-height: 48px;
+      }
+    }
+  </style>
 </head>
 
-
 <body>
-
 <div class="container">
 
-    <h1>
-        Robot Arm Control
-    </h1>
+  <div class="card">
+    <h1>Arm API Test</h1>
+
+    <label for="armSelect">Arm</label>
+    <select id="armSelect">
+      <option value="left">left - UR7e</option>
+      <option value="right">right - UR5</option>
+    </select>
+
+    <div class="section">
+      <div class="status-grid">
+        <div class="status-key">Connected</div>
+        <div id="statusConnected">-</div>
+
+        <div class="status-key">Arm Mode</div>
+        <div id="statusArmMode">-</div>
+
+        <div class="status-key">Safety Mode</div>
+        <div id="statusSafetyMode">-</div>
+
+        <div class="status-key">Program</div>
+        <div id="statusProgram">-</div>
+
+        <div class="status-key">Pose</div>
+        <div id="statusPose" class="mono">-</div>
+
+        <div class="status-key">Joints</div>
+        <div id="statusJoints" class="mono">-</div>
+      </div>
+
+      <details style="margin-top:12px;">
+        <summary>Raw arm_status</summary>
+        <pre id="rawStatus" class="mono"></pre>
+      </details>
+    </div>
+  </div>
 
 
-    <!-- =====================================================
-         Arm Status
-    ====================================================== -->
+  <div class="card">
+    <h2>Control</h2>
 
-    <div class="card">
+    <div class="grid-2">
+      <button onclick="reconnectArm()">Reconnect</button>
+      <button class="danger" onclick="stopArm()">STOP ARM</button>
+    </div>
 
-        <h2>
-            Arm Status
-        </h2>
-
-        <div class="row">
-
-            <button
-                type="button"
-                onclick="loadArmStatus()"
-            >
-                更新手臂狀態
-            </button>
-
-
-            <label
-                for="armSelect"
-            >
-                選擇手臂
-            </label>
-
-
-            <select
-                id="armSelect"
-                onchange="onArmChanged()"
-            >
-
-                <option value="">
-                    讀取中...
-                </option>
-
-            </select>
-
-        </div>
-
-
-        <div class="status-line">
-
-            已連線手臂數：
-
-            <span
-                id="armCount"
-            >
-                0
-            </span>
-
-        </div>
-
-
-        <div class="status-line">
-
-            目前手臂：
-
-            <span
-                id="currentArm"
-            >
-                -
-            </span>
-
-        </div>
-
-
-        <div
-            id="armStatus"
-            class="data-display"
-        >
-            -
-        </div>
-
+    <div class="section">
+      <h3>Freedrive</h3>
+      <div class="grid-2">
+        <button id="freedriveOnBtn" onclick="startFreedrive()">Freedrive ON</button>
+        <button onclick="stopFreedrive()">Freedrive OFF</button>
+      </div>
     </div>
 
 
-    <!-- =====================================================
-         Pose / Joints
-    ====================================================== -->
+    <div class="section">
+      <h3>JOG - Translation</h3>
 
-    <div class="grid">
+      <div class="grid-3">
+        <button class="jog-btn" data-direction="x-">X−</button>
+        <button class="jog-btn" data-direction="x+">X+</button>
+        <button class="jog-btn" data-direction="y-">Y−</button>
+        <button class="jog-btn" data-direction="y+">Y+</button>
+        <button class="jog-btn" data-direction="z-">Z−</button>
+        <button class="jog-btn" data-direction="z+">Z+</button>
+      </div>
 
-        <div class="card">
+      <h3>JOG - Rotation</h3>
 
-            <h2>
-                TCP Pose
-            </h2>
+      <div class="grid-3">
+        <button class="jog-btn" data-direction="rx-">RX−</button>
+        <button class="jog-btn" data-direction="rx+">RX+</button>
+        <button class="jog-btn" data-direction="ry-">RY−</button>
+        <button class="jog-btn" data-direction="ry+">RY+</button>
+        <button class="jog-btn" data-direction="rz-">RZ−</button>
+        <button class="jog-btn" data-direction="rz+">RZ+</button>
+      </div>
 
-
-            <button
-                type="button"
-                onclick="getPose()"
-            >
-                取得 Pose
-            </button>
-
-
-            <div
-                id="poseDisplay"
-                class="data-display"
-            >
-                -
-            </div>
-
-        </div>
-
-
-        <div class="card">
-
-            <h2>
-                Joint Position
-            </h2>
-
-
-            <button
-                type="button"
-                onclick="getJoints()"
-            >
-                取得 Joints
-            </button>
-
-
-            <div
-                id="jointsDisplay"
-                class="data-display"
-            >
-                -
-            </div>
-
-        </div>
-
+      <div class="small">
+        長按開始 JOG，放開即送出 stop_arm_jog。
+        為配合 config 的 timeout=0.2 秒，按住期間每 100 ms 重新送出 start_arm_jog。
+      </div>
     </div>
 
 
-    <!-- =====================================================
-         Jog
-    ====================================================== -->
+    <div class="section">
+      <h3>Move Pose</h3>
 
-    <div class="card">
+      <input
+        id="poseInput"
+        type="text"
+        placeholder="[0.30, -0.20, 0.40, 3.14, 0.0, 0.0]"
+      />
 
-        <h2>
-            Jog Control
-        </h2>
-
-        <p>
-            按住按鈕持續移動，放開立即停止。
-        </p>
-
-
-        <div class="jog-grid">
-
-            <div class="jog-empty">
-                -
-            </div>
-
-
-            <button
-                type="button"
-                class="jog-button"
-                data-direction="x+"
-            >
-                前
-            </button>
-
-
-            <div class="jog-empty">
-                -
-            </div>
-
-
-            <button
-                type="button"
-                class="jog-button"
-                data-direction="y+"
-            >
-                左
-            </button>
-
-
-            <button
-                type="button"
-                class="jog-button"
-                data-direction="z+"
-            >
-                上
-            </button>
-
-
-            <button
-                type="button"
-                class="jog-button"
-                data-direction="y-"
-            >
-                右
-            </button>
-
-
-            <div class="jog-empty">
-                -
-            </div>
-
-
-            <button
-                type="button"
-                class="jog-button"
-                data-direction="x-"
-            >
-                後
-            </button>
-
-
-            <div class="jog-empty">
-                -
-            </div>
-
-
-            <div class="jog-empty">
-                -
-            </div>
-
-
-            <button
-                type="button"
-                class="jog-button"
-                data-direction="z-"
-            >
-                下
-            </button>
-
-
-            <div class="jog-empty">
-                -
-            </div>
-
-        </div>
-
+      <button style="margin-top:8px;" onclick="movePose()">
+        Move Pose
+      </button>
     </div>
 
 
-    <!-- =====================================================
-         Point XYZ
-    ====================================================== -->
+    <div class="section">
+      <h3>Move Joints</h3>
 
-    <div class="card">
+      <input
+        id="jointsInput"
+        type="text"
+        placeholder="[-1.57, -1.20, -1.80, -1.50, 1.57, 0.0]"
+      />
 
-        <h2>
-            Point To XYZ
-        </h2>
-
-
-        <div class="xyz-inputs">
-
-            <div class="input-group">
-
-                <label for="pointX">
-                    X
-                </label>
-
-                <input
-                    id="pointX"
-                    type="number"
-                    step="0.001"
-                    placeholder="0.30"
-                >
-
-            </div>
-
-
-            <div class="input-group">
-
-                <label for="pointY">
-                    Y
-                </label>
-
-                <input
-                    id="pointY"
-                    type="number"
-                    step="0.001"
-                    placeholder="-0.20"
-                >
-
-            </div>
-
-
-            <div class="input-group">
-
-                <label for="pointZ">
-                    Z
-                </label>
-
-                <input
-                    id="pointZ"
-                    type="number"
-                    step="0.001"
-                    placeholder="0.20"
-                >
-
-            </div>
-
-        </div>
-
-
-        <div class="action-row">
-
-            <button
-                type="button"
-                onclick="pointToXYZ()"
-            >
-                Point To XYZ
-            </button>
-
-        </div>
-
+      <button style="margin-top:8px;" onclick="moveJoints()">
+        Move Joints
+      </button>
     </div>
 
 
-    <!-- =====================================================
-         Move Joints
-    ====================================================== -->
+    <div class="section">
+      <h3>Pose Trajectory</h3>
 
-    <div class="card">
+      <textarea
+        id="poseTrajectoryInput"
+        placeholder='[
+  [0.30, -0.20, 0.40, 3.14, 0.0, 0.0],
+  [0.32, -0.20, 0.40, 3.14, 0.0, 0.0],
+  [0.34, -0.20, 0.40, 3.14, 0.0, 0.0]
+]'></textarea>
 
-        <h2>
-            Move Joints
-        </h2>
-
-
-        <div
-            id="jointInputs"
-            class="joint-inputs"
-        >
-
-            <div class="input-group">
-
-                <label for="joint1">
-                    J1
-                </label>
-
-                <input
-                    id="joint1"
-                    type="number"
-                    step="0.001"
-                >
-
-            </div>
-
-
-            <div class="input-group">
-
-                <label for="joint2">
-                    J2
-                </label>
-
-                <input
-                    id="joint2"
-                    type="number"
-                    step="0.001"
-                >
-
-            </div>
-
-
-            <div class="input-group">
-
-                <label for="joint3">
-                    J3
-                </label>
-
-                <input
-                    id="joint3"
-                    type="number"
-                    step="0.001"
-                >
-
-            </div>
-
-
-            <div class="input-group">
-
-                <label for="joint4">
-                    J4
-                </label>
-
-                <input
-                    id="joint4"
-                    type="number"
-                    step="0.001"
-                >
-
-            </div>
-
-
-            <div class="input-group">
-
-                <label for="joint5">
-                    J5
-                </label>
-
-                <input
-                    id="joint5"
-                    type="number"
-                    step="0.001"
-                >
-
-            </div>
-
-
-            <div class="input-group">
-
-                <label for="joint6">
-                    J6
-                </label>
-
-                <input
-                    id="joint6"
-                    type="number"
-                    step="0.001"
-                >
-
-            </div>
-
-        </div>
-
-
-        <div class="action-row">
-
-            <button
-                type="button"
-                onclick="moveJoints()"
-            >
-                Move Joints
-            </button>
-
-
-            <button
-                type="button"
-                onclick="loadCurrentJointsIntoInputs()"
-            >
-                使用目前 Joints
-            </button>
-
-        </div>
-
+      <button style="margin-top:8px;" onclick="movePoseTrajectory()">
+        Run Pose Trajectory
+      </button>
     </div>
 
 
-    <!-- =====================================================
-         Stop
-    ====================================================== -->
+    <div class="section">
+      <h3>Joint Trajectory</h3>
 
-    <div class="card">
+      <textarea
+        id="jointTrajectoryInput"
+        placeholder='[
+  [-1.57, -1.20, -1.80, -1.50, 1.57, 0.0],
+  [-1.50, -1.10, -1.75, -1.45, 1.57, 0.10],
+  [-1.40, -1.00, -1.70, -1.40, 1.57, 0.20]
+]'></textarea>
 
-        <h2>
-            Stop
-        </h2>
+      <button style="margin-top:8px;" onclick="moveJointTrajectory()">
+        Run Joint Trajectory
+      </button>
+    </div>
+  </div>
 
 
-        <button
-            type="button"
-            onclick="stopArm()"
-        >
-            Stop Arm
-        </button>
+  <div class="card">
+    <h2>Gripper</h2>
 
+    <label for="gripperSelect">Gripper</label>
+    <select id="gripperSelect">
+      <option value="left">left - Robotiq e-Series</option>
+      <option value="right">right - Robotiq</option>
+    </select>
+
+    <div class="section">
+      <div class="status-grid">
+        <div class="status-key">Connected</div>
+        <div id="gripperConnected">-</div>
+
+        <div class="status-key">Position</div>
+        <div id="gripperPosition" class="mono">-</div>
+
+        <div class="status-key">Object Detected</div>
+        <div id="gripperObjectDetected">-</div>
+
+        <div class="status-key">Moving</div>
+        <div id="gripperMoving">-</div>
+
+        <div class="status-key">Fault</div>
+        <div id="gripperFault">-</div>
+      </div>
+
+      <details style="margin-top:12px;">
+        <summary>Raw gripper_status</summary>
+        <pre id="rawGripperStatus" class="mono"></pre>
+      </details>
     </div>
 
+    <div class="section">
+      <h3>Gripper Parameters</h3>
 
-    <!-- =====================================================
-         API Response
-    ====================================================== -->
+      <label for="gripperSpeed">Speed</label>
+      <input
+        id="gripperSpeed"
+        type="number"
+        min="0"
+        max="1"
+        step="0.05"
+        value="1.0"
+        placeholder="例如 1.0"
+      />
 
-    <div class="card">
+      <label for="gripperForce" style="margin-top:10px;">Force</label>
+      <input
+        id="gripperForce"
+        type="number"
+        min="0"
+        max="1"
+        step="0.05"
+        value="0.6"
+        placeholder="例如 0.6"
+      />
 
-        <h2>
-            API Response
-        </h2>
+      <label for="gripperPosition" style="margin-top:10px;">Position</label>
+      <input
+        id="gripperPositionInput"
+        type="number"
+        min="0"
+        max="1"
+        step="0.05"
+        value="0.5"
+        placeholder="例如 0.5"
+      />
 
+      <div class="grid-3" style="margin-top:10px;">
+        <button onclick="openGripper()">Open</button>
+        <button onclick="closeGripper()">Close</button>
+        <button onclick="moveGripper()">Move Position</button>
+      </div>
 
-        <div
-            id="apiResponse"
-            class="data-display"
-        >
-            -
-        </div>
+      <div class="grid-2" style="margin-top:8px;">
+        <button class="danger" onclick="stopGripper()">STOP GRIPPER</button>
+        <button onclick="refreshGripperStatus()">Refresh Status</button>
+      </div>
 
+      <div class="small">
+        speed / force / position 直接送到 gripper API。若實際 driver 使用的範圍不是 0~1，
+        可直接修改 input 的 min/max/step。
+      </div>
     </div>
+  </div>
+
+
+  <div class="card">
+    <h2>API Log</h2>
+    <div id="log" class="log"></div>
+  </div>
 
 </div>
 
 
 <script>
+  // ------------------------------------------------------------
+  // API
+  // ------------------------------------------------------------
 
-    // ========================================================
-    // Config
-    // ========================================================
+  // 若 HTML 就由同一個 Flask server 提供，保持空字串即可。
+  // 若前後端不同 host，可改成：
+  // const API_BASE = "http://192.168.50.xxx:5000";
+  const API_BASE = "";
 
-    const API_BASE =
-        "/api/arm";
+  const STATUS_INTERVAL_MS = 3000;
+  const JOG_HEARTBEAT_MS = 100;
 
-
-    const JOG_HEARTBEAT_MS =
-        100;
-
-
-    let connectedArms =
-        [];
+  let statusTimer = null;
+  let jogTimer = null;
+  let jogging = false;
 
 
-    let latestJoints =
+  function selectedArm() {
+    return document.getElementById("armSelect").value;
+  }
+
+
+  async function apiGet(path) {
+    const response = await fetch(API_BASE + path);
+
+    const text = await response.text();
+
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = text;
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        `${response.status} ${response.statusText}\n${text}`
+      );
+    }
+
+    return data;
+  }
+
+
+  async function apiPost(path, body = {}) {
+    const response = await fetch(API_BASE + path, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(body)
+    });
+
+    const text = await response.text();
+
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = text;
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        `${response.status} ${response.statusText}\n${text}`
+      );
+    }
+
+    return data;
+  }
+
+
+  function log(message, data = null) {
+    const el = document.getElementById("log");
+
+    const now = new Date().toLocaleTimeString();
+
+    let line = `[${now}] ${message}`;
+
+    if (data !== null) {
+      line += "\n" + JSON.stringify(data, null, 2);
+    }
+
+    el.textContent = line + "\n\n" + el.textContent;
+  }
+
+
+  function parseArrayInput(id, expectedLength = null) {
+    const raw = document.getElementById(id).value.trim();
+
+    if (!raw) {
+      throw new Error("輸入不能為空");
+    }
+
+    const value = JSON.parse(raw);
+
+    if (!Array.isArray(value)) {
+      throw new Error("輸入必須是 JSON array");
+    }
+
+    if (
+      expectedLength !== null &&
+      value.length !== expectedLength
+    ) {
+      throw new Error(
+        `需要 ${expectedLength} 個數值，目前為 ${value.length} 個`
+      );
+    }
+
+    return value;
+  }
+
+
+  // ------------------------------------------------------------
+  // STATUS
+  // ------------------------------------------------------------
+
+  function valueOrDash(value) {
+    if (
+      value === undefined ||
+      value === null ||
+      value === ""
+    ) {
+      return "-";
+    }
+
+    if (Array.isArray(value)) {
+      return JSON.stringify(
+        value.map(v =>
+          typeof v === "number"
+            ? Number(v.toFixed(6))
+            : v
+        )
+      );
+    }
+
+    if (typeof value === "object") {
+      return JSON.stringify(value);
+    }
+
+    return String(value);
+  }
+
+
+  async function refreshStatus() {
+    const arm = selectedArm();
+
+    try {
+      const data = await apiGet(
+        `/api/arm/get_arm_status?arm_name=${encodeURIComponent(arm)}`
+      );
+
+      document.getElementById("rawStatus").textContent =
+        JSON.stringify(data, null, 2);
+
+      const arms = data?.data?.arms ?? [];
+
+      const armData =
+        arms.find(item => item.arm_name === arm) ??
+        arms[0] ??
         null;
 
+      const status = armData?.status ?? {};
 
-    let jogTimer =
-        null;
+      const connected = status.connected ?? null;
+      const armMode = status.arm_mode ?? null;
+      const safetyMode = status.safety_mode ?? null;
+      const program = status.program_running ?? null;
+      const pose = status.pose ?? null;
+      const joints = status.joints ?? null;
+
+      const connectedEl =
+        document.getElementById("statusConnected");
+
+      connectedEl.textContent =
+        valueOrDash(connected);
+
+      if (connected === true) {
+        connectedEl.className = "connected";
+      } else if (connected === false) {
+        connectedEl.className = "disconnected";
+      } else {
+        connectedEl.className = "";
+      }
+
+      document.getElementById("statusArmMode").textContent =
+        valueOrDash(armMode);
+
+      document.getElementById("statusSafetyMode").textContent =
+        valueOrDash(safetyMode);
+
+      document.getElementById("statusProgram").textContent =
+        valueOrDash(program);
+
+      document.getElementById("statusPose").textContent =
+        valueOrDash(pose);
+
+      document.getElementById("statusJoints").textContent =
+        valueOrDash(joints);
+
+    } catch (err) {
+      document.getElementById("statusConnected").textContent =
+        "API ERROR";
+
+      document.getElementById("statusConnected").className =
+        "disconnected";
+
+      log("get_arm_status ERROR", String(err));
+    }
+  }
 
 
-    let jogActive =
-        false;
+  // ------------------------------------------------------------
+  // BASIC CONTROL
+  // ------------------------------------------------------------
 
+  async function reconnectArm() {
+    const arm = selectedArm();
 
-    let activeJogArm =
-        null;
-
-
-    let activeJogButton =
-        null;
-
-
-    // ========================================================
-    // HTTP
-    // ========================================================
-
-    async function apiGet(
-        endpoint,
-        params = {}
-    ) {
-
-        const url =
-            new URL(
-                API_BASE + endpoint,
-                window.location.origin
-            );
-
-
-        for (
-            const [key, value]
-            of Object.entries(
-                params
-            )
-        ) {
-
-            if (
-                value !== null
-                &&
-                value !== undefined
-                &&
-                value !== ""
-            ) {
-
-                url.searchParams.set(
-                    key,
-                    value
-                );
-            }
+    try {
+      const data = await apiPost(
+        "/api/arm/reconnect_arm",
+        {
+          arm_name: arm
         }
+      );
+
+      log(`reconnect_arm (${arm})`, data);
+      refreshStatus();
+
+    } catch (err) {
+      log("reconnect_arm ERROR", String(err));
+    }
+  }
 
 
-        console.log(
-            "GET:",
-            url.toString()
+  async function stopArm() {
+    const arm = selectedArm();
+
+    try {
+      // 先停止 JOG，再停止整體 motion
+      await stopJog();
+
+      const data = await apiPost(
+        "/api/arm/stop_arm",
+        {
+          arm_name: arm
+        }
+      );
+
+      log(`stop_arm (${arm})`, data);
+
+    } catch (err) {
+      log("stop_arm ERROR", String(err));
+    }
+  }
+
+
+  // ------------------------------------------------------------
+  // FREEDRIVE
+  // ------------------------------------------------------------
+
+  async function startFreedrive() {
+    const arm = selectedArm();
+
+    try {
+      const data = await apiPost(
+        "/api/arm/start_arm_freedrive",
+        {
+          arm_name: arm
+        }
+      );
+
+      document
+        .getElementById("freedriveOnBtn")
+        .classList.add("active");
+
+      log(`start_arm_freedrive (${arm})`, data);
+
+    } catch (err) {
+      log("start_arm_freedrive ERROR", String(err));
+    }
+  }
+
+
+  async function stopFreedrive() {
+    const arm = selectedArm();
+
+    try {
+      const data = await apiPost(
+        "/api/arm/stop_arm_freedrive",
+        {
+          arm_name: arm
+        }
+      );
+
+      document
+        .getElementById("freedriveOnBtn")
+        .classList.remove("active");
+
+      log(`stop_arm_freedrive (${arm})`, data);
+
+    } catch (err) {
+      log("stop_arm_freedrive ERROR", String(err));
+    }
+  }
+
+
+  // ------------------------------------------------------------
+  // JOG
+  // ------------------------------------------------------------
+
+  async function sendJog(direction) {
+    const arm = selectedArm();
+
+    try {
+      const data = await apiPost(
+        "/api/arm/start_arm_jog",
+        {
+          arm_name: arm,
+          direction: direction,
+
+          // 不填速度/加速度，
+          // 讓 arm_service 使用 config 中的預設值。
+          linear_speed: null,
+          angular_speed: null,
+          acceleration: null,
+          timeout: null
+        }
+      );
+
+      return data;
+
+    } catch (err) {
+      log(`start_arm_jog ${direction} ERROR`, String(err));
+      await stopJog();
+      throw err;
+    }
+  }
+
+
+  async function startJog(direction, button) {
+    if (jogging) {
+      return;
+    }
+
+    jogging = true;
+    button.classList.add("active");
+
+    // 立即送第一包
+    sendJog(direction);
+
+    // heartbeat
+    jogTimer = setInterval(() => {
+      if (jogging) {
+        sendJog(direction);
+      }
+    }, JOG_HEARTBEAT_MS);
+  }
+
+
+  async function stopJog(button = null) {
+    if (jogTimer) {
+      clearInterval(jogTimer);
+      jogTimer = null;
+    }
+
+    const wasJogging = jogging;
+    jogging = false;
+
+    document
+      .querySelectorAll(".jog-btn")
+      .forEach(btn => btn.classList.remove("active"));
+
+    if (!wasJogging) {
+      return;
+    }
+
+    const arm = selectedArm();
+
+    try {
+      const data = await apiPost(
+        "/api/arm/stop_arm_jog",
+        {
+          arm_name: arm
+        }
+      );
+
+      log(`stop_arm_jog (${arm})`, data);
+
+    } catch (err) {
+      log("stop_arm_jog ERROR", String(err));
+    }
+  }
+
+
+  function setupJogButtons() {
+    document
+      .querySelectorAll(".jog-btn")
+      .forEach(button => {
+
+        const direction = button.dataset.direction;
+
+        button.addEventListener("pointerdown", event => {
+          event.preventDefault();
+
+          try {
+            button.setPointerCapture(event.pointerId);
+          } catch (_) {}
+
+          startJog(direction, button);
+        });
+
+        button.addEventListener("pointerup", event => {
+          event.preventDefault();
+          stopJog(button);
+        });
+
+        button.addEventListener("pointercancel", event => {
+          event.preventDefault();
+          stopJog(button);
+        });
+
+        button.addEventListener("lostpointercapture", () => {
+          stopJog(button);
+        });
+
+        button.addEventListener("contextmenu", event => {
+          event.preventDefault();
+        });
+      });
+  }
+
+
+  // ------------------------------------------------------------
+  // SINGLE MOVE
+  // ------------------------------------------------------------
+
+  async function movePose() {
+    try {
+      const pose = parseArrayInput(
+        "poseInput",
+        6
+      );
+
+      const arm = selectedArm();
+
+      const data = await apiPost(
+        "/api/arm/move_arm_pose",
+        {
+          arm_name: arm,
+          pose: pose,
+          wait: true
+        }
+      );
+
+      log(`move_arm_pose (${arm})`, data);
+
+    } catch (err) {
+      log("move_arm_pose ERROR", String(err));
+    }
+  }
+
+
+  async function moveJoints() {
+    try {
+      const joints = parseArrayInput(
+        "jointsInput",
+        6
+      );
+
+      const arm = selectedArm();
+
+      const data = await apiPost(
+        "/api/arm/move_arm_joints",
+        {
+          arm_name: arm,
+          joints: joints,
+          wait: true
+        }
+      );
+
+      log(`move_arm_joints (${arm})`, data);
+
+    } catch (err) {
+      log("move_arm_joints ERROR", String(err));
+    }
+  }
+
+
+  // ------------------------------------------------------------
+  // TRAJECTORY
+  // ------------------------------------------------------------
+
+  function validateTrajectory(data) {
+    if (!Array.isArray(data) || data.length === 0) {
+      throw new Error(
+        "Trajectory 必須是至少包含一組資料的 JSON array"
+      );
+    }
+
+    for (let i = 0; i < data.length; i++) {
+      if (
+        !Array.isArray(data[i]) ||
+        data[i].length !== 6
+      ) {
+        throw new Error(
+          `第 ${i + 1} 組必須包含 6 個數值`
         );
-
-
-        const response =
-            await fetch(
-                url.toString(),
-                {
-                    method: "GET"
-                }
-            );
-
-
-        if (
-            !response.ok
-        ) {
-
-            const text =
-                await response.text();
-
-
-            throw new Error(
-                `HTTP ${response.status}: ${text}`
-            );
-        }
-
-
-        const data =
-            await response.json();
-
-
-        console.log(
-            "Response:",
-            data
-        );
-
-
-        showApiResponse(
-            data
-        );
-
-
-        return data;
+      }
     }
+  }
 
 
-    async function apiPost(
-        endpoint,
-        body
-    ) {
+  async function movePoseTrajectory() {
+    try {
+      const trajectory = parseArrayInput(
+        "poseTrajectoryInput"
+      );
 
-        const url =
-            API_BASE
-            + endpoint;
+      validateTrajectory(trajectory);
 
+      const arm = selectedArm();
 
-        console.log(
-            "POST:",
-            url,
-            body
-        );
-
-
-        const response =
-            await fetch(
-                url,
-                {
-                    method:
-                        "POST",
-
-                    headers: {
-                        "Content-Type":
-                            "application/json"
-                    },
-
-                    body:
-                        JSON.stringify(
-                            body
-                        )
-                }
-            );
-
-
-        if (
-            !response.ok
-        ) {
-
-            const text =
-                await response.text();
-
-
-            throw new Error(
-                `HTTP ${response.status}: ${text}`
-            );
+      const data = await apiPost(
+        "/api/arm/move_arm_pose_trajectory",
+        {
+          arm_name: arm,
+          pose_trajectory: trajectory,
+          wait: true,
+          move_to_start: true
         }
+      );
 
+      log(`move_arm_pose_trajectory (${arm})`, data);
 
-        const data =
-            await response.json();
-
-
-        console.log(
-            "Response:",
-            data
-        );
-
-
-        showApiResponse(
-            data
-        );
-
-
-        return data;
+    } catch (err) {
+      log("move_arm_pose_trajectory ERROR", String(err));
     }
+  }
 
 
-    // ========================================================
-    // Selected Arm
-    // ========================================================
+  async function moveJointTrajectory() {
+    try {
+      const trajectory = parseArrayInput(
+        "jointTrajectoryInput"
+      );
 
-    function getSelectedArm() {
+      validateTrajectory(trajectory);
 
-        const armName =
-            document
-                .getElementById(
-                    "armSelect"
-                )
-                .value;
+      const arm = selectedArm();
 
-
-        if (
-            !armName
-        ) {
-
-            throw new Error(
-                "目前沒有可用的機械手臂"
-            );
+      const data = await apiPost(
+        "/api/arm/move_arm_joint_trajectory",
+        {
+          arm_name: arm,
+          joint_trajectory: trajectory,
+          wait: true,
+          move_to_start: true
         }
+      );
 
+      log(`move_arm_joint_trajectory (${arm})`, data);
 
-        return armName;
+    } catch (err) {
+      log("move_arm_joint_trajectory ERROR", String(err));
     }
+  }
 
 
-    // ========================================================
-    // Arm Status
-    // ========================================================
+  // ------------------------------------------------------------
+  // GRIPPER
+  // ------------------------------------------------------------
 
-    async function loadArmStatus() {
+  function selectedGripper() {
+    return document.getElementById("gripperSelect").value;
+  }
 
-        const select =
-            document.getElementById(
-                "armSelect"
-            );
 
-
-        try {
-
-            select.innerHTML =
-                '<option value="">讀取中...</option>';
-
-
-            const result =
-                await apiGet(
-                    "/get_arm_status"
-                );
-
-
-            if (
-                !result
-                ||
-                !result.data
-                ||
-                !Array.isArray(
-                    result.data.arms
-                )
-            ) {
-
-                throw new Error(
-                    "API response format invalid"
-                );
-            }
-
-
-            const arms =
-                result.data.arms;
-
-
-            connectedArms =
-                arms;
-
-
-            document
-                .getElementById(
-                    "armCount"
-                )
-                .textContent =
-                    arms.length;
-
-
-            updateArmSelect(
-                arms
-            );
-
-
-            document
-                .getElementById(
-                    "armStatus"
-                )
-                .textContent =
-                    JSON.stringify(
-                        arms,
-                        null,
-                        2
-                    );
-
-        }
-
-        catch (
-            error
-        ) {
-
-            console.error(
-                "loadArmStatus failed:",
-                error
-            );
-
-
-            select.innerHTML =
-                '<option value="">API 連線失敗</option>';
-
-
-            document
-                .getElementById(
-                    "armCount"
-                )
-                .textContent =
-                    "0";
-
-
-            document
-                .getElementById(
-                    "currentArm"
-                )
-                .textContent =
-                    "-";
-
-
-            document
-                .getElementById(
-                    "armStatus"
-                )
-                .textContent =
-                    "讀取手臂狀態失敗：\n"
-                    + error.message;
-        }
-    }
-
-
-    function updateArmSelect(
-        arms
-    ) {
-
-        const select =
-            document
-                .getElementById(
-                    "armSelect"
-                );
-
-
-        const previous =
-            select.value;
-
-
-        select.innerHTML =
-            "";
-
-
-        if (
-            arms.length === 0
-        ) {
-
-            const option =
-                document.createElement(
-                    "option"
-                );
-
-
-            option.value =
-                "";
-
-
-            option.textContent =
-                "沒有已連線手臂";
-
-
-            select.appendChild(
-                option
-            );
-
-
-            document
-                .getElementById(
-                    "currentArm"
-                )
-                .textContent =
-                    "-";
-
-
-            return;
-        }
-
-
-        for (
-            const arm
-            of arms
-        ) {
-
-            const option =
-                document.createElement(
-                    "option"
-                );
-
-
-            option.value =
-                arm.arm_name;
-
-
-            option.textContent =
-                `${arm.arm_name} (${arm.driver})`;
-
-
-            select.appendChild(
-                option
-            );
-        }
-
-
-        const previousExists =
-            arms.some(
-                arm =>
-                    arm.arm_name
-                    === previous
-            );
-
-
-        if (
-            previousExists
-        ) {
-
-            select.value =
-                previous;
-        }
-
-
-        onArmChanged();
-    }
-
-
-    function onArmChanged() {
-
-        const armName =
-            document
-                .getElementById(
-                    "armSelect"
-                )
-                .value;
-
-
-        document
-            .getElementById(
-                "currentArm"
-            )
-            .textContent =
-                armName || "-";
-
-
-        document
-            .getElementById(
-                "poseDisplay"
-            )
-            .textContent =
-                "-";
-
-
-        document
-            .getElementById(
-                "jointsDisplay"
-            )
-            .textContent =
-                "-";
-
-
-        latestJoints =
-            null;
-    }
-
-
-    // ========================================================
-    // Get Pose
-    // ========================================================
-
-    async function getPose() {
-
-        try {
-
-            const armName =
-                getSelectedArm();
-
-
-            const result =
-                await apiGet(
-                    "/get_arm_pose",
-                    {
-                        arm_name:
-                            armName
-                    }
-                );
-
-
-            const arm =
-                result
-                ?.data
-                ?.arms
-                ?.[0];
-
-
-            if (
-                !arm
-            ) {
-
-                throw new Error(
-                    "Pose unavailable"
-                );
-            }
-
-
-            const pose =
-                arm.pose;
-
-
-            document
-                .getElementById(
-                    "poseDisplay"
-                )
-                .textContent =
-                    [
-                        `Arm: ${arm.arm_name}`,
-                        "",
-                        `X  = ${formatNumber(pose[0])}`,
-                        `Y  = ${formatNumber(pose[1])}`,
-                        `Z  = ${formatNumber(pose[2])}`,
-                        `RX = ${formatNumber(pose[3])}`,
-                        `RY = ${formatNumber(pose[4])}`,
-                        `RZ = ${formatNumber(pose[5])}`
-                    ]
-                    .join(
-                        "\n"
-                    );
-
-        }
-
-        catch (
-            error
-        ) {
-
-            console.error(
-                error
-            );
-
-
-            alert(
-                "取得 Pose 失敗："
-                + error.message
-            );
-        }
-    }
-
-
-    // ========================================================
-    // Get Joints
-    // ========================================================
-
-    async function getJoints() {
-
-        try {
-
-            const armName =
-                getSelectedArm();
-
-
-            const result =
-                await apiGet(
-                    "/get_arm_joints",
-                    {
-                        arm_name:
-                            armName
-                    }
-                );
-
-
-            const arm =
-                result
-                ?.data
-                ?.arms
-                ?.[0];
-
-
-            if (
-                !arm
-            ) {
-
-                throw new Error(
-                    "Joints unavailable"
-                );
-            }
-
-
-            latestJoints =
-                arm.joints;
-
-
-            document
-                .getElementById(
-                    "jointsDisplay"
-                )
-                .textContent =
-                    arm.joints
-                        .map(
-                            (
-                                value,
-                                index
-                            ) =>
-                                `J${index + 1} = `
-                                + formatNumber(
-                                    value
-                                )
-                        )
-                        .join(
-                            "\n"
-                        );
-
-        }
-
-        catch (
-            error
-        ) {
-
-            console.error(
-                error
-            );
-
-
-            alert(
-                "取得 Joints 失敗："
-                + error.message
-            );
-        }
-    }
-
-
-    // ========================================================
-    // Jog
-    // ========================================================
-
-    async function startJog(
-        direction,
-        button
-    ) {
-
-        if (
-            jogActive
-        ) {
-
-            return;
-        }
-
-
-        const armName =
-            getSelectedArm();
-
-
-        jogActive =
-            true;
-
-
-        activeJogArm =
-            armName;
-
-
-        activeJogButton =
-            button;
-
-
-        if (
-            activeJogButton
-        ) {
-
-            activeJogButton
-                .classList
-                .add(
-                    "jog-active"
-                );
-        }
-
-
-        try {
-
-            /*
-             * 第一次立即送出
-             */
-            await sendJog(
-                armName,
-                direction
-            );
-
-
-            /*
-             * 按住時固定 heartbeat。
-             *
-             * config timeout = 0.2 秒
-             * 這裡每 100ms 送一次。
-             */
-            jogTimer =
-                setInterval(
-                    () => {
-
-                        sendJog(
-                            armName,
-                            direction
-                        );
-
-                    },
-                    JOG_HEARTBEAT_MS
-                );
-
-        }
-
-        catch (
-            error
-        ) {
-
-            console.error(
-                "startJog failed:",
-                error
-            );
-
-
-            clearJogState();
-
-
-            alert(
-                "Jog 啟動失敗："
-                + error.message
-            );
-        }
-    }
-
-
-    async function sendJog(
-        armName,
-        direction
-    ) {
-
-        try {
-
-            await apiPost(
-                "/start_arm_jog",
-                {
-                    arm_name:
-                        armName,
-
-                    direction:
-                        direction
-                }
-            );
-
-        }
-
-        catch (
-            error
-        ) {
-
-            console.error(
-                "Jog heartbeat failed:",
-                error
-            );
-
-
-            await stopJog();
-        }
-    }
-
-
-    function clearJogState() {
-
-        if (
-            jogTimer !== null
-        ) {
-
-            clearInterval(
-                jogTimer
-            );
-
-            jogTimer =
-                null;
-        }
-
-
-        if (
-            activeJogButton
-        ) {
-
-            activeJogButton
-                .classList
-                .remove(
-                    "jog-active"
-                );
-        }
-
-
-        jogActive =
-            false;
-
-
-        activeJogArm =
-            null;
-
-
-        activeJogButton =
-            null;
-    }
-
-
-    async function stopJog() {
-
-        /*
-         * 先保留正在控制的 arm_name，
-         * 避免 stop 過程中使用者切換 select。
-         */
-        const armName =
-            activeJogArm;
-
-
-        if (
-            jogTimer !== null
-        ) {
-
-            clearInterval(
-                jogTimer
-            );
-
-            jogTimer =
-                null;
-        }
-
-
-        if (
-            !jogActive
-        ) {
-
-            clearJogState();
-
-            return;
-        }
-
-
-        jogActive =
-            false;
-
-
-        if (
-            activeJogButton
-        ) {
-
-            activeJogButton
-                .classList
-                .remove(
-                    "jog-active"
-                );
-        }
-
-
-        try {
-
-            if (
-                armName
-            ) {
-
-                await apiPost(
-                    "/stop_arm_jog",
-                    {
-                        arm_name:
-                            armName
-                    }
-                );
-            }
-
-        }
-
-        catch (
-            error
-        ) {
-
-            console.error(
-                "stopJog failed:",
-                error
-            );
-
-        }
-
-        finally {
-
-            clearJogState();
-        }
-    }
-
-
-    function setupJogButtons() {
-
-        const buttons =
-            document
-                .querySelectorAll(
-                    ".jog-button"
-                );
-
-
-        buttons.forEach(
-            button => {
-
-                const direction =
-                    button.dataset.direction;
-
-
-                /*
-                 * Pointer Down
-                 */
-                button.addEventListener(
-                    "pointerdown",
-                    event => {
-
-                        /*
-                         * 防止：
-                         * - 手機文字選取
-                         * - touch scrolling
-                         * - default browser action
-                         */
-                        event.preventDefault();
-
-
-                        /*
-                         * 清除已存在文字選取
-                         */
-                        const selection =
-                            window.getSelection();
-
-
-                        if (
-                            selection
-                        ) {
-
-                            selection.removeAllRanges();
-                        }
-
-
-                        /*
-                         * Pointer capture：
-                         * 手指稍微移出按鈕，
-                         * pointerup 仍由這顆 button 收到。
-                         */
-                        try {
-
-                            button.setPointerCapture(
-                                event.pointerId
-                            );
-
-                        }
-
-                        catch (
-                            error
-                        ) {
-
-                            console.debug(
-                                "setPointerCapture unavailable",
-                                error
-                            );
-                        }
-
-
-                        startJog(
-                            direction,
-                            button
-                        );
-                    },
-                    {
-                        passive:
-                            false
-                    }
-                );
-
-
-                /*
-                 * 放開
-                 */
-                button.addEventListener(
-                    "pointerup",
-                    event => {
-
-                        event.preventDefault();
-
-                        stopJog();
-                    }
-                );
-
-
-                /*
-                 * OS / Browser 中斷 pointer
-                 */
-                button.addEventListener(
-                    "pointercancel",
-                    event => {
-
-                        event.preventDefault();
-
-                        stopJog();
-                    }
-                );
-
-
-                /*
-                 * Pointer capture 遺失
-                 */
-                button.addEventListener(
-                    "lostpointercapture",
-                    () => {
-
-                        if (
-                            jogActive
-                        ) {
-
-                            stopJog();
-                        }
-                    }
-                );
-
-
-                /*
-                 * Android / Desktop 長按
-                 * 禁止 context menu。
-                 */
-                button.addEventListener(
-                    "contextmenu",
-                    event => {
-
-                        event.preventDefault();
-
-                        return false;
-                    }
-                );
-
-
-                /*
-                 * 禁止 drag
-                 */
-                button.addEventListener(
-                    "dragstart",
-                    event => {
-
-                        event.preventDefault();
-                    }
-                );
-
-
-                /*
-                 * iOS 某些版本會觸發 selectstart。
-                 */
-                button.addEventListener(
-                    "selectstart",
-                    event => {
-
-                        event.preventDefault();
-                    }
-                );
-
-            }
-        );
-
-
-        /*
-         * Browser 失去 focus，
-         * 一定停止 Jog。
-         */
-        window.addEventListener(
-            "blur",
-            () => {
-
-                if (
-                    jogActive
-                ) {
-
-                    stopJog();
-                }
-            }
-        );
-
-
-        /*
-         * 切到其他 App / Tab，
-         * 一定停止 Jog。
-         */
-        document.addEventListener(
-            "visibilitychange",
-            () => {
-
-                if (
-                    document.hidden
-                    &&
-                    jogActive
-                ) {
-
-                    stopJog();
-                }
-            }
-        );
-
-
-        /*
-         * 防止頁面離開時仍持續 Jog。
-         */
-        window.addEventListener(
-            "pagehide",
-            () => {
-
-                if (
-                    jogActive
-                ) {
-
-                    stopJog();
-                }
-            }
-        );
-    }
-
-
-    // ========================================================
-    // Point XYZ
-    // ========================================================
-
-    async function pointToXYZ() {
-
-        try {
-
-            const armName =
-                getSelectedArm();
-
-
-            const x =
-                readNumberInput(
-                    "pointX",
-                    "X"
-                );
-
-
-            const y =
-                readNumberInput(
-                    "pointY",
-                    "Y"
-                );
-
-
-            const z =
-                readNumberInput(
-                    "pointZ",
-                    "Z"
-                );
-
-
-            await apiPost(
-                "/move_arm_point_to_xyz",
-                {
-                    arm_name:
-                        armName,
-
-                    x: x,
-
-                    y: y,
-
-                    z: z
-                }
-            );
-
-        }
-
-        catch (
-            error
-        ) {
-
-            console.error(
-                error
-            );
-
-
-            alert(
-                error.message
-            );
-        }
-    }
-
-
-    // ========================================================
-    // Move Joints
-    // ========================================================
-
-    async function moveJoints() {
-
-        try {
-
-            const armName =
-                getSelectedArm();
-
-
-            const joints =
-                [];
-
-
-            for (
-                let i = 1;
-                i <= 6;
-                i++
-            ) {
-
-                joints.push(
-                    readNumberInput(
-                        `joint${i}`,
-                        `J${i}`
-                    )
-                );
-            }
-
-
-            await apiPost(
-                "/move_arm_joints",
-                {
-                    arm_name:
-                        armName,
-
-                    joints:
-                        joints
-                }
-            );
-
-        }
-
-        catch (
-            error
-        ) {
-
-            console.error(
-                error
-            );
-
-
-            alert(
-                error.message
-            );
-        }
-    }
-
-
-    async function loadCurrentJointsIntoInputs() {
-
-        try {
-
-            await getJoints();
-
-
-            if (
-                !latestJoints
-            ) {
-
-                return;
-            }
-
-
-            latestJoints.forEach(
-                (
-                    value,
-                    index
-                ) => {
-
-                    const input =
-                        document
-                            .getElementById(
-                                `joint${index + 1}`
-                            );
-
-
-                    if (
-                        input
-                    ) {
-
-                        input.value =
-                            value;
-                    }
-                }
-            );
-
-        }
-
-        catch (
-            error
-        ) {
-
-            console.error(
-                error
-            );
-        }
-    }
-
-
-    // ========================================================
-    // Stop Arm
-    // ========================================================
-
-    async function stopArm() {
-
-        try {
-
-            /*
-             * 如果 Jog 中，
-             * 先停止 Jog。
-             */
-            await stopJog();
-
-
-            const armName =
-                getSelectedArm();
-
-
-            await apiPost(
-                "/stop_arm",
-                {
-                    arm_name:
-                        armName
-                }
-            );
-
-        }
-
-        catch (
-            error
-        ) {
-
-            console.error(
-                error
-            );
-
-
-            alert(
-                "停止手臂失敗："
-                + error.message
-            );
-        }
-    }
-
-
-    // ========================================================
-    // Helpers
-    // ========================================================
-
-    function readNumberInput(
-        id,
-        label
-    ) {
-
-        const element =
-            document
-                .getElementById(
-                    id
-                );
-
-
-        const value =
-            element
-                .value
-                .trim();
-
-
-        if (
-            value === ""
-        ) {
-
-            throw new Error(
-                `${label} 尚未輸入`
-            );
-        }
-
-
-        const number =
-            Number(
-                value
-            );
-
-
-        if (
-            !Number.isFinite(
-                number
-            )
-        ) {
-
-            throw new Error(
-                `${label} 必須是數值`
-            );
-        }
-
-
-        return number;
-    }
-
-
-    function formatNumber(
-        value
-    ) {
-
-        if (
-            typeof value
-            !== "number"
-        ) {
-
-            return String(
-                value
-            );
-        }
-
-
-        return value.toFixed(
-            6
-        );
-    }
-
-
-    function showApiResponse(
-        data
-    ) {
-
-        document
-            .getElementById(
-                "apiResponse"
-            )
-            .textContent =
-                JSON.stringify(
-                    data,
-                    null,
-                    2
-                );
-    }
-
-
-    // ========================================================
-    // Init
-    // ========================================================
-
-    document.addEventListener(
-        "DOMContentLoaded",
-        async () => {
-
-            setupJogButtons();
-
-            await loadArmStatus();
-
-        }
+  function gripperNumber(id) {
+    const value = Number(
+      document.getElementById(id).value
     );
 
+    if (!Number.isFinite(value)) {
+      throw new Error(`${id} 必須是數字`);
+    }
+
+    return value;
+  }
+
+
+  function extractGripperStatus(data, gripperName) {
+    /*
+     * 支援常見回傳形式：
+     * 1) { data: { grippers: [{ gripper_name, status: {...} }] } }
+     * 2) { data: { gripper: { ... } } }
+     * 3) { data: { status: {...} } }
+     * 4) 直接回傳 {...status fields...}
+     */
+    const grippers = data?.data?.grippers;
+
+    if (Array.isArray(grippers)) {
+      const item =
+        grippers.find(g => g.gripper_name === gripperName) ??
+        grippers[0];
+
+      if (item?.status) {
+        return item.status;
+      }
+
+      if (item) {
+        return item;
+      }
+    }
+
+    if (data?.data?.gripper?.status) {
+      return data.data.gripper.status;
+    }
+
+    if (data?.data?.gripper) {
+      return data.data.gripper;
+    }
+
+    if (data?.data?.status) {
+      return data.data.status;
+    }
+
+    if (data?.status && typeof data.status === "object") {
+      return data.status;
+    }
+
+    if (data?.data && typeof data.data === "object") {
+      return data.data;
+    }
+
+    return data ?? {};
+  }
+
+
+  async function refreshGripperStatus() {
+    const gripper = selectedGripper();
+
+    try {
+      const data = await apiGet(
+        `/api/gripper/get_gripper_status?gripper_name=${encodeURIComponent(gripper)}`
+      );
+
+      document.getElementById("rawGripperStatus").textContent =
+        JSON.stringify(data, null, 2);
+
+      const status = extractGripperStatus(data, gripper);
+
+      const connected =
+        status.connected ??
+        status.is_connected ??
+        null;
+
+      const position =
+        status.position ??
+        status.pose ??
+        status.current_position ??
+        null;
+
+      const objectDetected =
+        status.object_detected ??
+        status.object_detection ??
+        status.gripped ??
+        status.has_object ??
+        null;
+
+      const moving =
+        status.moving ??
+        status.is_moving ??
+        null;
+
+      const fault =
+        status.fault ??
+        status.fault_status ??
+        status.error ??
+        null;
+
+      const connectedEl =
+        document.getElementById("gripperConnected");
+
+      connectedEl.textContent =
+        valueOrDash(connected);
+
+      if (connected === true) {
+        connectedEl.className = "connected";
+      } else if (connected === false) {
+        connectedEl.className = "disconnected";
+      } else {
+        connectedEl.className = "";
+      }
+
+      document.getElementById("gripperPosition").textContent =
+        valueOrDash(position);
+
+      document.getElementById("gripperObjectDetected").textContent =
+        valueOrDash(objectDetected);
+
+      document.getElementById("gripperMoving").textContent =
+        valueOrDash(moving);
+
+      document.getElementById("gripperFault").textContent =
+        valueOrDash(fault);
+
+    } catch (err) {
+      document.getElementById("gripperConnected").textContent =
+        "API ERROR";
+
+      document.getElementById("gripperConnected").className =
+        "disconnected";
+
+      log("get_gripper_status ERROR", String(err));
+    }
+  }
+
+
+  async function openGripper() {
+    const gripper = selectedGripper();
+
+    try {
+      const data = await apiPost(
+        "/api/gripper/open_gripper",
+        {
+          gripper_name: gripper,
+          speed: gripperNumber("gripperSpeed"),
+          force: gripperNumber("gripperForce"),
+          wait: true
+        }
+      );
+
+      log(`open_gripper (${gripper})`, data);
+      refreshGripperStatus();
+
+    } catch (err) {
+      log("open_gripper ERROR", String(err));
+    }
+  }
+
+
+  async function closeGripper() {
+    const gripper = selectedGripper();
+
+    try {
+      const data = await apiPost(
+        "/api/gripper/close_gripper",
+        {
+          gripper_name: gripper,
+          speed: gripperNumber("gripperSpeed"),
+          force: gripperNumber("gripperForce"),
+          wait: true
+        }
+      );
+
+      log(`close_gripper (${gripper})`, data);
+      refreshGripperStatus();
+
+    } catch (err) {
+      log("close_gripper ERROR", String(err));
+    }
+  }
+
+
+  async function moveGripper() {
+    const gripper = selectedGripper();
+
+    try {
+      const data = await apiPost(
+        "/api/gripper/move_gripper",
+        {
+          gripper_name: gripper,
+          position: gripperNumber("gripperPositionInput"),
+          speed: gripperNumber("gripperSpeed"),
+          force: gripperNumber("gripperForce"),
+          wait: true
+        }
+      );
+
+      log(`move_gripper (${gripper})`, data);
+      refreshGripperStatus();
+
+    } catch (err) {
+      log("move_gripper ERROR", String(err));
+    }
+  }
+
+
+  async function stopGripper() {
+    const gripper = selectedGripper();
+
+    try {
+      const data = await apiPost(
+        "/api/gripper/stop_gripper",
+        {
+          gripper_name: gripper
+        }
+      );
+
+      log(`stop_gripper (${gripper})`, data);
+      refreshGripperStatus();
+
+    } catch (err) {
+      log("stop_gripper ERROR", String(err));
+    }
+  }
+
+
+
+  // ------------------------------------------------------------
+  // INIT
+  // ------------------------------------------------------------
+
+  document
+    .getElementById("armSelect")
+    .addEventListener("change", async () => {
+      await stopJog();
+      await refreshStatus();
+    });
+
+
+  document
+    .getElementById("gripperSelect")
+    .addEventListener("change", async () => {
+      await refreshGripperStatus();
+    });
+
+
+  window.addEventListener("blur", () => {
+    stopJog();
+  });
+
+
+  document.addEventListener(
+    "visibilitychange",
+    () => {
+      if (document.hidden) {
+        stopJog();
+      }
+    }
+  );
+
+
+  setupJogButtons();
+
+  refreshStatus();
+  refreshGripperStatus();
+
+  statusTimer = setInterval(() => {
+    refreshStatus();
+    refreshGripperStatus();
+  }, STATUS_INTERVAL_MS);
 </script>
 
 </body>
-
 </html>

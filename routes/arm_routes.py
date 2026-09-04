@@ -273,7 +273,56 @@ def move_arm_joints():
 # ============================================================
 # MOVE JOINT TRAJECTORY
 # ============================================================
+@arm_bp.route(
+    "/move_arm_pose_trajectory",
+    methods=["POST"],
+)
+def move_arm_pose_trajectory():
+    data = _get_json()
 
+    return jsonify(
+        arm_service.move_arm_pose_trajectory(
+            arm_name=
+                data.get(
+                    "arm_name"
+                ),
+            pose_trajectory=
+                data.get(
+                    "pose_trajectory"
+                ),
+            dt=
+                data.get(
+                    "dt"
+                ),
+            speed=
+                data.get(
+                    "speed"
+                ),
+            acceleration=
+                data.get(
+                    "acceleration"
+                ),
+            wait=
+                data.get(
+                    "wait",
+                    True,
+                ),
+            move_to_start=
+                data.get(
+                    "move_to_start",
+                    True,
+                ),
+            move_to_start_speed=
+                data.get(
+                    "move_to_start_speed"
+                ),
+            move_to_start_acceleration=
+                data.get(
+                    "move_to_start_acceleration"
+                ),
+        )
+    )
+    
 @arm_bp.route(
     "/move_arm_joint_trajectory",
     methods=["POST"],
@@ -302,16 +351,6 @@ def move_arm_joint_trajectory():
             acceleration=
                 data.get(
                     "acceleration"
-                ),
-            lookahead_time=
-                data.get(
-                    "lookahead_time",
-                    0.1,
-                ),
-            gain=
-                data.get(
-                    "gain",
-                    300,
                 ),
             wait=
                 data.get(

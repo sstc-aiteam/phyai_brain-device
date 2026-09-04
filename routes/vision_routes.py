@@ -5,9 +5,7 @@ from flask import (
     request,
 )
 
-from services import (
-    vision_service,
-)
+from services import vision_service
 
 
 vision_bp = Blueprint(
@@ -18,7 +16,7 @@ vision_bp = Blueprint(
 
 
 # ============================================================
-# Detection
+# DETECTIONS
 # ============================================================
 
 @vision_bp.route(
@@ -27,19 +25,16 @@ vision_bp = Blueprint(
 )
 def get_detections():
     return jsonify(
-        vision_service
-        .get_detections(
+        vision_service.get_detections(
             camera_name=
                 request.args.get(
                     "camera_name"
                 ),
-
             model_name=
                 request.args.get(
                     "model_name",
                     "object_detector",
                 ),
-
             include_robot_xyz=
                 request.args.get(
                     "include_robot_xyz",
@@ -50,7 +45,7 @@ def get_detections():
 
 
 # ============================================================
-# Single RGB Image
+# CAMERA RGB
 # ============================================================
 
 @vision_bp.route(
@@ -59,20 +54,18 @@ def get_detections():
 )
 def camera_rgb():
     return Response(
-        vision_service
-        .get_camera_rgb_jpeg(
+        vision_service.get_camera_rgb_jpeg(
             camera_name=
                 request.args.get(
                     "camera_name"
-                )
+                ),
         ),
-        mimetype=
-            "image/jpeg",
+        mimetype="image/jpeg",
     )
 
 
 # ============================================================
-# Single YOLO Image
+# YOLO IMAGE
 # ============================================================
 
 @vision_bp.route(
@@ -81,32 +74,28 @@ def camera_rgb():
 )
 def yolo_image():
     return Response(
-        vision_service
-        .get_yolo_image_jpeg(
+        vision_service.get_yolo_image_jpeg(
             camera_name=
                 request.args.get(
                     "camera_name"
                 ),
-
             model_name=
                 request.args.get(
                     "model_name",
                     "object_detector",
                 ),
-
             include_robot_xyz=
                 request.args.get(
                     "include_robot_xyz",
                     "true",
                 ),
         ),
-        mimetype=
-            "image/jpeg",
+        mimetype="image/jpeg",
     )
 
 
 # ============================================================
-# VLA Observation
+# VLA OBSERVATION
 # ============================================================
 
 @vision_bp.route(
@@ -115,25 +104,21 @@ def yolo_image():
 )
 def get_vla_observation():
     return jsonify(
-        vision_service
-        .get_vla_observation_summary(
+        vision_service.get_vla_observation_summary(
             camera_name=
                 request.args.get(
                     "camera_name"
                 ),
-
             model_name=
                 request.args.get(
                     "model_name",
                     "object_detector",
                 ),
-
             run_yolo=
                 request.args.get(
                     "run_yolo",
                     "true",
                 ),
-
             include_point_cloud=
                 request.args.get(
                     "include_point_cloud",
@@ -144,7 +129,7 @@ def get_vla_observation():
 
 
 # ============================================================
-# RGB Stream
+# CAMERA STREAM
 # ============================================================
 
 @vision_bp.route(
@@ -153,20 +138,21 @@ def get_vla_observation():
 )
 def camera_stream():
     return Response(
-        vision_service
-        .camera_stream(
+        vision_service.camera_stream(
             camera_name=
                 request.args.get(
                     "camera_name"
-                )
+                ),
         ),
-        mimetype=
-            "multipart/x-mixed-replace; boundary=frame",
+        mimetype=(
+            "multipart/x-mixed-replace; "
+            "boundary=frame"
+        ),
     )
 
 
 # ============================================================
-# YOLO Stream
+# YOLO STREAM
 # ============================================================
 
 @vision_bp.route(
@@ -175,25 +161,24 @@ def camera_stream():
 )
 def yolo_stream():
     return Response(
-        vision_service
-        .yolo_stream(
+        vision_service.yolo_stream(
             camera_name=
                 request.args.get(
                     "camera_name"
                 ),
-
             model_name=
                 request.args.get(
                     "model_name",
                     "object_detector",
                 ),
-
             include_robot_xyz=
                 request.args.get(
                     "include_robot_xyz",
                     "true",
                 ),
         ),
-        mimetype=
-            "multipart/x-mixed-replace; boundary=frame",
+        mimetype=(
+            "multipart/x-mixed-replace; "
+            "boundary=frame"
+        ),
     )

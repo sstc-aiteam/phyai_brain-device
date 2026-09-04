@@ -1,14 +1,11 @@
-from flask import Blueprint, request
-
-from services import gripper_service
-from routes.utils import (
-    get_json_body,
-    json_response,
-    request_error,
+from flask import (
+    Blueprint,
+    jsonify,
+    request,
 )
 
+from services import gripper_service
 
-MODULE = "gripper"
 
 gripper_bp = Blueprint(
     "gripper",
@@ -18,265 +15,168 @@ gripper_bp = Blueprint(
 
 
 # ============================================================
-# GET STATUS
+# Helpers
 # ============================================================
 
-@gripper_bp.get("/get_gripper_status")
+def _get_json():
+    return (
+        request.get_json(
+            silent=True
+        )
+        or {}
+    )
+
+
+# ============================================================
+# STATUS
+# ============================================================
+
+@gripper_bp.route(
+    "/get_gripper_status",
+    methods=["GET"],
+)
 def get_gripper_status():
-    """
-    取得夾爪狀態。
-
-    Query:
-        gripper_name:
-            指定夾爪名稱，例如 left / right。
-            若未指定，則取得所有夾爪狀態。
-
-    Example:
-        GET /api/gripper/get_gripper_status
-
-        GET /api/gripper/get_gripper_status?gripper_name=left
-    """
-
-    action = "get_gripper_status"
-
-    try:
-        gripper_name = request.args.get(
-            "gripper_name"
+    return jsonify(
+        gripper_service.get_gripper_status(
+            gripper_name=
+                request.args.get(
+                    "gripper_name"
+                ),
         )
-
-        response = (
-            gripper_service.get_gripper_status(
-                gripper_name=gripper_name
-            )
-        )
-
-        return json_response(
-            response
-        )
-
-    except ValueError as exc:
-        return request_error(
-            MODULE,
-            action,
-            exc,
-        )
+    )
 
 
 # ============================================================
-# MOVE TO POSITION
+# MOVE
 # ============================================================
 
-@gripper_bp.post("/action_gripper_to_position")
-def action_gripper_to_position():
-    """
-    將夾爪移動到指定位置。
+@gripper_bp.route(
+    "/move_gripper",
+    methods=["POST"],
+)
+def move_gripper():
+    data = _get_json()
 
-    JSON:
-    {
-        "gripper_name": "left",
-        "position": 128,
-        "speed": 255,
-        "force": 150,
-        "wait": true,
-        "timeout": 5.0
-    }
-    """
-
-    action = "action_gripper_to_position"
-
-    try:
-        data = get_json_body()
-
-        if "gripper_name" not in data:
-            raise ValueError(
-                "缺少必要參數：gripper_name"
-            )
-
-        if "position" not in data:
-            raise ValueError(
-                "缺少必要參數：position"
-            )
-
-        response = (
-            gripper_service.move_gripper(
-                gripper_name=
-                    data["gripper_name"],
-                position=
-                    data["position"],
-                speed=
-                    data.get("speed"),
-                force=
-                    data.get("force"),
-                wait=
-                    data.get("wait"),
-                timeout=
-                    data.get("timeout"),
-            )
+    return jsonify(
+        gripper_service.move_gripper(
+            gripper_name=
+                data.get(
+                    "gripper_name"
+                ),
+            position=
+                data.get(
+                    "position"
+                ),
+            speed=
+                data.get(
+                    "speed"
+                ),
+            force=
+                data.get(
+                    "force"
+                ),
+            wait=
+                data.get(
+                    "wait"
+                ),
+            timeout=
+                data.get(
+                    "timeout"
+                ),
         )
-
-        return json_response(
-            response
-        )
-
-    except ValueError as exc:
-        return request_error(
-            MODULE,
-            action,
-            exc,
-        )
-
-
-# ============================================================
-# CLOSE
-# ============================================================
-
-@gripper_bp.post("/action_gripper_close")
-def action_gripper_close():
-    """
-    關閉夾爪。
-
-    JSON:
-    {
-        "gripper_name": "left",
-        "speed": 255,
-        "force": 150,
-        "wait": true,
-        "timeout": 5.0
-    }
-    """
-
-    action = "action_gripper_close"
-
-    try:
-        data = get_json_body()
-
-        if "gripper_name" not in data:
-            raise ValueError(
-                "缺少必要參數：gripper_name"
-            )
-
-        response = (
-            gripper_service.close_gripper(
-                gripper_name=
-                    data["gripper_name"],
-                speed=
-                    data.get("speed"),
-                force=
-                    data.get("force"),
-                wait=
-                    data.get("wait"),
-                timeout=
-                    data.get("timeout"),
-            )
-        )
-
-        return json_response(
-            response
-        )
-
-    except ValueError as exc:
-        return request_error(
-            MODULE,
-            action,
-            exc,
-        )
+    )
 
 
 # ============================================================
 # OPEN
 # ============================================================
 
-@gripper_bp.post("/action_gripper_open")
-def action_gripper_open():
-    """
-    開啟夾爪。
+@gripper_bp.route(
+    "/open_gripper",
+    methods=["POST"],
+)
+def open_gripper():
+    data = _get_json()
 
-    JSON:
-    {
-        "gripper_name": "left",
-        "speed": 255,
-        "force": 150,
-        "wait": true,
-        "timeout": 5.0
-    }
-    """
-
-    action = "action_gripper_open"
-
-    try:
-        data = get_json_body()
-
-        if "gripper_name" not in data:
-            raise ValueError(
-                "缺少必要參數：gripper_name"
-            )
-
-        response = (
-            gripper_service.open_gripper(
-                gripper_name=
-                    data["gripper_name"],
-                speed=
-                    data.get("speed"),
-                force=
-                    data.get("force"),
-                wait=
-                    data.get("wait"),
-                timeout=
-                    data.get("timeout"),
-            )
+    return jsonify(
+        gripper_service.open_gripper(
+            gripper_name=
+                data.get(
+                    "gripper_name"
+                ),
+            speed=
+                data.get(
+                    "speed"
+                ),
+            force=
+                data.get(
+                    "force"
+                ),
+            wait=
+                data.get(
+                    "wait"
+                ),
+            timeout=
+                data.get(
+                    "timeout"
+                ),
         )
+    )
 
-        return json_response(
-            response
-        )
 
-    except ValueError as exc:
-        return request_error(
-            MODULE,
-            action,
-            exc,
+# ============================================================
+# CLOSE
+# ============================================================
+
+@gripper_bp.route(
+    "/close_gripper",
+    methods=["POST"],
+)
+def close_gripper():
+    data = _get_json()
+
+    return jsonify(
+        gripper_service.close_gripper(
+            gripper_name=
+                data.get(
+                    "gripper_name"
+                ),
+            speed=
+                data.get(
+                    "speed"
+                ),
+            force=
+                data.get(
+                    "force"
+                ),
+            wait=
+                data.get(
+                    "wait"
+                ),
+            timeout=
+                data.get(
+                    "timeout"
+                ),
         )
+    )
 
 
 # ============================================================
 # STOP
 # ============================================================
 
-@gripper_bp.post("/stop")
+@gripper_bp.route(
+    "/stop_gripper",
+    methods=["POST"],
+)
 def stop_gripper():
-    """
-    停止指定夾爪目前的動作。
+    data = _get_json()
 
-    JSON:
-    {
-        "gripper_name": "left"
-    }
-    """
-
-    action = "stop_gripper"
-
-    try:
-        data = get_json_body()
-
-        if "gripper_name" not in data:
-            raise ValueError(
-                "缺少必要參數：gripper_name"
-            )
-
-        response = (
-            gripper_service.stop_gripper(
-                gripper_name=
-                    data["gripper_name"]
-            )
+    return jsonify(
+        gripper_service.stop_gripper(
+            gripper_name=
+                data.get(
+                    "gripper_name"
+                ),
         )
-
-        return json_response(
-            response
-        )
-
-    except ValueError as exc:
-        return request_error(
-            MODULE,
-            action,
-            exc,
-        )
+    )

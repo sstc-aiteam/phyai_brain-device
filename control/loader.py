@@ -27,8 +27,8 @@ ARM_FUNCTIONS = (
     "get_arm_joints",
     "reconnect_arm",
     "move_arm_pose",
-    "servoL",
     "move_arm_joints",
+    "move_arm_pose_trajectory",
     "move_arm_joint_trajectory",
     "start_arm_jog",
     "stop_arm_jog",
@@ -95,10 +95,6 @@ CAMERA_FUNCTIONS = (
     "stop_camera",
     "get_camera_status",
     "get_frame",
-    "get_distance",
-    "deproject_pixel_to_point",
-    "get_intrinsics",
-    "get_point_cloud",
 )
 
 _CAMERA_INSTANCES = {}
