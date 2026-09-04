@@ -9,10 +9,26 @@ TOOLS = {
     # -------------------------
     # Arm motion
     # -------------------------
+    "move_right_arm_initial": {
+        "module": "arm",
+        "description": (
+            "只將右側 UR5 機器手臂移動到系統設定的初始位置。"
+            "使用者要求右手臂或 UR5 回到初始位置時使用；"
+            "不可用於左側 UR7e。"
+            "不可用於沿 X、Y、Z 軸移動指定距離；"
+            "沿軸移動必須使用 move_arm_step。"
+        ),
+        "parameters": {},
+        "required": [],
+    },
+
     "move_arm_default": {
         "module": "arm",
         "description": (
-            "將機器手臂移動到系統預設位置。"
+            "只將機器手臂移動到系統設定的預設姿態。"
+            "僅在使用者明確要求回到預設位置、預設姿態或待命姿態時使用。"
+            "不可用於沿 X、Y、Z 軸移動，也不可用於移動指定距離；"
+            "沿軸移動指定距離必須使用 move_arm_step。"
         ),
         "parameters": {},
         "required": [],
@@ -20,7 +36,13 @@ TOOLS = {
 
     "move_arm_step": {
         "module": "arm",
-        "description": "讓機器手臂沿 X、Y 或 Z 軸移動一步。",
+        "description": (
+            "讓機器手臂沿 X、Y 或 Z 軸移動指定距離。"
+            "使用者提到 x+、x-、y+、y-、z+、z-，或要求沿某一軸"
+            "移動幾公尺／公分時，必須使用此工具。"
+            "每一個獨立移動步驟都必須各自提供 direction；"
+            "不可改用 move_arm_default 或 move_right_arm_initial。"
+        ),
         "parameters": {
             "direction": {
                 "type": "string",
@@ -203,6 +225,16 @@ TOOLS = {
 }
 
 
+# Planning metadata is kept next to the existing execution whitelist so the
+# validator, allocator and LLM all read the same tool catalog. Current tools
+# are arm operations. Reachable zones remain empty until calibrated workspace
+# data is available; no left/right reachability is guessed here.
+for _tool_definition in TOOLS.values():
+    _tool_definition.setdefault("target_types", ["robot_arm"])
+    _tool_definition.setdefault("required_capabilities", ["arm_motion"])
+    _tool_definition.setdefault("required_zones", [])
+
+
 def get_tool(name=None):
     """
     name 為 None：回傳全部工具定義副本。
@@ -233,6 +265,9 @@ def get_tools_for_prompt():
             "description": definition["description"],
             "parameters": definition["parameters"],
             "required": definition["required"],
+            "target_types": definition["target_types"],
+            "required_capabilities": definition["required_capabilities"],
+            "required_zones": definition["required_zones"],
         })
 
     return result

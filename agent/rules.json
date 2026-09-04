@@ -17,6 +17,7 @@
     "bottle_alcohol_spray": {
       "object_label": "酒精瓶",
       "count_label": "酒精",
+      "aliases": ["酒精噴霧", "酒精噴瓶"],
       "count_unit": "瓶",
       "destination": "top_cabinet",
       "handling_guidance": "酒精瓶應集中收納於櫃子，避免散放；不可猜測瓶身是否密封或滲漏。",
@@ -65,6 +66,7 @@
     "square_striped_towel": {
       "object_label": "條紋毛巾",
       "count_label": "條紋毛巾",
+      "aliases": ["抹布", "毛巾"],
       "count_unit": "條",
       "destination": "trash_can",
       "handling_guidance": "依目前場域規則視為需清理的布料並丟入垃圾桶；只有視覺資料明確顯示污損時，才可直接說它已污損。",
