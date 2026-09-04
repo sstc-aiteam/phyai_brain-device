@@ -38,6 +38,8 @@ PICK_POINT_TOOLS = {
     "place_object_in_second_drawer",
 }
 
+ARM_NAMES = {"left", "right"}
+
 PLANNING_OBJECT_ID_PARAMETER = {
     "type": "string",
     "description": (
@@ -65,8 +67,13 @@ PROMPT = """
 2. 若使用者詢問機器手臂狀態或辨識物件，依據提供的資訊回答，不可猜測；詢問場景物件時，
    還要依 rules.json 說出每種可見物件的推薦歸位位置與理由。
 3. 若使用者要求機器人執行任務，必須從工具白名單中選擇適合的 API。
-4. 一個使用者需求可以拆解成多個 API，並依實際執行順序放入 tool_calls。
-5. tool_calls 中的工具會由上到下依序執行，因此順序必須正確。
+4. 一個使用者需求可以拆解成多個 API。每一步都必須指定唯一 id、
+   執行的 arm_name（left 或 right），以及 depends_on 前置步驟 ID 陣列。
+5. 同一支手臂的動作必須有明確的先後依賴；左右手互不依賴的步驟可並行，
+   不需要為了時間對齊而互相等待。若一步需要等左右手都完成，將兩個步驟 ID
+   都放入 depends_on。
+5.1 只能指派 robot_status 中明確存在、已連線且可用的手臂，不可猜測未提供的左手
+    或右手狀態。
 6. 不可使用不存在的 API，也不可自行定義 API。
 7. 不可把可以一次完成的單一步驟重複加入 tool_calls。
 8. 若不需要執行任何動作，tool_calls 必須回傳空陣列 []。
@@ -74,7 +81,7 @@ PROMPT = """
    絕對不可口頭承諾執行，卻回傳空的 tool_calls。
 9. 若必要參數不完整、沒有合適工具或機器手臂無法連線，
    tool_calls 必須回傳空陣列 []，並在 answer 中說明原因。
-10. 每一個 tool_call 必須包含 function_name 與 arguments。
+10. 每一個 tool_call 必須包含 id、arm_name、depends_on、function_name 與 arguments。
 11. function_name 只能使用工具白名單中的名稱。
 12. arguments 只能包含對應工具允許的參數，不可猜測參數。
 12.1 decision_basis 必須提供簡潔、可供使用者核對的判斷依據；說明物件、目的地、場域
@@ -94,6 +101,16 @@ PROMPT = """
     不可回答「我會先檢查」或假裝稍後會取得資料。
 
 任務拆解範例：
+
+使用者要求「左手沿 z+ 移動 0.01 公尺，同時右手沿 x+ 移動 0.01 公尺」：
+
+tool_calls 必須是兩個完整、互不依賴的步驟：
+1. id=left_up，arm_name=left，depends_on=[]，function_name=move_arm_step，
+   arguments={"direction": "z+", "distance": 0.01}。
+2. id=right_forward，arm_name=right，depends_on=[]，function_name=move_arm_step，
+   arguments={"direction": "x+", "distance": 0.01}。
+每一個 move_arm_step 都必須在自己的 arguments 內提供 direction；不可因為前一步
+已經提供方向，就省略後一步的 direction。純手臂移動不需要先檢查物件。
 
 使用者要求「打開櫃門，把酒精放進櫃子，再關閉櫃門」：
 
@@ -169,9 +186,7 @@ tool_calls 只有：
 
 
 class AgentError(RuntimeError):
-    """
-    Agent 執行錯誤。
-    """
+    """Agent 執行錯誤。"""
 
 
 def _is_observation_only_request(user_text):
@@ -319,6 +334,23 @@ def _build_single_direct_action_plan(user_text):
         )
     ):
         return None
+
+    initial_position_requested = any(
+        phrase in normalized
+        for phrase in (
+            "右手回到初始位置", "右手臂回到初始位置",
+            "右手回初始位置", "右手臂回初始位置",
+            "ur5回到初始位置", "ur5回初始位置",
+        )
+    )
+    if initial_position_requested:
+        return {
+            "answer": "我會讓右側 UR5 回到初始位置。",
+            "tool_calls": [{
+                "function_name": "move_right_arm_initial",
+                "arguments": {},
+            }],
+        }
 
     definitions = (
         ("move_arm_default", "讓機器手臂回到預設位置", (
@@ -660,8 +692,28 @@ def _check_action_preconditions(robot_status, tool_calls):
             f"原因：{detail}。"
         )
 
-    if robot_status.get("connected") is not True:
-        return "我目前無法控制機器手臂，因此不會執行任何動作。"
+    requested_arms = {
+        call.get("arm_name", "right")
+        for call in tool_calls
+        if isinstance(call, dict)
+    }
+    arms = robot_status.get("arms")
+    if isinstance(arms, dict):
+        for arm_name in requested_arms:
+            arm_status = arms.get(arm_name)
+            if not isinstance(arm_status, dict):
+                return f"我目前無法確認{arm_name}手臂狀態，因此不會執行任何動作。"
+            if (
+                arm_status.get("connected") is not True
+                or arm_status.get("available", True) is not True
+            ):
+                return f"我目前無法控制{arm_name}手臂，因此不會執行任何動作。"
+    else:
+        # 相容舊版 agent_service：單一狀態代表右手。
+        if requested_arms - {"right"}:
+            return "我目前無法確認左手臂狀態，因此不會執行任何動作。"
+        if robot_status.get("connected") is not True:
+            return "我目前無法控制機器手臂，因此不會執行任何動作。"
 
     return None
 
@@ -958,8 +1010,27 @@ def build_prompt(user_text, robot_status, detected_objects):
                         "arguments": {
                             "type": "object",
                         },
+                        "id": {
+                            "type": "string",
+                            "minLength": 1,
+                        },
+                        "arm_name": {
+                            "type": "string",
+                            "enum": ["left", "right"],
+                        },
+                        "depends_on": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "minLength": 1,
+                            },
+                            "uniqueItems": True,
+                        },
                     },
                     "required": [
+                        "id",
+                        "arm_name",
+                        "depends_on",
                         "function_name",
                         "arguments",
                     ],
@@ -1000,6 +1071,22 @@ def build_prompt(user_text, robot_status, detected_objects):
         if not retryable or attempt == 1:
             break
 
+        retry_guidance = (
+            "請根據驗證錯誤從頭輸出完整 JSON；"
+            "每一個工具步驟都必須獨立提供該工具的所有必要參數。"
+            "move_arm_step 的每一步都必須有 arguments.direction；"
+            "不可從前一步繼承或省略。"
+        )
+        if any(
+            call.get("function_name") in PICK_POINT_TOOLS
+            for call in parsed.get("tool_calls", [])
+            if isinstance(call, dict)
+        ) or "object_id" in parsed.get("answer", ""):
+            retry_guidance += (
+                "每個具名物件必須選擇 class_name 相符的 object_id；"
+                "不同物件不可重複使用同一 object_id。"
+            )
+
         messages.extend([
             {"role": "assistant", "content": content},
             {
@@ -1007,9 +1094,7 @@ def build_prompt(user_text, robot_status, detected_objects):
                 "content": (
                     "上一份規劃未通過系統驗證："
                     f"{parsed['answer']}\n"
-                    "請重新閱讀原始需求與 objects，從頭輸出完整 JSON。"
-                    "每個具名物件必須選擇 class_name 相符的 object_id；"
-                    "不同物件不可重複使用同一 object_id；"
+                    f"{retry_guidance}"
                     "不要只修補單一步驟，必須重新輸出完整 tool_calls。"
                 ),
             },
@@ -1140,6 +1225,11 @@ def _resolve_planning_tool_call(tool_call, index, detected_objects):
 
     return (
         {
+            **{
+                name: tool_call[name]
+                for name in ("id", "arm_name", "depends_on")
+                if name in tool_call
+            },
             "function_name": function_name,
             "arguments": {
                 "point_xyz": detected_object.get("robot_xyz"),
@@ -1472,8 +1562,9 @@ def _repair_container_sequence(user_text, tool_calls, selected_object_ids):
     repaired_ids = []
     active_container = None
 
-    def append_call(function_name, arguments=None, object_id=None):
+    def append_call(function_name, arguments=None, object_id=None, source_call=None):
         repaired_calls.append({
+            **(source_call or {}),
             "function_name": function_name,
             "arguments": arguments or {},
         })
@@ -1494,7 +1585,12 @@ def _repair_container_sequence(user_text, tool_calls, selected_object_ids):
 
         if container_name is None:
             close_active_container()
-            append_call(function_name, call["arguments"], object_id)
+            append_call(
+                function_name,
+                call["arguments"],
+                object_id,
+                source_call=call,
+            )
             continue
 
         if active_container is not None and active_container != container_name:
@@ -1504,7 +1600,12 @@ def _repair_container_sequence(user_text, tool_calls, selected_object_ids):
             append_call(definitions[container_name]["open"])
             states[container_name] = "open"
 
-        append_call(function_name, call["arguments"], object_id)
+        append_call(
+            function_name,
+            call["arguments"],
+            object_id,
+            source_call=call,
+        )
         active_container = container_name
 
     close_active_container()
@@ -1797,6 +1898,17 @@ def _check_response(
             "tool_calls": [],
         }
 
+    try:
+        validated_tool_calls = _validate_and_normalize_execution_plan(
+            validated_tool_calls
+        )
+    except AgentError as exc:
+        return {
+            "answer": f"雙臂任務規劃無效，因此不會執行：{exc}。",
+            "tool_calls": [],
+            "_retryable": True,
+        }
+
     container_problems = _check_container_sequence(
         user_text=user_text,
         tool_calls=validated_tool_calls,
@@ -1892,6 +2004,100 @@ def _check_response(
     }
 
 
+def _validate_and_normalize_execution_plan(tool_calls):
+    """Validate DAG metadata and serialize steps that use the same arm.
+
+    Missing metadata belongs to legacy/direct plans. It is filled here so the
+    existing single-arm behavior remains ordered while new LLM plans may expose
+    independent left/right branches.
+    """
+    normalized = []
+    used_ids = set()
+
+    for index, call in enumerate(tool_calls):
+        if not isinstance(call, dict):
+            raise AgentError(f"第 {index + 1} 個步驟必須是 object")
+
+        item = call.copy()
+        step_id = item.get("id")
+        if not isinstance(step_id, str) or not step_id.strip():
+            base = f"step_{index + 1}"
+            step_id = base
+            suffix = 2
+            while step_id in used_ids:
+                step_id = f"{base}_{suffix}"
+                suffix += 1
+        else:
+            step_id = step_id.strip()
+
+        if step_id in used_ids:
+            raise AgentError(f"步驟 id 重複：{step_id}")
+        used_ids.add(step_id)
+
+        arm_name = item.get("arm_name", "right")
+        if arm_name not in ARM_NAMES:
+            raise AgentError(f"步驟 {step_id} 的 arm_name 不合法：{arm_name}")
+
+        depends_on = item.get("depends_on", [])
+        if not isinstance(depends_on, list) or not all(
+            isinstance(value, str) and value.strip() for value in depends_on
+        ):
+            raise AgentError(f"步驟 {step_id} 的 depends_on 格式錯誤")
+        depends_on = [value.strip() for value in depends_on]
+        if len(depends_on) != len(set(depends_on)):
+            raise AgentError(f"步驟 {step_id} 的 depends_on 不可重複")
+        if step_id in depends_on:
+            raise AgentError(f"步驟 {step_id} 不可依賴自己")
+
+        item.update({
+            "id": step_id,
+            "arm_name": arm_name,
+            "depends_on": depends_on,
+        })
+        normalized.append(item)
+
+    known_ids = {item["id"] for item in normalized}
+    for item in normalized:
+        unknown = set(item["depends_on"]) - known_ids
+        if unknown:
+            raise AgentError(
+                f"步驟 {item['id']} 依賴不存在的步驟："
+                + "、".join(sorted(unknown))
+            )
+
+    # Preserve listed order within each arm. Cross-arm steps remain independent
+    # unless the planner supplied an explicit dependency.
+    previous_by_arm = {}
+    for item in normalized:
+        previous_id = previous_by_arm.get(item["arm_name"])
+        if previous_id is not None and previous_id not in item["depends_on"]:
+            item["depends_on"].append(previous_id)
+        previous_by_arm[item["arm_name"]] = item["id"]
+
+    dependencies = {
+        item["id"]: set(item["depends_on"])
+        for item in normalized
+    }
+    visiting = set()
+    visited = set()
+
+    def visit(step_id):
+        if step_id in visiting:
+            raise AgentError("步驟依賴形成循環")
+        if step_id in visited:
+            return
+        visiting.add(step_id)
+        for dependency_id in dependencies[step_id]:
+            visit(dependency_id)
+        visiting.remove(step_id)
+        visited.add(step_id)
+
+    for step_id in dependencies:
+        visit(step_id)
+
+    return normalized
+
+
 def _validate_tool_call(tool_call, index):
     """
     驗證單一工具呼叫。
@@ -1908,6 +2114,9 @@ def _validate_tool_call(tool_call, index):
         )
 
     allowed_fields = {
+        "id",
+        "arm_name",
+        "depends_on",
         "function_name",
         "arguments",
     }
@@ -1936,6 +2145,29 @@ def _validate_tool_call(tool_call, index):
             f"第 {step_number} 個 function_name 不可為空字串"
         )
 
+    step_id = tool_call.get("id", f"step_{step_number}")
+    if not isinstance(step_id, str) or not step_id.strip():
+        raise AgentError(f"第 {step_number} 個 id 必須是非空字串")
+    step_id = step_id.strip()
+
+    # 舊版規劃沒有 arm_name，暫時沿用原本的右手行為；
+    # 新版 LLM schema 會強制明確輸出 left 或 right。
+    arm_name = tool_call.get("arm_name", "right")
+    if arm_name not in ARM_NAMES:
+        raise AgentError(
+            f"第 {step_number} 個 arm_name 不合法：{arm_name}，"
+            "只能是 left 或 right"
+        )
+
+    depends_on = tool_call.get("depends_on", [])
+    if not isinstance(depends_on, list) or not all(
+        isinstance(item, str) and item.strip() for item in depends_on
+    ):
+        raise AgentError(f"第 {step_number} 個 depends_on 必須是非空字串陣列")
+    depends_on = [item.strip() for item in depends_on]
+    if len(depends_on) != len(set(depends_on)):
+        raise AgentError(f"第 {step_number} 個 depends_on 不可重複")
+
     if not isinstance(arguments, dict):
         raise AgentError(
             f"第 {step_number} 個 arguments 必須是 object"
@@ -1943,6 +2175,23 @@ def _validate_tool_call(tool_call, index):
 
     # 使用副本進行正規化，避免修改模型回傳的原始資料。
     arguments = arguments.copy()
+
+    # 小型模型偶爾會把 step 層級的 arm_name 放進 arguments。
+    # 只對這個已知 metadata 做明確正規化；其他未授權參數仍會被拒絕。
+    nested_arm_name = arguments.pop("arm_name", None)
+    if nested_arm_name is not None:
+        if nested_arm_name not in ARM_NAMES:
+            raise AgentError(
+                f"第 {step_number} 個 arguments.arm_name 不合法："
+                f"{nested_arm_name}"
+            )
+        explicit_arm_name = tool_call.get("arm_name")
+        if explicit_arm_name is not None and explicit_arm_name != nested_arm_name:
+            raise AgentError(
+                f"第 {step_number} 個 arm_name 衝突："
+                f"步驟為 {explicit_arm_name}，arguments 為 {nested_arm_name}"
+            )
+        arm_name = nested_arm_name
 
     tool = get_tool(function_name)
 
@@ -2006,6 +2255,9 @@ def _validate_tool_call(tool_call, index):
 
     return (
         {
+            "id": step_id,
+            "arm_name": arm_name,
+            "depends_on": depends_on,
             "function_name": function_name,
             "arguments": arguments,
         },
