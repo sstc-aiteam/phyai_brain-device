@@ -24,6 +24,7 @@ def start_robot_recording():
         initial_gripper_position=data.get("initial_gripper_position", 0),
         dataset_mode=data.get("dataset_mode", "multi_task"),
         dataset_format=data.get("dataset_format", "lerobot_v3"),
+        training_target=data.get("training_target"),
         dataset_name=data.get("dataset_name"),
     ))
 

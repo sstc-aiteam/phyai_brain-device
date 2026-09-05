@@ -178,7 +178,7 @@ def _resolve_dataset_path(
         else _service.task_slug(str(folder_name))
     )
     folder = os.path.join(mode, slug)
-    return os.path.join(DEFAULT_DATASET_DIR, "lerobot_v2", folder)
+    return os.path.join(DEFAULT_DATASET_DIR, "lerobot_v2", "groot_n15", folder)
 
 
 # 產生相容舊呼叫方式的 multi-task 路徑。

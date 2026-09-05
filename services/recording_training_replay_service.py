@@ -60,6 +60,7 @@ _record_gripper_name = None
 _record_camera_names = []
 _record_task = None
 _record_format = None
+_record_training_target = None
 _record_sample_count = 0
 _record_episode_index = None
 _record_freedrive = False
@@ -366,7 +367,7 @@ def register_task(task):
 
 def _dataset_path(
     dataset_format, dataset_mode, task, arm_name, output_path=None,
-    dataset_name=None,
+    dataset_name=None, training_target=None,
 ):
     if output_path:
         path = os.path.abspath(output_path)
@@ -380,7 +381,11 @@ def _dataset_path(
         folder = os.path.join(mode, dataset_slug(dataset_name))
     else:
         folder = os.path.join(mode, task_slug(task))
-    return os.path.join(DEFAULT_DATASET_DIR, dataset_format, folder)
+    format_folder = (
+        os.path.join(dataset_format, training_target)
+        if training_target else dataset_format
+    )
+    return os.path.join(DEFAULT_DATASET_DIR, format_folder, folder)
 
 
 def _recording_arm_info(arm_name):
@@ -425,7 +430,12 @@ def _capture_sample(arm_name, gripper_name, camera_names):
     }
 
 
-def _format_adapter(dataset_format):
+# 根據資料格式與訓練目標選擇錄製 adapter。
+def _format_adapter(dataset_format, training_target=None):
+    from recording_training_replay.recording.training_targets import (
+        resolve_training_target,
+    )
+    resolve_training_target(dataset_format, training_target)
     if dataset_format == "lerobot_v2":
         from recording_training_replay.recording import lerobotv2
         return lerobotv2
@@ -467,14 +477,14 @@ def start_recording(
     arm_name, gripper_name=None, output_path=None, interval=0.1,
     freedrive=True, record_video=True, task="robot demonstration",
     initial_gripper_position=0, dataset_mode="multi_task",
-    dataset_format="lerobot_v3", dataset_name=None,
+    dataset_format="lerobot_v3", dataset_name=None, training_target=None,
 ):
     """Start camera, enable freedrive, then record samples in a worker thread."""
     global _record_thread, _record_writer, _record_pending_sample, _record_error
     global _record_start_time, _record_output_path, _record_interval
     global _record_arm_name, _record_gripper_name, _record_camera_names
     global _record_task, _record_format, _record_sample_count, _record_episode_index
-    global _record_freedrive, _record_gripper_position
+    global _record_freedrive, _record_gripper_position, _record_training_target
 
     action = "start_recording"
     started_camera = False
@@ -509,12 +519,16 @@ def start_recording(
                 raise RuntimeError(f"camera '{camera_name}' 沒有 color frame")
             first_images[camera_name] = image.copy()
 
+        from recording_training_replay.recording.training_targets import (
+            resolve_training_target,
+        )
+        training_target = resolve_training_target(dataset_format, training_target)
         arm_info = _recording_arm_info(arm_name)
         path = _dataset_path(
             dataset_format, mode, task, arm_name, output_path,
-            dataset_name=dataset_name,
+            dataset_name=dataset_name, training_target=training_target,
         )
-        adapter = _format_adapter(dataset_format)
+        adapter = _format_adapter(dataset_format, training_target)
         writer = adapter.create_writer(path, fps, first_images, arm_info.get("driver"))
         episode_index = int(getattr(getattr(writer, "meta", None), "total_episodes", 0))
 
@@ -547,6 +561,7 @@ def start_recording(
             _record_camera_names = camera_names
             _record_task = task
             _record_format = dataset_format
+            _record_training_target = training_target
             _record_sample_count = 0
             _record_episode_index = episode_index
             _record_freedrive = bool(freedrive)
@@ -557,7 +572,8 @@ def start_recording(
             "recording": True, "output_path": path, "absolute_path": path,
             "arm_name": arm_name, "gripper_name": gripper_name,
             "camera_names": camera_names, "record_video": bool(record_video),
-            "dataset_format": dataset_format, "episode_index": episode_index,
+            "dataset_format": dataset_format, "training_target": training_target,
+            "episode_index": episode_index,
             "startup_seconds": 0.0,
         })
     except Exception as exc:
@@ -576,7 +592,9 @@ def stop_recording(arm_name=None, gripper_name=None, dataset_format=None):
     try:
         with _record_lock:
             thread = _record_thread
-            adapter = _format_adapter(_record_format) if _record_format else None
+            adapter = _format_adapter(
+                _record_format, _record_training_target
+            ) if _record_format else None
         if not thread:
             raise RuntimeError("recording is not active")
         _record_stop_event.set()
@@ -603,6 +621,7 @@ def stop_recording(arm_name=None, gripper_name=None, dataset_format=None):
             "recording": False, "output_path": _record_output_path,
             "sample_count": _record_sample_count, "episode_index": _record_episode_index,
             "dataset_format": _record_format,
+            "training_target": _record_training_target,
             "stop_timings": {"total_seconds": time.monotonic() - started},
         }
         with _record_lock:
@@ -628,6 +647,7 @@ def get_recording_status(dataset_format=None):
             "record_video": bool(_record_camera_names),
             "output_path": _record_output_path,
             "selected_format": _record_format or dataset_format,
+            "training_target": _record_training_target,
             "error": _record_error,
         })
 

@@ -174,8 +174,13 @@
                         <label for="datasetFormat">dataset format</label>
                         <select id="datasetFormat" name="dataset_format">
                             <option value="lerobot_v3">LeRobot v3</option>
-                            <option value="lerobot_v2">LeRobot v2（GR00T N1.5）</option>
+                            <option value="lerobot_v2">LeRobot v2</option>
                         </select>
+                    </div>
+                    <div class="field">
+                        <label for="trainingTarget">training target</label>
+                        <select id="trainingTarget" name="training_target"></select>
+                        <span id="trainingTargetHint" class="hint"></span>
                     </div>
                     <div class="field">
                         <label for="datasetMode">dataset mode</label>
@@ -555,6 +560,26 @@
         function showResponse(response) {
             apiResponse.textContent = JSON.stringify(response, null, 2);
         }
+        // 依 LeRobot 格式更新可選的訓練模型。
+        function syncTrainingTargets() {
+            const format = document.getElementById("datasetFormat").value;
+            const select = document.getElementById("trainingTarget");
+            const hint = document.getElementById("trainingTargetHint");
+            const targets = {
+                lerobot_v2: [{ value: "groot_n15", label: "GR00T N1.5" }],
+                lerobot_v3: [],
+            }[format] ?? [];
+            select.replaceChildren();
+            if (!targets.length) {
+                select.add(new Option("不轉換（保留原始格式）", ""));
+                select.disabled = true;
+                hint.textContent = "此格式目前尚未實作訓練模型轉換。";
+                return;
+            }
+            for (const target of targets) select.add(new Option(target.label, target.value));
+            select.disabled = false;
+            hint.textContent = "選擇錄製資料要產生的訓練模型格式。";
+        }
         function renderResolvedOutputPath() {
             const task = selectedTask();
             const arm = document.getElementById("armName").value;
@@ -565,7 +590,9 @@
             document.getElementById("datasetRoot").textContent = datasetRoot;
             const folderName = mode === "multi_task" ? datasetSlug(datasetName) : taskSlug(task);
             const folder = `${mode}/${folderName}`;
-            const expectedPath = `${datasetRoot}/${format}/${folder}`;
+            const target = document.getElementById("trainingTarget").value;
+            const formatPath = target ? `${format}/${target}` : format;
+            const expectedPath = `${datasetRoot}/${formatPath}/${folder}`;
             const existing = (taskRegistryData.tasks ?? []).find((item) =>
                 String(item.task ?? "").toLowerCase() === task.toLowerCase()
                 && String(item.arm_name ?? "").toLowerCase() === arm
@@ -803,7 +830,10 @@
             stopButton.disabled = !locked;
             openGripperButton.disabled = !locked;
             closeGripperButton.disabled = !locked;
-            if (!locked) syncDatasetModeUI();
+            if (!locked) {
+                syncDatasetModeUI();
+                syncTrainingTargets();
+            }
         }
         function startPreview(cameraName) {
             if (!cameraName || previewCameraName === cameraName) return;
@@ -878,6 +908,7 @@
                 initial_gripper_position: Number(document.getElementById("initialGripperPosition").value),
                 dataset_mode: document.getElementById("datasetMode").value,
                 dataset_format: document.getElementById("datasetFormat").value,
+                training_target: document.getElementById("trainingTarget").value || null,
                 dataset_name: document.getElementById("multiDatasetName").value.trim(),
             };
             startButton.disabled = true;
@@ -966,7 +997,11 @@
         document.getElementById("task").addEventListener("input", renderResolvedOutputPath);
         document.getElementById("registeredTask").addEventListener("change", renderResolvedOutputPath);
         document.getElementById("multiDatasetName").addEventListener("input", renderResolvedOutputPath);
-        document.getElementById("datasetFormat").addEventListener("change", renderResolvedOutputPath);
+        document.getElementById("datasetFormat").addEventListener("change", () => {
+            syncTrainingTargets();
+            renderResolvedOutputPath();
+        });
+        document.getElementById("trainingTarget").addEventListener("change", renderResolvedOutputPath);
         document.getElementById("datasetMode").addEventListener("change", () => {
             syncDatasetModeUI();
             renderResolvedOutputPath();
@@ -1068,6 +1103,7 @@
         });
         try { await loadRecordingDevices(); } catch (error) { showMessage(`设备读取失败：${error.message}`, true); }
         syncDatasetModeUI();
+        syncTrainingTargets();
         await loadTaskRegistry();
         try {
             await loadReplayCatalog(true);
