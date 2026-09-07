@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Robot Planning Dashboard</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      --bg: #081018;
+      --panel: #111c28;
+      --panel-2: #0b1520;
+      --line: #26394b;
+      --text: #e8f0f7;
+      --muted: #91a5b8;
+      --ok: #52d795;
+      --warn: #f4bf57;
+      --bad: #ff7474;
+      --accent: #4c8dff;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); }
+    main { width: min(1500px, calc(100% - 28px)); margin: 22px auto 48px; }
+    h1, h2, h3 { margin: 0; }
+    h1 { font-size: clamp(1.45rem, 3vw, 2rem); }
+    h2 { font-size: 1.1rem; }
+    .topbar, .section-head, .actions, .summary { display: flex; align-items: center; gap: 12px; }
+    .topbar { justify-content: space-between; margin-bottom: 18px; flex-wrap: wrap; }
+    .safe { color: var(--ok); font-size: .92rem; }
+    .summary { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); margin-bottom: 18px; }
+    .metric, .panel, .camera-card { border: 1px solid var(--line); background: var(--panel); border-radius: 14px; }
+    .metric { padding: 15px; }
+    .metric-label { color: var(--muted); font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; }
+    .metric-value { margin-top: 7px; font-size: 1.35rem; font-weight: 750; }
+    .panel { padding: 18px; margin-bottom: 18px; }
+    .section-head { justify-content: space-between; margin-bottom: 14px; flex-wrap: wrap; }
+    button { border: 0; border-radius: 8px; padding: 9px 14px; background: var(--accent); color: white; font-weight: 700; cursor: pointer; }
+    button.secondary { background: #263a50; }
+    button:disabled { opacity: .55; cursor: wait; }
+    .camera-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(390px, 1fr)); gap: 14px; }
+    .camera-card { padding: 14px; min-width: 0; }
+    .camera-title { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 10px; }
+    .badge { padding: 4px 8px; border-radius: 999px; font-size: .76rem; background: #26394b; color: var(--muted); }
+    .badge.ok { background: #123c2b; color: var(--ok); }
+    .badge.bad { background: #431f27; color: var(--bad); }
+    .views { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+    .view { margin: 0; min-width: 0; }
+    .view figcaption { color: var(--muted); font-size: .78rem; margin-bottom: 6px; }
+    .view img { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; display: block; background: #04090e; border-radius: 8px; border: 1px solid #1d2b38; }
+    .camera-message { min-height: 1.25em; margin-top: 9px; color: var(--muted); font-size: .82rem; }
+    textarea { width: 100%; min-height: 120px; resize: vertical; border: 1px solid #395169; border-radius: 10px; padding: 12px; background: var(--panel-2); color: var(--text); font: inherit; line-height: 1.5; }
+    input, select { width: 100%; border: 1px solid #395169; border-radius: 9px; padding: 10px; background: var(--panel-2); color: var(--text); font: inherit; }
+    .llm-config { display: grid; grid-template-columns: repeat(2, minmax(260px, 1fr)); gap: 12px; margin-bottom: 14px; }
+    .config-card { padding: 13px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+    .config-card h3 { margin-bottom: 10px; font-size: .95rem; }
+    .field { display: grid; gap: 6px; margin-top: 9px; }
+    .field label { color: var(--muted); font-size: .8rem; }
+    .key-row { margin: 12px 0 14px; }
+    .timing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 9px; margin-bottom: 14px; }
+    .timing-item { border: 1px solid var(--line); border-radius: 9px; padding: 10px; background: var(--panel-2); }
+    .timing-item span { display: block; color: var(--muted); font-size: .76rem; }
+    .timing-item strong { display: block; margin-top: 4px; font-size: 1.05rem; }
+    .actions { margin-top: 10px; justify-content: space-between; flex-wrap: wrap; }
+    .status-line { color: var(--muted); }
+    .status-line.ok { color: var(--ok); }
+    .status-line.bad { color: var(--bad); }
+    pre { margin: 0; max-height: 620px; overflow: auto; background: #060c12; border: 1px solid #1d2b38; border-radius: 10px; padding: 14px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+    .empty { color: var(--muted); padding: 24px; text-align: center; border: 1px dashed var(--line); border-radius: 10px; }
+    @media (max-width: 820px) {
+      .summary { grid-template-columns: 1fr 1fr; }
+      .camera-grid { grid-template-columns: 1fr; }
+      .views { grid-template-columns: 1fr; }
+      .llm-config { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="topbar">
+      <div>
+        <h1>Robot Planning Dashboard</h1>
+        <div class="safe">唯讀規劃模式：只呼叫 /api/agent/plan，不會執行硬體動作</div>
+      </div>
+      <div class="actions">
+        <button id="refresh-status" class="secondary" type="button">重新整理連線</button>
+        <button id="refresh-images" class="secondary" type="button">更新全部畫面</button>
+      </div>
+    </header>
+
+    <section class="summary" aria-label="設備連線摘要">
+      <div class="metric"><div class="metric-label">Robot Arms</div><div class="metric-value" id="arm-count">讀取中…</div></div>
+      <div class="metric"><div class="metric-label">Cameras</div><div class="metric-value" id="camera-count">讀取中…</div></div>
+      <div class="metric"><div class="metric-label">Grippers</div><div class="metric-value" id="gripper-count">讀取中…</div></div>
+      <div class="metric"><div class="metric-label">Planning API</div><div class="metric-value" id="api-state">待命</div></div>
+    </section>
+
+    <section class="panel">
+      <div class="section-head">
+        <div>
+          <h2>相機畫面</h2>
+          <div class="status-line" id="camera-summary">正在取得相機清單…</div>
+        </div>
+      </div>
+      <div class="camera-grid" id="camera-grid"></div>
+    </section>
+
+    <section class="panel">
+      <div class="section-head">
+        <div>
+          <h2>VLM 場景旁白</h2>
+          <div class="status-line" id="vlm-monitor-status">VLM Monitor: OFF</div>
+        </div>
+        <div class="actions">
+          <button id="vlm-once" type="button">VLM 分析一次</button>
+          <button id="vlm-monitor" class="secondary" type="button">VLM 持續監控：OFF</button>
+        </div>
+      </div>
+      <pre id="vlm-result">尚未分析。</pre>
+    </section>
+
+    <section class="panel">
+      <div class="section-head">
+        <div>
+          <h2>LLM 任務規劃</h2>
+          <div class="status-line">送出後會讀取目前感知資訊並產生 Abstract / Resolved Plan</div>
+        </div>
+      </div>
+      <div class="llm-config">
+        <div class="config-card">
+          <h3>Stage 1 · Actions / Arguments</h3>
+          <div class="field">
+            <label for="stage1-provider">Provider</label>
+            <select id="stage1-provider">
+              <option value="local">Local / Ollama</option>
+              <option value="openai">OpenAI</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="stage1-model">Model ID（可填任意該 provider 支援的模型）</label>
+            <input id="stage1-model" type="text" placeholder="Local 留空使用預設模型">
+          </div>
+        </div>
+        <div class="config-card">
+          <h3>Stage 2 · Relations</h3>
+          <div class="field">
+            <label for="stage2-provider">Provider</label>
+            <select id="stage2-provider">
+              <option value="local">Local / Ollama</option>
+              <option value="openai" selected>OpenAI</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="stage2-model">Model ID</label>
+            <input id="stage2-model" type="text" value="gpt-5.6-luna">
+          </div>
+        </div>
+      </div>
+      <div class="field key-row" id="api-key-row">
+        <label for="openai-api-key">OpenAI API key（只用於這次請求，不儲存、不顯示於輸出）</label>
+        <input id="openai-api-key" type="password" autocomplete="off" spellcheck="false" placeholder="若伺服器已有 OPENAI_API_KEY，可留空">
+      </div>
+      <label for="prompt">自然語言任務</label>
+      <textarea id="prompt">請規劃兩個互不依賴的動作：第一個沿 Z 軸正方向移動 0.01 公尺，第二個沿 Y 軸負方向移動 0.02 公尺。如果有兩支手臂可用，優先讓不同手臂分工；如果只有一支手臂，也可以依序完成。</textarea>
+      <div class="actions">
+        <span id="plan-status" class="status-line">尚未送出</span>
+        <button id="submit-plan" type="button">送出規劃</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-head">
+        <h2>任務計時</h2>
+        <span id="live-elapsed" class="status-line">尚未執行</span>
+      </div>
+      <div class="timing-grid" id="timing-grid">
+        <div class="empty">送出任務後顯示前端總時間與後端各階段耗時</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-head">
+        <h2>規劃輸出</h2>
+        <button id="copy-output" class="secondary" type="button">複製 JSON</button>
+      </div>
+      <pre id="output">結果會顯示在這裡。</pre>
+    </section>
+  </main>
+
+  <script>
+    const state = { cameras: [], activeCameras: new Set(), lastOutput: '' };
+    const $ = (selector) => document.querySelector(selector);
+    const armCount = $('#arm-count');
+    const cameraCount = $('#camera-count');
+    const gripperCount = $('#gripper-count');
+    const apiState = $('#api-state');
+    const cameraGrid = $('#camera-grid');
+    const cameraSummary = $('#camera-summary');
+    const planStatus = $('#plan-status');
+    const output = $('#output');
+    const timingGrid = $('#timing-grid');
+    const liveElapsed = $('#live-elapsed');
+    const vlmMonitorStatus = $('#vlm-monitor-status');
+    const vlmMonitorButton = $('#vlm-monitor');
+    const vlmResult = $('#vlm-result');
+
+    async function getJson(url, options = {}) {
+      const response = await fetch(url, { cache: 'no-store', ...options });
+      let body;
+      try { body = await response.json(); }
+      catch { throw new Error(`${url} 回傳的不是 JSON（HTTP ${response.status}）`); }
+      if (!response.ok || body.status === 'error') {
+        const error = new Error(body.message || `${url} HTTP ${response.status}`);
+        error.responseBody = body;
+        throw error;
+      }
+      return body;
+    }
+
+    function countConnected(items, readConnected) {
+      return items.filter(readConnected).length;
+    }
+
+    function setMetric(element, connected, total, failed = false) {
+      element.textContent = failed ? '讀取失敗' : `${connected} / ${total} 已連線`;
+      element.style.color = failed ? 'var(--bad)' : connected > 0 ? 'var(--ok)' : 'var(--warn)';
+    }
+
+    async function refreshConnections() {
+      $('#refresh-status').disabled = true;
+      const [armsResult, camerasResult, grippersResult] = await Promise.allSettled([
+        getJson('/api/arm/get_arm_status'),
+        getJson('/api/camera/get_camera_status'),
+        getJson('/api/gripper/get_gripper_status'),
+      ]);
+
+      if (armsResult.status === 'fulfilled') {
+        const arms = armsResult.value.data?.arms || [];
+        setMetric(armCount, countConnected(arms, item => item.status?.connected === true), arms.length);
+      } else setMetric(armCount, 0, 0, true);
+
+      if (grippersResult.status === 'fulfilled') {
+        const grippers = grippersResult.value.data?.grippers || [];
+        setMetric(gripperCount, countConnected(grippers, item => item.connected === true), grippers.length);
+      } else setMetric(gripperCount, 0, 0, true);
+
+      if (camerasResult.status === 'fulfilled') {
+        const nextCameras = camerasResult.value.data?.cameras || [];
+        const connected = countConnected(nextCameras, item => item.status?.connected === true);
+        setMetric(cameraCount, connected, nextCameras.length);
+        const previousNames = state.cameras.map(item => item.camera_name).sort().join('|');
+        const nextNames = nextCameras.map(item => item.camera_name).sort().join('|');
+        state.cameras = nextCameras;
+        if (previousNames !== nextNames || cameraGrid.children.length === 0) {
+          renderCameras();
+        } else {
+          updateCameraStatuses();
+        }
+      } else {
+        setMetric(cameraCount, 0, 0, true);
+        cameraSummary.textContent = `相機狀態讀取失敗：${camerasResult.reason.message}`;
+        cameraGrid.innerHTML = '<div class="empty">無法取得相機清單</div>';
+      }
+      $('#refresh-status').disabled = false;
+    }
+
+    function renderVlmMonitor(body) {
+      const running = body.monitor_running === true
+        || ['running', 'already_running'].includes(body.runtime_status);
+      vlmMonitorStatus.className = `status-line ${running ? 'ok' : ''}`;
+      vlmMonitorStatus.textContent = `VLM Monitor: ${running ? 'ON' : 'OFF'}`;
+      vlmMonitorButton.textContent = `VLM 持續監控：${running ? 'ON' : 'OFF'}`;
+      vlmMonitorButton.dataset.running = String(running);
+    }
+
+    async function loadVlmState() {
+      try {
+        renderVlmMonitor(await getJson('/api/vlm/state'));
+      } catch (error) {
+        vlmMonitorStatus.className = 'status-line bad';
+        vlmMonitorStatus.textContent = `VLM 狀態讀取失敗：${error.message}`;
+      }
+    }
+
+    $('#vlm-once').addEventListener('click', async event => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      vlmResult.textContent = 'VLM 分析中…';
+      try {
+        const body = await getJson('/api/vlm/narrate_once', {method: 'POST'});
+        const timestamp = body.timestamp
+          ? new Date(Number(body.timestamp) * 1000).toLocaleString()
+          : '-';
+        vlmResult.textContent = [
+          body.description || (body.status === 'no_snapshot' ? '目前沒有可用的場景 snapshot。' : '本次沒有描述。'),
+          `timestamp: ${timestamp}`,
+          `camera: ${body.camera || '-'}`,
+          `source: ${body.source || '-'}`,
+        ].join('\n');
+      } catch (error) {
+        vlmResult.textContent = `VLM 分析失敗：${error.message}`;
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    vlmMonitorButton.addEventListener('click', async () => {
+      vlmMonitorButton.disabled = true;
+      const running = vlmMonitorButton.dataset.running === 'true';
+      try {
+        const body = await getJson(
+          running ? '/api/vlm/monitor/stop' : '/api/vlm/monitor/start',
+          {method: 'POST'},
+        );
+        renderVlmMonitor(body);
+      } catch (error) {
+        vlmMonitorStatus.className = 'status-line bad';
+        vlmMonitorStatus.textContent = `VLM Monitor 操作失敗：${error.message}`;
+      } finally {
+        vlmMonitorButton.disabled = false;
+      }
+    });
+
+    function cameraSort(item) {
+      const name = item.camera_name;
+      if (name === 'left') return `0-${name}`;
+      if (name === 'right') return `1-${name}`;
+      return `2-${name}`;
+    }
+
+    function renderCameras() {
+      const cameras = [...state.cameras].sort((a, b) => cameraSort(a).localeCompare(cameraSort(b)));
+      cameraSummary.textContent = cameras.length ? `偵測到 ${cameras.length} 台已設定相機` : '沒有已設定相機';
+      if (!cameras.length) {
+        cameraGrid.innerHTML = '<div class="empty">目前沒有相機設定</div>';
+        return;
+      }
+      cameraGrid.innerHTML = cameras.map(camera => {
+        const name = camera.camera_name;
+        const connected = camera.status?.connected === true;
+        const error = camera.error || '';
+        return `
+          <article class="camera-card" data-camera="${name}">
+            <div class="camera-title">
+              <h3>${name} camera</h3>
+              <span class="badge ${connected ? 'ok' : 'bad'}">${connected ? '已連線' : '未連線'}</span>
+            </div>
+            <div class="actions">
+              <button type="button" data-action="start">啟動</button>
+              <button type="button" class="secondary" data-action="refresh">更新畫面</button>
+            </div>
+            <div class="views">
+              <figure class="view"><figcaption>RGB</figcaption><img data-view="rgb" alt="${name} RGB"></figure>
+              <figure class="view"><figcaption>YOLO</figcaption><img data-view="yolo" alt="${name} YOLO"></figure>
+            </div>
+            <div class="camera-message">${error || (connected ? '可以更新畫面' : '請先啟動相機')}</div>
+          </article>`;
+      }).join('');
+
+      const connectedCards = [];
+      cameraGrid.querySelectorAll('.camera-card').forEach(card => {
+        card.querySelector('[data-action="start"]').addEventListener('click', () => startCamera(card));
+        card.querySelector('[data-action="refresh"]').addEventListener('click', () => refreshCameraImages(card));
+        if (card.querySelector('.badge').classList.contains('ok')) {
+          state.activeCameras.add(card.dataset.camera);
+          connectedCards.push(card);
+        }
+      });
+      connectedCards.reduce(
+        (previous, card) => previous.then(() => refreshCameraImages(card)),
+        Promise.resolve(),
+      );
+    }
+
+    function updateCameraStatuses() {
+      const statuses = new Map(
+        state.cameras.map(item => [item.camera_name, item])
+      );
+      cameraGrid.querySelectorAll('.camera-card').forEach(card => {
+        const camera = statuses.get(card.dataset.camera);
+        const connected = camera?.status?.connected === true;
+        const badge = card.querySelector('.badge');
+        badge.className = `badge ${connected ? 'ok' : 'bad'}`;
+        badge.textContent = connected ? '已連線' : '未連線';
+        if (connected) state.activeCameras.add(card.dataset.camera);
+        else state.activeCameras.delete(card.dataset.camera);
+      });
+    }
+
+    async function fetchImage(image, url) {
+      const response = await fetch(url, {cache: 'no-store'});
+      const contentType = response.headers.get('content-type') || '';
+      if (!response.ok || !contentType.startsWith('image/')) {
+        const body = await response.text();
+        const detail = body.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 180);
+        throw new Error(`HTTP ${response.status}${detail ? `：${detail}` : ''}`);
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      await new Promise((resolve, reject) => {
+        image.onload = resolve;
+        image.onerror = () => reject(new Error('回傳內容不是有效影像'));
+        image.src = objectUrl;
+      });
+      if (image.dataset.objectUrl) URL.revokeObjectURL(image.dataset.objectUrl);
+      image.dataset.objectUrl = objectUrl;
+    }
+
+    async function refreshCameraImages(card) {
+      const name = card.dataset.camera;
+      const stamp = Date.now();
+      const message = card.querySelector('.camera-message');
+      const rgb = card.querySelector('[data-view="rgb"]');
+      const yolo = card.querySelector('[data-view="yolo"]');
+      const refreshButton = card.querySelector('[data-action="refresh"]');
+      refreshButton.disabled = true;
+      const results = [];
+
+      message.textContent = '正在更新 RGB…';
+      try {
+        await fetchImage(
+          rgb,
+          `/api/vision/camera_rgb?camera_name=${encodeURIComponent(name)}&_=${stamp}`,
+        );
+        results.push('RGB 成功');
+      } catch (error) {
+        results.push(`RGB 失敗（${error.message}）`);
+      }
+
+      message.textContent = `${results.join('；')}；正在執行 YOLO…`;
+      try {
+        await fetchImage(
+          yolo,
+          `/api/vision/yolo_image?camera_name=${encodeURIComponent(name)}&model_name=object_detector&include_robot_xyz=false&_=${stamp + 1}`,
+        );
+        results.push('YOLO 成功');
+      } catch (error) {
+        results.push(`YOLO 失敗（${error.message}）`);
+      }
+
+      message.textContent = `${results.join('；')}；${new Date().toLocaleTimeString()}`;
+      refreshButton.disabled = false;
+    }
+
+    async function startCamera(card) {
+      const name = card.dataset.camera;
+      const button = card.querySelector('[data-action="start"]');
+      const message = card.querySelector('.camera-message');
+      button.disabled = true;
+      message.textContent = `正在啟動 ${name} camera…`;
+      try {
+        await getJson('/api/camera/start_camera', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({camera_name: name}),
+        });
+        state.activeCameras.add(name);
+        card.querySelector('.badge').className = 'badge ok';
+        card.querySelector('.badge').textContent = '已連線';
+        refreshCameraImages(card);
+      } catch (error) {
+        message.textContent = `啟動失敗：${error.message}`;
+      } finally { button.disabled = false; }
+    }
+
+    $('#refresh-status').addEventListener('click', refreshConnections);
+    $('#refresh-images').addEventListener('click', () => {
+      const cards = [...cameraGrid.querySelectorAll('.camera-card')];
+      cards.reduce(
+        (previous, card) => previous.then(() => refreshCameraImages(card)),
+        Promise.resolve(),
+      );
+    });
+
+    $('#submit-plan').addEventListener('click', async () => {
+      const button = $('#submit-plan');
+      const userText = $('#prompt').value.trim();
+      if (!userText) { planStatus.className = 'status-line bad'; planStatus.textContent = '請先輸入任務'; return; }
+      button.disabled = true;
+      const startedAt = performance.now();
+      const updateLiveElapsed = () => {
+        liveElapsed.textContent = `執行中… ${((performance.now() - startedAt) / 1000).toFixed(1)} 秒`;
+      };
+      const liveTimer = setInterval(updateLiveElapsed, 100);
+      updateLiveElapsed();
+      apiState.textContent = '規劃中…';
+      planStatus.className = 'status-line';
+      planStatus.textContent = 'LLM 與 Planning Pipeline 處理中…';
+      try {
+        const stage1Provider = $('#stage1-provider').value;
+        const stage2Provider = $('#stage2-provider').value;
+        const stage1Model = $('#stage1-model').value.trim();
+        const stage2Model = $('#stage2-model').value.trim();
+        const apiKey = $('#openai-api-key').value.trim();
+        if ((stage1Provider === 'openai' || stage2Provider === 'openai') && !apiKey) {
+          planStatus.textContent = '未輸入 API key，將使用伺服器環境中的 OPENAI_API_KEY';
+        }
+        const planningOptions = {
+          stage1: {provider: stage1Provider, ...(stage1Model ? {model: stage1Model} : {})},
+          stage2: {provider: stage2Provider, ...(stage2Model ? {model: stage2Model} : {})},
+          ...(apiKey ? {openai_api_key: apiKey} : {}),
+        };
+        const body = await getJson('/api/agent/plan', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({user_text: userText, planning_options: planningOptions}),
+        });
+        state.lastOutput = JSON.stringify(body, null, 2);
+        output.textContent = state.lastOutput;
+        const data = body.data || {};
+        const safe = data.executable === false && data.will_execute === false && Array.isArray(data.tool_calls) && data.tool_calls.length === 0;
+        planStatus.className = `status-line ${safe ? 'ok' : 'bad'}`;
+        planStatus.textContent = safe ? '規劃成功：已確認為唯讀、不執行' : '收到結果，但安全旗標不完整，請勿執行';
+        apiState.textContent = safe ? '規劃成功' : '需檢查';
+        apiState.style.color = safe ? 'var(--ok)' : 'var(--bad)';
+        renderTimings(data.timings_ms || {}, performance.now() - startedAt);
+      } catch (error) {
+        const errorBody = error.responseBody || {status: 'error', message: error.message};
+        state.lastOutput = JSON.stringify(errorBody, null, 2);
+        output.textContent = state.lastOutput;
+        planStatus.className = 'status-line bad';
+        planStatus.textContent = `規劃失敗：${error.message}`;
+        apiState.textContent = '錯誤'; apiState.style.color = 'var(--bad)';
+        renderTimings(errorBody.timings_ms || {}, performance.now() - startedAt);
+      } finally {
+        clearInterval(liveTimer);
+        const elapsed = performance.now() - startedAt;
+        liveElapsed.textContent = `完成 · ${(elapsed / 1000).toFixed(2)} 秒`;
+        button.disabled = false;
+      }
+    });
+
+    function renderTimings(timings, browserTotalMs) {
+      const labels = {
+        stage1_action_extraction: 'Stage 1 · Actions',
+        stage2_relation_classification: 'Stage 2 · Relations',
+        dag_compile: 'DAG compile',
+        abstract_planner_total: 'Abstract planner',
+        registry_build: 'Registry',
+        validation_probe_allocation_resolution: '驗證／探測／分配／解析',
+        perception_context: '感知 context',
+        request_total_backend: '後端總時間',
+      };
+      const entries = Object.entries(timings).filter(([, value]) => Number.isFinite(Number(value)));
+      entries.push(['browser_total', browserTotalMs]);
+      timingGrid.innerHTML = entries.map(([key, value]) => `
+        <div class="timing-item">
+          <span>${labels[key] || key}</span>
+          <strong>${(Number(value) / 1000).toFixed(3)} 秒</strong>
+        </div>
+      `).join('');
+    }
+
+    function updateApiKeyVisibility() {
+      const usesOpenAI = $('#stage1-provider').value === 'openai' || $('#stage2-provider').value === 'openai';
+      $('#api-key-row').style.display = usesOpenAI ? 'grid' : 'none';
+      for (const stage of ['stage1', 'stage2']) {
+        const provider = $(`#${stage}-provider`).value;
+        const model = $(`#${stage}-model`);
+        if (provider === 'openai' && !model.value.trim()) model.value = 'gpt-5.6-luna';
+        model.placeholder = provider === 'openai' ? '例如 gpt-5.6-luna' : '留空使用 Ollama 預設模型';
+      }
+    }
+
+    $('#stage1-provider').addEventListener('change', updateApiKeyVisibility);
+    $('#stage2-provider').addEventListener('change', updateApiKeyVisibility);
+
+    $('#copy-output').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(state.lastOutput || output.textContent); }
+      catch { /* Clipboard may be unavailable on non-secure origins. */ }
+    });
+
+    refreshConnections();
+    loadVlmState();
+    updateApiKeyVisibility();
+    setInterval(refreshConnections, 10000);
+  </script>
+</body>
+</html>

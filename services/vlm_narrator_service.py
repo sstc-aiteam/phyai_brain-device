@@ -1,23 +1,20 @@
 from __future__ import annotations
 
 import base64
-import hashlib
 import io
 import json
 import math
 import os
-import random
 import re
 import threading
 import time
-import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from PIL import Image, ImageDraw, ImageFont
 
-from services import vision_service
+from services import llm_service, vision_service
 
 # In-process VLM ownership boundary:
 # - services/vision_service.py owns camera capture, YOLO, filtering, depth,
@@ -29,9 +26,12 @@ from services import vision_service
 VLM_SESSION_ID = str(
     os.environ.get("VLM_SESSION_ID") or "d405-main"
 ).strip() or "d405-main"
-VLM_NARRATOR_HZ = max(
-    0.2,
-    float(os.environ.get("VLM_NARRATOR_HZ") or 2.0),
+VLM_CAMERA_NAME = str(
+    os.environ.get("VLM_CAMERA_NAME") or "left"
+).strip() or "left"
+VLM_NARRATOR_INTERVAL_SEC = max(
+    0.1,
+    float(os.environ.get("VLM_NARRATOR_INTERVAL_SEC") or 4.0),
 )
 VLM_NARRATOR_JPEG_QUALITY = max(
     50,
@@ -41,23 +41,17 @@ VLM_NARRATOR_JPEG_QUALITY = max(
 _NARRATOR_RUNTIME_LOCK = threading.Lock()
 _NARRATOR_RUNTIME_STOP = threading.Event()
 _NARRATOR_RUNTIME_THREAD: threading.Thread | None = None
+_NARRATOR_OBSERVE_LOCK = threading.Lock()
 _NARRATOR_LAST_FRAME_KEY = ""
 _NARRATOR_LAST_ERROR = ""
 _NARRATOR_LAST_RESULT_AT = 0.0
 
-QWEN_BASE_URL = str(
-    os.environ.get("NARRATOR_QWEN_BASE_URL") or "http://127.0.0.1:11434/v1"
-).rstrip("/")
 QWEN_MODEL = str(
     os.environ.get("NARRATOR_QWEN_MODEL")
     or "qwen3-vl:2b-instruct-q4_K_M"
 ).strip()
 QWEN_TEMPERATURE = float(os.environ.get("NARRATOR_TEMPERATURE") or 0.35)
-QWEN_TOP_P = float(os.environ.get("NARRATOR_TOP_P") or 0.80)
 QWEN_TIMEOUT_SEC = float(os.environ.get("NARRATOR_QWEN_TIMEOUT_SEC") or 45)
-OLLAMA_NATIVE_URL = str(
-    os.environ.get("NARRATOR_OLLAMA_NATIVE_URL") or "http://127.0.0.1:11434"
-).rstrip("/")
 QWEN_KEEP_ALIVE = str(
     os.environ.get("NARRATOR_QWEN_KEEP_ALIVE") or "-1"
 ).strip()
@@ -71,18 +65,6 @@ QWEN_KEEPALIVE_INTERVAL_SEC = max(
 
 # Fast VLM mode. These values only reduce the expensive visual-language request;
 # YOLO detections, tracking, depth ordering, and pairwise safety logic are unchanged.
-VLM_MAX_OBJECTS = max(
-    1,
-    int(os.environ.get("NARRATOR_VLM_MAX_OBJECTS") or 4),
-)
-VLM_OBJECT_IMAGE_EDGE = max(
-    160,
-    int(os.environ.get("NARRATOR_VLM_OBJECT_IMAGE_EDGE") or 160),
-)
-VLM_OBJECT_MAX_TOKENS = max(
-    64,
-    int(os.environ.get("NARRATOR_VLM_OBJECT_MAX_TOKENS") or 140),
-)
 VLM_GENERAL_IMAGE_EDGE = max(
     256,
     int(os.environ.get("NARRATOR_VLM_GENERAL_IMAGE_EDGE") or 512),
@@ -120,65 +102,8 @@ VLM_FIRST_DETAIL_TARGET_SEC = max(
     3.0,
     float(os.environ.get("NARRATOR_VLM_FIRST_DETAIL_TARGET_SEC") or 10.0),
 )
-VLM_EMPTY_SCENE_TEXT = str(
-    os.environ.get("NARRATOR_VLM_EMPTY_SCENE_TEXT")
-    or "目前椅面上未見可辨識物品。"
-).strip()
-
-
-# Optional assisted exhibition mode.
-#
-# live:
-#   Use the real Qwen3-VL pipeline.
-# assisted:
-#   Keep the real camera, YOLO detections, stable IDs, positions and placement
-#   rules, but provide green/purple narration from a deterministic JSON bank.
-NARRATOR_OUTPUT_MODE = str(
-    os.environ.get("NARRATOR_OUTPUT_MODE") or "auto"
-).strip().lower()
-if NARRATOR_OUTPUT_MODE not in {"auto", "live", "assisted"}:
-    raise RuntimeError(
-        "NARRATOR_OUTPUT_MODE must be 'auto', 'live' or 'assisted', "
-        f"got {NARRATOR_OUTPUT_MODE!r}"
-    )
-
-# In auto mode the active browser page chooses the runtime output mode.
-# index.html sends a live heartbeat; demo.html sends an assisted heartbeat.
-# If all demo heartbeats disappear, the service safely falls back to live.
-UI_MODE_HEARTBEAT_TTL_SEC = max(
-    2.5,
-    float(os.environ.get("NARRATOR_UI_MODE_HEARTBEAT_TTL_SEC") or 4.5),
-)
-UI_MODE_WATCH_INTERVAL_SEC = max(
-    0.25,
-    float(os.environ.get("NARRATOR_UI_MODE_WATCH_INTERVAL_SEC") or 0.5),
-)
-ASSISTED_TRACK_HOLD_SEC = max(
-    0.5,
-    float(os.environ.get("NARRATOR_ASSISTED_TRACK_HOLD_SEC") or 1.5),
-)
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEMO_DESCRIPTION_PATH = Path(
-    os.environ.get("NARRATOR_DEMO_DESCRIPTION_PATH")
-    or PROJECT_ROOT / "scene_narrator" / "demo_description_bank.json"
-).expanduser().resolve()
-DEMO_SEED = str(
-    os.environ.get("NARRATOR_DEMO_SEED") or "official_visit_default"
-).strip()
-ASSISTED_OUTPUT_GAP_SEC = max(
-    0.0,
-    float(
-        os.environ.get("NARRATOR_ASSISTED_OUTPUT_GAP_SEC")
-        or 0.7
-    ),
-)
-DEMO_DESCRIPTION_BANK: dict[str, Any] = {}
-
 MIN_DETECTION_CONF = float(os.environ.get("NARRATOR_MIN_CONF") or 0.35)
 MAX_NARRATION_LINES = int(os.environ.get("NARRATOR_MAX_LINES") or 5)
-SEMANTIC_DEDUP_WINDOW_SEC = float(os.environ.get("NARRATOR_SEMANTIC_DEDUP_SEC") or 20.0)
-MAX_LINES_PER_TYPE = int(os.environ.get("NARRATOR_MAX_LINES_PER_TYPE") or 2)
-SCENE_CHANGE_MIN_SEC = float(os.environ.get("NARRATOR_MIN_INTERVAL_SEC") or 2.2)
 TRACK_IOU_THRESHOLD = float(os.environ.get("NARRATOR_TRACK_IOU") or 0.35)
 TRACK_TTL_SEC = float(os.environ.get("NARRATOR_TRACK_TTL_SEC") or 8.0)
 TRACK_BOX_SMOOTH_ALPHA = float(
@@ -192,11 +117,6 @@ MIN_TRACK_HITS_FOR_NARRATION = int(
 # the browser overlay still controls its own shorter visual fade-out.
 SCENE_TRACK_HOLD_SEC = float(
     os.environ.get("NARRATOR_SCENE_TRACK_HOLD_SEC") or 8.0
-)
-# A previously announced class may be announced again only after it has been
-# continuously absent for this long. Short detector dropouts must stay silent.
-PRESENCE_REANNOUNCE_ABSENCE_SEC = float(
-    os.environ.get("NARRATOR_PRESENCE_REANNOUNCE_ABSENCE_SEC") or 30.0
 )
 RELATIONS_ENABLED = str(
     os.environ.get("NARRATOR_RELATIONS_ENABLED") or "0"
@@ -291,17 +211,11 @@ PAIRWISE_DISAPPEAR_CLEAR_SEC = float(
     os.environ.get("NARRATOR_PAIRWISE_DISAPPEAR_CLEAR_SEC") or 2.5
 )
 
-IDLE_NARRATION_INTERVAL_SEC = float(
-    os.environ.get("NARRATOR_IDLE_INTERVAL_SEC") or 5.5
-)
 GENERAL_IDLE_AFTER_SEC = float(
     os.environ.get("NARRATOR_GENERAL_IDLE_AFTER_SEC") or 1.0
 )
 # Retained for backward-compatible diagnostics only. Normal green/purple VLM
 # narration is event-triggered and is never restarted by a periodic timer.
-GENERAL_IDLE_INTERVAL_SEC = float(
-    os.environ.get("NARRATOR_GENERAL_IDLE_INTERVAL_SEC") or 0.0
-)
 # Even if green and purple results become ready close together, keep a small
 # visible gap so the UI reads as a progressive explanation instead of a burst.
 GREEN_PURPLE_MIN_GAP_SEC = max(
@@ -311,8 +225,8 @@ GREEN_PURPLE_MIN_GAP_SEC = max(
 
 # YOLO-priority scheduling. Qwen waits until the detected scene has remained
 # stable for a few seconds, and only one Qwen request may use the local model at
-# a time. This prevents stale scene-change workers, unboxed audits, and idle
-# comments from piling up while YOLO is trying to keep the boxes current.
+# a time. This prevents stale scene-change workers and idle comments from piling
+# up while YOLO is trying to keep the boxes current.
 QWEN_ENRICH_DELAY_SEC = float(
     os.environ.get("NARRATOR_QWEN_ENRICH_DELAY_SEC") or 1.0
 )
@@ -323,84 +237,14 @@ SCENE_CHANGE_CONFIRM_FRAMES = max(
     1,
     int(os.environ.get("NARRATOR_SCENE_CHANGE_CONFIRM_FRAMES") or 2),
 )
-UNBOXED_AUDIT_ENABLED = str(
-    os.environ.get("NARRATOR_UNBOXED_AUDIT_ENABLED") or "0"
-).strip().lower() in {"1", "true", "yes", "on"}
-UNBOXED_AUDIT_DELAY_SEC = float(
-    os.environ.get("NARRATOR_UNBOXED_AUDIT_DELAY_SEC") or 12.0
-)
-UNBOXED_AUDIT_INTERVAL_SEC = float(
-    os.environ.get("NARRATOR_UNBOXED_AUDIT_INTERVAL_SEC") or 30.0
-)
 GENERAL_IDLE_ENABLED = str(
     os.environ.get("NARRATOR_GENERAL_IDLE_ENABLED") or "1"
 ).strip().lower() in {"1", "true", "yes", "on"}
 
 # llama.cpp is commonly started with -np 1. Keep the client side serialized too,
 # and drop stale/extra jobs instead of letting background threads queue forever.
-_QWEN_WORK_LOCK = threading.Lock()
 _QWEN_KEEPALIVE_STOP = threading.Event()
 _QWEN_KEEPALIVE_THREAD: threading.Thread | None = None
-
-_UI_MODE_LOCK = threading.Lock()
-_UI_MODE_CLIENTS: dict[str, dict[str, Any]] = {}
-_UI_MODE_WATCHDOG_STOP = threading.Event()
-_UI_MODE_WATCHDOG_THREAD: threading.Thread | None = None
-_RUNTIME_OUTPUT_MODE = (
-    NARRATOR_OUTPUT_MODE
-    if NARRATOR_OUTPUT_MODE in {"live", "assisted"}
-    else "live"
-)
-
-
-def runtime_output_mode() -> str:
-    """Return the effective green/purple output mode for this process."""
-    if NARRATOR_OUTPUT_MODE in {"live", "assisted"}:
-        return NARRATOR_OUTPUT_MODE
-    with _UI_MODE_LOCK:
-        return _RUNTIME_OUTPUT_MODE
-
-
-def assisted_output_enabled() -> bool:
-    return runtime_output_mode() == "assisted"
-
-
-def _prune_ui_mode_clients_locked(now_value: float) -> None:
-    expired = [
-        client_id
-        for client_id, state in _UI_MODE_CLIENTS.items()
-        if now_value - float(state.get("last_seen") or 0.0)
-        > UI_MODE_HEARTBEAT_TTL_SEC
-    ]
-    for client_id in expired:
-        _UI_MODE_CLIENTS.pop(client_id, None)
-
-
-def _compute_auto_output_mode_locked(now_value: float) -> str:
-    _prune_ui_mode_clients_locked(now_value)
-    # Demo wins while at least one demo page is alive. This prevents a
-    # background index tab from switching the exhibition back to live.
-    if any(
-        state.get("mode") == "assisted"
-        for state in _UI_MODE_CLIENTS.values()
-    ):
-        return "assisted"
-    return "live"
-
-
-def _update_effective_output_mode_locked(
-    now_value: float,
-) -> tuple[str, str, bool]:
-    global _RUNTIME_OUTPUT_MODE
-    previous = _RUNTIME_OUTPUT_MODE
-    current = (
-        NARRATOR_OUTPUT_MODE
-        if NARRATOR_OUTPUT_MODE in {"live", "assisted"}
-        else _compute_auto_output_mode_locked(now_value)
-    )
-    _RUNTIME_OUTPUT_MODE = current
-    return previous, current, previous != current
-
 
 def _ollama_keep_alive_value() -> int | str:
     try:
@@ -411,32 +255,36 @@ def _ollama_keep_alive_value() -> int | str:
 
 def pin_qwen_model() -> dict:
     """Load Qwen into Ollama and keep it resident without running vision inference."""
-    payload = {
-        "model": QWEN_MODEL,
-        "prompt": "",
-        "stream": False,
-        "keep_alive": _ollama_keep_alive_value(),
-    }
-    req = urllib.request.Request(
-        OLLAMA_NATIVE_URL + "/api/generate",
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        method="POST",
-        headers={"Content-Type": "application/json"},
+    return llm_service.keepalive(
+        model=QWEN_MODEL,
+        keep_alive=_ollama_keep_alive_value(),
+        timeout=max(120.0, QWEN_TIMEOUT_SEC),
+        wait=False,
+        owner="vlm_narrator_keepalive",
     )
-    with urllib.request.urlopen(req, timeout=max(120.0, QWEN_TIMEOUT_SEC)) as response:
-        raw = response.read().decode("utf-8")
-    return json.loads(raw or "{}")
+
+
+def _background_qwen_chat(payload: dict, *, stream_callback: Any = None) -> dict:
+    """Submit one disposable narrator request through the shared gateway."""
+    return llm_service.chat(
+        payload["messages"],
+        model=payload.get("model") or QWEN_MODEL,
+        temperature=payload.get("temperature"),
+        top_p=payload.get("top_p"),
+        max_tokens=payload.get("max_tokens"),
+        timeout=payload.get("timeout") or QWEN_TIMEOUT_SEC,
+        keep_alive=_ollama_keep_alive_value(),
+        stream_callback=stream_callback,
+        wait=False,
+        owner="vlm_narrator",
+    )
 
 
 def _qwen_keepalive_worker() -> None:
     while not _QWEN_KEEPALIVE_STOP.wait(QWEN_KEEPALIVE_INTERVAL_SEC):
-        # Assisted narration never needs Qwen. Do not refresh the shared
-        # Ollama model while a demo page owns the runtime mode.
-        if assisted_output_enabled():
-            continue
         # Never queue a residency request in front of an active object or
         # environment VLM job. The next cycle will refresh residency instead.
-        if _QWEN_WORK_LOCK.locked():
+        if llm_service.runtime_busy():
             continue
         try:
             result = pin_qwen_model()
@@ -455,10 +303,6 @@ def _qwen_keepalive_worker() -> None:
 
 def _pin_qwen_once_at_startup() -> None:
     """Warm the model immediately instead of waiting for the first 120 s cycle."""
-    if assisted_output_enabled():
-        return
-    if not _QWEN_WORK_LOCK.acquire(blocking=False):
-        return
     try:
         started = time.perf_counter()
         result = pin_qwen_model()
@@ -474,8 +318,6 @@ def _pin_qwen_once_at_startup() -> None:
             f"[qwen-resident][WARN] startup {type(exc).__name__}: {exc}",
             flush=True,
         )
-    finally:
-        _QWEN_WORK_LOCK.release()
 
 
 
@@ -592,10 +434,6 @@ class SessionState:
     scene_snapshot: list[dict] = field(default_factory=list)
     qwen_job_token: int = 0
     object_description_cache: dict[int, dict] = field(default_factory=dict)
-    unboxed_pending: bool = False
-    unboxed_job_token: int = 0
-    unboxed_result: dict | None = None
-    unboxed_checked_at: float = 0.0
     pairwise_pending: bool = False
     pairwise_job_token: int = 0
     pairwise_checked_at: float = 0.0
@@ -619,11 +457,8 @@ class SessionState:
     general_idle_job_token: int = 0
     recent_general_idle: list[str] = field(default_factory=list)
     last_presence_key: str = ""
-    announced_presence_counts: dict[str, int] = field(default_factory=dict)
-    presence_last_seen_at: dict[str, float] = field(default_factory=dict)
     last_general_idle_emit_at: float = 0.0
     last_object_emit_at: float = 0.0
-    recent_semantic_lines: list[tuple[float, str, str]] = field(default_factory=list)
     last_scene_change_at: float = 0.0
     last_qwen_attempt_at: float = 0.0
     last_enriched_signature: str = ""
@@ -633,12 +468,6 @@ class SessionState:
     pending_scene_confirm_count: int = 0
     reobserve_requested: bool = False
     last_scene_event_reason: str = ""
-    # TaiROS integration state. Idle VLM work is suppressed while a user
-    # task is active; cached narration and pairwise safety evidence remain
-    # available to the text-only task planner.
-    task_active: bool = False
-    task_id: str = ""
-    task_started_at: float = 0.0
     latest_api_result: dict = field(default_factory=dict)
 
 
@@ -686,10 +515,6 @@ def _reset_session_narration_state(
     session.general_idle_pending = False
     session.general_idle_ready = ""
 
-    session.unboxed_job_token += 1
-    session.unboxed_pending = False
-    session.unboxed_result = None
-
     session.pairwise_job_token += 1
     session.pairwise_pending = False
     session.pairwise_ready_line = None
@@ -700,7 +525,6 @@ def _reset_session_narration_state(
     session.last_enriched_signature = ""
     session.last_general_signature = ""
     session.recent_general_idle.clear()
-    session.recent_semantic_lines.clear()
     session.latest_api_result = {}
 
     session.last_qwen_attempt_at = 0.0
@@ -711,125 +535,6 @@ def _reset_session_narration_state(
     session.last_output_at = 0.0
     session.idle_cycle_index = 0
     session.qwen_error = ""
-
-
-def _handle_runtime_output_mode_change(
-    previous: str,
-    current: str,
-    *,
-    reason: str,
-) -> None:
-    if previous == current:
-        return
-
-    now_value = time.time()
-    with _SESSION_LOCK:
-        for session in _SESSIONS.values():
-            _reset_session_narration_state(
-                session,
-                reason=(
-                    f"output_mode:{previous}->{current}:{reason}"
-                ),
-                now_value=now_value,
-            )
-
-    print(
-        "[narrator-mode] runtime switch "
-        f"{previous} -> {current} reason={reason}",
-        flush=True,
-    )
-
-    # When returning from demo to live, warm Qwen immediately rather than
-    # waiting for the next keepalive interval.
-    if current == "live" and QWEN_KEEPALIVE_ENABLED:
-        threading.Thread(
-            target=_pin_qwen_once_at_startup,
-            name="scene-narrator-qwen-mode-warmup",
-            daemon=True,
-        ).start()
-
-
-def register_ui_mode_heartbeat(
-    *,
-    client_id: str,
-    requested_mode: str,
-) -> dict[str, Any]:
-    normalized_mode = str(requested_mode or "").strip().lower()
-    normalized_client_id = str(client_id or "").strip()
-    if normalized_mode not in {"live", "assisted"}:
-        raise ValueError(f"Unsupported UI output mode: {requested_mode!r}")
-    if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", normalized_client_id):
-        raise ValueError("Invalid UI mode client ID")
-
-    now_value = time.time()
-    with _UI_MODE_LOCK:
-        _UI_MODE_CLIENTS[normalized_client_id] = {
-            "mode": normalized_mode,
-            "last_seen": now_value,
-        }
-        previous, current, changed = _update_effective_output_mode_locked(
-            now_value
-        )
-        active_clients = len(_UI_MODE_CLIENTS)
-
-    if changed:
-        _handle_runtime_output_mode_change(
-            previous,
-            current,
-            reason=f"heartbeat:{normalized_mode}:{normalized_client_id}",
-        )
-
-    return {
-        "requested_mode": normalized_mode,
-        "effective_mode": current,
-        "mode_changed": changed,
-        "client_id": normalized_client_id,
-        "active_clients": active_clients,
-    }
-
-
-def release_ui_mode_client(client_id: str) -> dict[str, Any]:
-    normalized_client_id = str(client_id or "").strip()
-    if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", normalized_client_id):
-        raise ValueError("Invalid UI mode client ID")
-
-    now_value = time.time()
-    with _UI_MODE_LOCK:
-        removed = _UI_MODE_CLIENTS.pop(normalized_client_id, None) is not None
-        previous, current, changed = _update_effective_output_mode_locked(
-            now_value
-        )
-        active_clients = len(_UI_MODE_CLIENTS)
-
-    if changed:
-        _handle_runtime_output_mode_change(
-            previous,
-            current,
-            reason=f"release:{normalized_client_id}",
-        )
-
-    return {
-        "effective_mode": current,
-        "mode_changed": changed,
-        "client_id": normalized_client_id,
-        "client_removed": removed,
-        "active_clients": active_clients,
-    }
-
-
-def _ui_mode_watchdog_worker() -> None:
-    while not _UI_MODE_WATCHDOG_STOP.wait(UI_MODE_WATCH_INTERVAL_SEC):
-        now_value = time.time()
-        with _UI_MODE_LOCK:
-            previous, current, changed = _update_effective_output_mode_locked(
-                now_value
-            )
-        if changed:
-            _handle_runtime_output_mode_change(
-                previous,
-                current,
-                reason="heartbeat_expired",
-            )
 
 
 def suppress_duplicate_detections(
@@ -984,11 +689,7 @@ def held_scene_objects(
     the same hysteresis to scene signatures, blue-event gating, and Qwen jobs.
     """
     now_value = float(now_value if now_value is not None else time.time())
-    hold_sec = (
-        ASSISTED_TRACK_HOLD_SEC
-        if assisted_output_enabled()
-        else SCENE_TRACK_HOLD_SEC
-    )
+    hold_sec = SCENE_TRACK_HOLD_SEC
     candidates = []
     for track in session.tracks:
         age = now_value - float(track.last_seen)
@@ -1659,16 +1360,8 @@ def call_qwen_pairwise_pickup(
             {"role": "user", "content": content},
         ],
     }
-    req = urllib.request.Request(
-        QWEN_BASE_URL + "/chat/completions",
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        method="POST",
-        headers={"Content-Type": "application/json", "Authorization": "Bearer local"},
-    )
-    with urllib.request.urlopen(req, timeout=max(QWEN_TIMEOUT_SEC, 90.0)) as response:
-        raw = response.read().decode("utf-8")
-    data = json.loads(raw)
-    return _parse_qwen_json_content(data["choices"][0]["message"]["content"])
+    payload["timeout"] = max(QWEN_TIMEOUT_SEC, 90.0)
+    return _parse_qwen_json_content(_background_qwen_chat(payload)["content"])
 
 
 def clean_pairwise_pickup_result(
@@ -1929,12 +1622,8 @@ def start_pairwise_pickup_audit(
         if now - session.pairwise_checked_at < PAIRWISE_PICKUP_RETRY_SEC:
             return False
 
-    if not _QWEN_WORK_LOCK.acquire(blocking=False):
-        return False
-
     with _SESSION_LOCK:
         if session.pairwise_pending or session.pairwise_fingerprint != fingerprint:
-            _QWEN_WORK_LOCK.release()
             return False
         session.pairwise_job_token += 1
         token = session.pairwise_job_token
@@ -2017,7 +1706,6 @@ def start_pairwise_pickup_audit(
             with _SESSION_LOCK:
                 if session.pairwise_job_token == token:
                     session.pairwise_pending = False
-            _QWEN_WORK_LOCK.release()
 
     threading.Thread(
         target=worker,
@@ -2154,140 +1842,6 @@ def image_data_url(image: Image.Image, max_edge: int = 512) -> str:
     return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
 
 
-SYSTEM_PROMPT = """你是半即時現場觀察助理。
-你會收到單一物件的裁切圖，以及偵測器提供的候選類別。
-
-候選類別只用來核對，可能正確、可能不完整，也可能錯誤。
-請以裁切圖為主要依據，但不要因為只看到包裝外觀就輕易否定候選類別。
-
-判斷原則：
-- 包裝盒、塑膠袋、藥品包裝、醫療用品包裝，只是外觀或包裝形式，
-  不足以否定「防水繃帶、針筒、棉花棒、生理食鹽水」等候選類別。
-- 只有看見明確屬於另一物體類型的特徵，例如玩偶、杯子、鑰匙、食物、遙控器，
-  才能判定候選類別明確衝突。
-- 看不清楚或只能看到包裝時，判定為 compatible 或 uncertain，不得判定 conflict。
-
-規則：
-1. 使用繁體中文。
-2. 不要以「我看到」「我注意到」「仔細看」「畫面中」「畫面裡」開頭。
-3. 不要報位置、座標、信心值、編號或 ID。
-4. text 只描述實際可見的名稱、顏色、材質、外觀、包裝或狀態。
-5. label_relation 只能是：
-   - "match"：明確相符
-   - "compatible"：外觀與候選類別相容，但無法完全確認
-   - "uncertain"：資訊不足
-   - "conflict"：明確是另一種物體
-6. 只有 label_relation="conflict" 時才填 observed_name。
-7. 如果只是盒裝、袋裝或藥品包裝，通常應為 compatible，不是 conflict。
-8. 每句最多 30 個中文字。
-9. 嚴格輸出 JSON，不加 Markdown。
-
-輸出格式：
-{
-  "object_descriptions": [
-    {
-      "object_id": 1,
-      "label_relation": "compatible",
-      "observed_name": "",
-      "text": "藍白相間的藥品包裝盒，表面有模糊文字與圖案。"
-    }
-  ]
-}
-"""
-
-
-UNBOXED_AUDIT_PROMPT = """你是醫療用品現場畫面的「漏框候選提出員」。
-你會收到四張互相重疊的分區畫面，每張圖前面會標明 view_id。
-青色方框代表已被 YOLO 偵測；不要重複提出青色框已覆蓋的物件。
-
-這是第一階段的高召回搜尋：第二階段會逐一裁切並嚴格否決錯誤候選。
-因此只要未框物件具有合理的類別可能性，就應提出候選；不要因品牌文字看不清楚而直接漏掉。
-但仍不得把純背景、衣物或印刷圖片當成實體醫療用品。
-
-逐一檢查以下九類，不得只找到最顯眼的一項就停止：
-- ac_remotecontrol：手持式遙控器，可見按鍵、控制面板或細長控制器外形。
-- bottle_alcohol_spray：瓶身加噴頭、壓頭或扳機噴嘴。
-- cotton_swab：細長棒狀，至少一端疑似有棉頭。
-- cotton_swabs_pp：疑似棉花棒零售包裝。
-- disposable_mask：扁平口罩本體，可能可見摺線、耳掛或綁帶。
-- gauze_pp：疑似紗布或敷料醫療包裝。
-- saline：疑似生理食鹽水瓶、袋或包裝；可利用瓶身圖、藍白包裝與可讀文字線索。
-- syringe_nipro：疑似針筒、推桿、針帽，或細長的 NIPRO 針筒包裝。
-- waterproof_bandages_ppb：疑似 PPB／Nexcare 防水繃帶包裝。
-
-規則：
-1. 每個 view 都完整掃描；最多提出 12 個候選。
-2. 同一實體若在重疊 view 重複出現，可以重複提出，後端會合併。
-3. 不要回報青色框已覆蓋的物品。
-4. 不要回報桌面、螢幕、手、陰影、一般衣物、布料、標籤文字、印刷圖片或背景設備。
-5. bbox_xyxy_norm_in_view 是相對於該 view 的 [左,上,右,下]，數值 0 到 1。
-6. visual_evidence 寫具體外形線索；不確定處可明確寫「待第二階段確認」。
-7. 第一階段 confidence 只代表值得複核的可能性；0.35 以上即可列入。
-8. 每個候選必須附上來源 view_id。
-9. 嚴格輸出 JSON，不加 Markdown。
-
-輸出格式：
-{
-  "missing_objects": [
-    {
-      "view_id": "upper_left",
-      "class_name": "cotton_swab",
-      "confidence": 0.58,
-      "location": "中央偏右",
-      "bbox_xyxy_norm_in_view": [0.61, 0.34, 0.72, 0.48],
-      "visual_evidence": "可見細長棒身，端部疑似白色棉頭，待複核"
-    }
-  ]
-}
-
-若完全沒有合理候選：
-{"missing_objects":[]}
-"""
-
-UNBOXED_VERIFY_PROMPT = """你是第二階段的醫療用品漏框複核員。
-你會收到若干候選物件的裁切圖，每張圖前都有 candidate_index 與 proposed_class。
-第一階段可能把一般物品硬套成醫療類別；你必須嚴格否決錯誤候選。
-
-核心規則：
-- 只根據裁切圖中實際物件判斷，不相信第一階段名稱。
-- 不是該類別就 confirmed=false；不要改猜成另一個允許類別。
-- 背景、包裝印刷圖案、布料、衣物或看不清楚的物品一律否決。
-- disposable_mask 只有在看得到扁平口罩本體，以及耳掛／綁帶或明確口罩摺線時才能確認。
-  條紋布、毛巾、襪子、手套、布袋、玩偶與衣物全部不是口罩。
-- cotton_swab 必須是細長棒狀，至少一端可見白色棉頭；一般細棒、筷子或電線不得確認。
-- bottle_alcohol_spray 必須可見瓶身及噴頭、壓頭或扳機噴嘴。
-- saline 可由生理食鹽水字樣、saline 字樣、藍白醫療包裝或明確食鹽水瓶身圖共同確認；一般飲料瓶不得確認。
-- syringe_nipro 必須可見針筒結構，或細長密封包裝上有 NIPRO／針筒用途線索。
-- cotton_swabs_pp、gauze_pp、waterproof_bandages_ppb 等包裝類必須有足以區分類別的外觀、品牌或用途線索；一般紙盒不得確認。
-- 不確定就 confirmed=false。
-
-嚴格輸出 JSON：
-{
-  "verified_objects": [
-    {
-      "candidate_index": 1,
-      "confirmed": false,
-      "confidence": 0.96,
-      "reason": "這是棕白條紋布料，沒有口罩本體或耳掛"
-    }
-  ]
-}
-"""
-
-
-UNBOXED_CLASS_ZH = {
-    "ac_remotecontrol": "冷氣遙控器",
-    "bottle_alcohol_spray": "酒精噴瓶",
-    "cotton_swab": "棉花棒",
-    "cotton_swabs_pp": "棉花棒包裝",
-    "disposable_mask": "一次性口罩",
-    "gauze_pp": "紗布包裝",
-    "saline": "生理食鹽水",
-    "syringe_nipro": "NIPRO 針筒",
-    "waterproof_bandages_ppb": "PPB 防水繃帶",
-}
-
-
 def _parse_qwen_json_content(content: Any) -> dict:
     if isinstance(content, list):
         content = "".join(
@@ -2298,616 +1852,6 @@ def _parse_qwen_json_content(content: Any) -> dict:
     match = re.search(r"\{.*\}", str(content or ""), flags=re.S)
     parsed = json.loads(match.group(0) if match else str(content or ""))
     return parsed if isinstance(parsed, dict) else {}
-
-
-def _normalized_candidate_box(value: Any) -> list[float] | None:
-    if not isinstance(value, (list, tuple)) or len(value) != 4:
-        return None
-    try:
-        x1, y1, x2, y2 = [float(x) for x in value]
-    except Exception:
-        return None
-    if not all(math.isfinite(x) for x in (x1, y1, x2, y2)):
-        return None
-    x1, y1, x2, y2 = [clamp(x, 0.0, 1.0) for x in (x1, y1, x2, y2)]
-    if x2 - x1 < 0.015 or y2 - y1 < 0.015:
-        return None
-    return [x1, y1, x2, y2]
-
-
-def _crop_normalized_box(
-    image: Image.Image,
-    bbox_xyxy_norm: list[float],
-    *,
-    padding_ratio: float = 0.18,
-) -> Image.Image:
-    width, height = image.size
-    x1, y1, x2, y2 = bbox_xyxy_norm
-    px1, py1, px2, py2 = x1 * width, y1 * height, x2 * width, y2 * height
-    bw = max(2.0, px2 - px1)
-    bh = max(2.0, py2 - py1)
-    px1 = max(0, int(math.floor(px1 - bw * padding_ratio)))
-    py1 = max(0, int(math.floor(py1 - bh * padding_ratio)))
-    px2 = min(width, int(math.ceil(px2 + bw * padding_ratio)))
-    py2 = min(height, int(math.ceil(py2 + bh * padding_ratio)))
-    return image.crop((px1, py1, max(px1 + 1, px2), max(py1 + 1, py2))).convert("RGB")
-
-
-def _unboxed_audit_views(image: Image.Image) -> list[tuple[str, tuple[float, float, float, float], Image.Image]]:
-    """Create four overlapping views so small objects remain visible to Qwen."""
-    width, height = image.size
-    regions = [
-        ("upper_left", (0.00, 0.00, 0.60, 0.62)),
-        ("upper_right", (0.40, 0.00, 1.00, 0.62)),
-        ("lower_left", (0.00, 0.38, 0.60, 1.00)),
-        ("lower_right", (0.40, 0.38, 1.00, 1.00)),
-    ]
-    views = []
-    for view_id, region in regions:
-        x1, y1, x2, y2 = region
-        crop = image.crop((
-            int(round(x1 * width)),
-            int(round(y1 * height)),
-            int(round(x2 * width)),
-            int(round(y2 * height)),
-        )).convert("RGB")
-        views.append((view_id, region, crop))
-    return views
-
-
-def _map_view_box_to_full(
-    box: list[float],
-    region: tuple[float, float, float, float],
-) -> list[float]:
-    rx1, ry1, rx2, ry2 = region
-    x1, y1, x2, y2 = box
-    return [
-        rx1 + x1 * (rx2 - rx1),
-        ry1 + y1 * (ry2 - ry1),
-        rx1 + x2 * (rx2 - rx1),
-        ry1 + y2 * (ry2 - ry1),
-    ]
-
-
-def _dedupe_unboxed_proposals(rows: list[dict]) -> list[dict]:
-    kept: list[dict] = []
-    for row in sorted(
-        rows,
-        key=lambda x: float(x.get("confidence") or 0.0),
-        reverse=True,
-    ):
-        box = _normalized_candidate_box(row.get("bbox_xyxy_norm"))
-        if box is None:
-            continue
-        class_name = str(row.get("class_name") or "")
-        duplicate = False
-        for old in kept:
-            if str(old.get("class_name") or "") != class_name:
-                continue
-            old_box = _normalized_candidate_box(old.get("bbox_xyxy_norm"))
-            if old_box is None:
-                continue
-            if iou(box, old_box) >= 0.28:
-                duplicate = True
-                break
-            cx, cy = center(box)
-            ox, oy = center(old_box)
-            scale = max(0.03, math.sqrt(max(1e-9, box_area(box))), math.sqrt(max(1e-9, box_area(old_box))))
-            if math.hypot(cx - ox, cy - oy) <= scale * 0.42:
-                duplicate = True
-                break
-        if not duplicate:
-            kept.append(row)
-        if len(kept) >= 12:
-            break
-    return kept
-
-
-
-def _normalized_existing_box(
-    obj: dict,
-    image_size: tuple[int, int],
-) -> list[float] | None:
-    box = extract_box(obj)
-    if box is None:
-        return None
-    width, height = image_size
-    if width <= 0 or height <= 0:
-        return None
-    x1, y1, x2, y2 = box
-    return [
-        clamp(x1 / width, 0.0, 1.0),
-        clamp(y1 / height, 0.0, 1.0),
-        clamp(x2 / width, 0.0, 1.0),
-        clamp(y2 / height, 0.0, 1.0),
-    ]
-
-
-def _intersection_area(a: list[float], b: list[float]) -> float:
-    x1 = max(a[0], b[0])
-    y1 = max(a[1], b[1])
-    x2 = min(a[2], b[2])
-    y2 = min(a[3], b[3])
-    return max(0.0, x2 - x1) * max(0.0, y2 - y1)
-
-
-def _point_inside_expanded_box(
-    point: tuple[float, float],
-    box: list[float],
-    padding_ratio: float = 0.12,
-) -> bool:
-    cx, cy = point
-    bw = max(0.0, box[2] - box[0])
-    bh = max(0.0, box[3] - box[1])
-    return (
-        box[0] - bw * padding_ratio <= cx <= box[2] + bw * padding_ratio
-        and box[1] - bh * padding_ratio <= cy <= box[3] + bh * padding_ratio
-    )
-
-
-def _candidate_matches_existing_detection(
-    candidate: dict,
-    existing_objects: list[dict],
-    image_size: tuple[int, int],
-) -> tuple[bool, str]:
-    """Deterministically reject a VLM 'missing' candidate already covered by YOLO.
-
-    The VLM is only a proposer. It may ignore the cyan outline or return a loose
-    candidate box. Geometry is therefore the source of truth for deciding
-    whether an item is already boxed.
-    """
-    candidate_box = _normalized_candidate_box(candidate.get("bbox_xyxy_norm"))
-    if candidate_box is None:
-        return False, "candidate_has_no_box"
-
-    candidate_class = canonical(candidate.get("class_name") or "").replace(" ", "_")
-    candidate_center = center(candidate_box)
-    candidate_area = max(1e-9, box_area(candidate_box))
-
-    for obj in existing_objects:
-        if not isinstance(obj, dict):
-            continue
-        existing_box = _normalized_existing_box(obj, image_size)
-        if existing_box is None:
-            continue
-
-        existing_class = canonical(obj.get("label") or "").replace(" ", "_")
-        existing_area = max(1e-9, box_area(existing_box))
-        inter = _intersection_area(candidate_box, existing_box)
-        candidate_coverage = inter / candidate_area
-        existing_coverage = inter / existing_area
-        same_class = bool(candidate_class and candidate_class == existing_class)
-        center_covered = _point_inside_expanded_box(candidate_center, existing_box)
-
-        # Same-class candidates are rejected even with fairly loose VLM boxes.
-        if same_class and (
-            center_covered
-            or candidate_coverage >= 0.10
-            or existing_coverage >= 0.10
-            or iou(candidate_box, existing_box) >= 0.05
-        ):
-            return True, (
-                f"same_class={existing_class} candidate_cov={candidate_coverage:.3f} "
-                f"existing_cov={existing_coverage:.3f}"
-            )
-
-        # Even if the proposed class is wrong, a candidate mostly located inside
-        # any existing detection is not an unboxed object.
-        if center_covered and candidate_coverage >= 0.35:
-            return True, (
-                f"covered_by={existing_class} candidate_cov={candidate_coverage:.3f}"
-            )
-        if candidate_coverage >= 0.60 or existing_coverage >= 0.82:
-            return True, (
-                f"strong_overlap={existing_class} candidate_cov={candidate_coverage:.3f} "
-                f"existing_cov={existing_coverage:.3f}"
-            )
-
-    return False, "no_existing_match"
-
-
-def filter_already_boxed_unboxed_candidates(
-    payload: dict | None,
-    existing_objects: list[dict],
-    image_size: tuple[int, int],
-    *,
-    stage: str,
-) -> dict:
-    """Remove stale/duplicate missing-object claims using current YOLO geometry."""
-    if not isinstance(payload, dict):
-        return {"missing_objects": []}
-    rows = payload.get("missing_objects")
-    if not isinstance(rows, list):
-        return {"missing_objects": []}
-
-    kept: list[dict] = []
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        matched, reason = _candidate_matches_existing_detection(
-            row,
-            existing_objects,
-            image_size,
-        )
-        if matched:
-            print(
-                "[unboxed-audit][already-boxed] "
-                f"stage={stage} class={row.get('class_name')} reason={reason}",
-                flush=True,
-            )
-            continue
-        kept.append(row)
-
-    out = dict(payload)
-    out["missing_objects"] = kept
-    return out
-
-
-def call_qwen_unboxed_audit(annotated: Image.Image) -> dict:
-    views = _unboxed_audit_views(annotated)
-    content: list[dict] = [{
-        "type": "text",
-        "text": (
-            "請依序掃描四張分區畫面。每張圖的 bbox 都必須使用該 view 的相對座標，"
-            "並在結果中填入正確 view_id。不要在找到第一項後停止。"
-        ),
-    }]
-    region_by_id: dict[str, tuple[float, float, float, float]] = {}
-    for view_id, region, crop in views:
-        region_by_id[view_id] = region
-        content.append({
-            "type": "text",
-            "text": f"view_id={view_id}; 這是完整畫面的重疊分區。",
-        })
-        content.append({
-            "type": "image_url",
-            "image_url": {"url": image_data_url(crop, max_edge=800)},
-        })
-
-    payload = {
-        "model": QWEN_MODEL,
-        "temperature": 0.05,
-        "top_p": 0.65,
-        "max_tokens": 980,
-        "response_format": {"type": "json_object"},
-        "messages": [
-            {"role": "system", "content": UNBOXED_AUDIT_PROMPT},
-            {"role": "user", "content": content},
-        ],
-    }
-    req = urllib.request.Request(
-        QWEN_BASE_URL + "/chat/completions",
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        method="POST",
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": "Bearer local",
-        },
-    )
-    with urllib.request.urlopen(req, timeout=max(QWEN_TIMEOUT_SEC, 120.0)) as response:
-        raw = response.read().decode("utf-8")
-    data = json.loads(raw)
-    parsed = _parse_qwen_json_content(data["choices"][0]["message"]["content"])
-
-    mapped: list[dict] = []
-    rows = parsed.get("missing_objects") if isinstance(parsed, dict) else []
-    if not isinstance(rows, list):
-        rows = []
-    for item in rows[:20]:
-        if not isinstance(item, dict):
-            continue
-        class_name = canonical(item.get("class_name") or "").replace(" ", "_")
-        if class_name not in UNBOXED_CLASS_ZH:
-            continue
-        view_id = str(item.get("view_id") or "").strip()
-        region = region_by_id.get(view_id)
-        if region is None:
-            continue
-        local_box = _normalized_candidate_box(
-            item.get("bbox_xyxy_norm_in_view") or item.get("bbox_xyxy_norm")
-        )
-        if local_box is None:
-            continue
-        try:
-            confidence = clamp(float(item.get("confidence") or 0.0), 0.0, 1.0)
-        except Exception:
-            confidence = 0.0
-        if confidence < 0.35:
-            continue
-        row = dict(item)
-        row["class_name"] = class_name
-        row["source_view_id"] = view_id
-        row["bbox_xyxy_norm"] = _map_view_box_to_full(local_box, region)
-        row["confidence"] = confidence
-        mapped.append(row)
-
-    return {"missing_objects": _dedupe_unboxed_proposals(mapped)}
-
-
-def call_qwen_unboxed_verifier(
-    annotated: Image.Image,
-    proposed: dict,
-) -> dict:
-    rows = proposed.get("missing_objects") if isinstance(proposed, dict) else []
-    if not isinstance(rows, list):
-        return {"verified_objects": []}
-
-    candidates: list[dict] = []
-    content: list[dict] = [{
-        "type": "text",
-        "text": "請逐一複核下面的候選裁切圖。每個 candidate_index 都必須回傳一筆結果。",
-    }]
-
-    for item in rows[:8]:
-        if not isinstance(item, dict):
-            continue
-        raw_class = str(item.get("class_name") or "").strip()
-        class_name = canonical(raw_class).replace(" ", "_")
-        if class_name not in UNBOXED_CLASS_ZH:
-            continue
-        bbox = _normalized_candidate_box(item.get("bbox_xyxy_norm"))
-        if bbox is None:
-            continue
-        candidate_index = len(candidates) + 1
-        candidates.append({
-            "candidate_index": candidate_index,
-            "class_name": class_name,
-            "bbox_xyxy_norm": bbox,
-            "source": item,
-        })
-        crop = _crop_normalized_box(annotated, bbox)
-        content.append({
-            "type": "text",
-            "text": (
-                f"candidate_index={candidate_index}; "
-                f"proposed_class={class_name}; "
-                f"中文候選={UNBOXED_CLASS_ZH[class_name]}"
-            ),
-        })
-        content.append({
-            "type": "image_url",
-            "image_url": {"url": image_data_url(crop, max_edge=512)},
-        })
-
-    if not candidates:
-        return {"verified_objects": [], "candidate_map": []}
-
-    payload = {
-        "model": QWEN_MODEL,
-        "temperature": 0.0,
-        "top_p": 0.35,
-        "max_tokens": 520,
-        "response_format": {"type": "json_object"},
-        "messages": [
-            {"role": "system", "content": UNBOXED_VERIFY_PROMPT},
-            {"role": "user", "content": content},
-        ],
-    }
-    req = urllib.request.Request(
-        QWEN_BASE_URL + "/chat/completions",
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        method="POST",
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": "Bearer local",
-        },
-    )
-    with urllib.request.urlopen(req, timeout=QWEN_TIMEOUT_SEC) as response:
-        raw = response.read().decode("utf-8")
-    data = json.loads(raw)
-    parsed = _parse_qwen_json_content(data["choices"][0]["message"]["content"])
-    parsed["candidate_map"] = candidates
-    return parsed
-
-
-def merge_verified_unboxed_candidates(proposed: dict, verified: dict) -> dict:
-    candidates = verified.get("candidate_map") if isinstance(verified, dict) else []
-    verdicts = verified.get("verified_objects") if isinstance(verified, dict) else []
-    if not isinstance(candidates, list) or not isinstance(verdicts, list):
-        return {"missing_objects": []}
-
-    verdict_by_index: dict[int, dict] = {}
-    for row in verdicts:
-        if not isinstance(row, dict):
-            continue
-        try:
-            idx = int(row.get("candidate_index"))
-        except Exception:
-            continue
-        verdict_by_index[idx] = row
-
-    accepted: list[dict] = []
-    for candidate in candidates:
-        idx = int(candidate["candidate_index"])
-        verdict = verdict_by_index.get(idx, {})
-        confirmed = verdict.get("confirmed") is True
-        try:
-            verify_conf = clamp(float(verdict.get("confidence") or 0.0), 0.0, 1.0)
-        except Exception:
-            verify_conf = 0.0
-        source = dict(candidate.get("source") or {})
-        try:
-            proposal_conf = clamp(float(source.get("confidence") or 0.0), 0.0, 1.0)
-        except Exception:
-            proposal_conf = 0.0
-
-        # Stage 1 is intentionally high-recall; Stage 2 owns the strict precision gate.
-        if not confirmed or proposal_conf < 0.35 or verify_conf < 0.78:
-            print(
-                "[unboxed-audit][reject] "
-                f"class={candidate['class_name']} proposal={proposal_conf:.2f} "
-                f"verify={verify_conf:.2f} reason={verdict.get('reason')}",
-                flush=True,
-            )
-            continue
-
-        source["class_name"] = candidate["class_name"]
-        source["bbox_xyxy_norm"] = candidate["bbox_xyxy_norm"]
-        source["verification_confidence"] = verify_conf
-        source["verification_reason"] = str(verdict.get("reason") or "").strip()
-        source["confidence"] = min(proposal_conf, verify_conf)
-        accepted.append(source)
-
-    return {"missing_objects": accepted}
-
-
-def clean_unboxed_observation(raw: dict | None) -> dict | None:
-    """Convert verified multi-object Qwen audit into one compact yellow UI row."""
-    if not isinstance(raw, dict):
-        return None
-
-    rows = raw.get("missing_objects")
-    if not isinstance(rows, list):
-        return None
-
-    cleaned_rows: list[dict] = []
-    seen_classes: set[str] = set()
-    zh_to_class = {value: key for key, value in UNBOXED_CLASS_ZH.items()}
-
-    for item in rows[:12]:
-        if not isinstance(item, dict):
-            continue
-
-        raw_class = str(
-            item.get("class_name")
-            or item.get("possible_label")
-            or item.get("label")
-            or ""
-        ).strip()
-        class_name = canonical(raw_class).replace(" ", "_")
-        if raw_class in zh_to_class:
-            class_name = zh_to_class[raw_class]
-        if class_name not in UNBOXED_CLASS_ZH or class_name in seen_classes:
-            continue
-
-        try:
-            confidence = clamp(float(item.get("confidence") or 0.0), 0.0, 1.0)
-        except Exception:
-            confidence = 0.0
-        if confidence < 0.65:
-            continue
-
-        location = re.sub(r"\s+", "", str(item.get("location") or "").strip())[:12]
-        display_label = UNBOXED_CLASS_ZH[class_name]
-        cleaned_rows.append({
-            "class_name": class_name,
-            "possible_label": display_label,
-            "confidence": confidence,
-            "location": location,
-            "bbox_xyxy_norm": item.get("bbox_xyxy_norm"),
-            "visual_evidence": str(item.get("visual_evidence") or "").strip(),
-            "verification_reason": str(item.get("verification_reason") or "").strip(),
-        })
-        seen_classes.add(class_name)
-
-        if len(cleaned_rows) >= 8:
-            break
-
-    if not cleaned_rows:
-        return None
-
-    parts = []
-    for item in cleaned_rows:
-        label = item["possible_label"]
-        location = item.get("location") or ""
-        parts.append(f"{label}（{location}）" if location else label)
-
-    text = "漏框提醒：尚未框選「" + "、".join(parts) + "」。"
-    return {
-        "possible_label": "、".join(x["possible_label"] for x in cleaned_rows),
-        "missing_objects": cleaned_rows,
-        "count": len(cleaned_rows),
-        "confidence": max(x["confidence"] for x in cleaned_rows),
-        "text": text,
-    }
-
-
-def start_unboxed_audit(
-    session: SessionState,
-    *,
-    signature: str,
-    annotated: Image.Image,
-    existing_objects: list[dict],
-) -> bool:
-    if not UNBOXED_AUDIT_ENABLED:
-        return False
-
-    now = time.time()
-    with _SESSION_LOCK:
-        if session.unboxed_pending:
-            return False
-        if session.last_signature != signature:
-            return False
-        if now - session.last_scene_change_at < UNBOXED_AUDIT_DELAY_SEC:
-            return False
-        if now - session.unboxed_checked_at < UNBOXED_AUDIT_INTERVAL_SEC:
-            return False
-
-    if not _QWEN_WORK_LOCK.acquire(blocking=False):
-        return False
-
-    with _SESSION_LOCK:
-        if session.unboxed_pending or session.last_signature != signature:
-            _QWEN_WORK_LOCK.release()
-            return False
-        session.unboxed_job_token += 1
-        job_token = session.unboxed_job_token
-        session.unboxed_pending = True
-        session.unboxed_checked_at = now
-
-    image_copy = annotated.copy()
-    image_size = image_copy.size
-    existing_snapshot = [dict(x) for x in existing_objects if isinstance(x, dict)]
-
-    def worker() -> None:
-        try:
-            proposed = call_qwen_unboxed_audit(image_copy)
-            proposed = filter_already_boxed_unboxed_candidates(
-                proposed,
-                existing_snapshot,
-                image_size,
-                stage="proposal",
-            )
-            verified = call_qwen_unboxed_verifier(image_copy, proposed)
-            raw = merge_verified_unboxed_candidates(proposed, verified)
-            raw = filter_already_boxed_unboxed_candidates(
-                raw,
-                existing_snapshot,
-                image_size,
-                stage="verified",
-            )
-            cleaned = clean_unboxed_observation(raw)
-            with _SESSION_LOCK:
-                if (
-                    session.last_signature == signature
-                    and session.unboxed_job_token == job_token
-                ):
-                    session.unboxed_result = cleaned
-            if cleaned:
-                labels = [
-                    x.get("possible_label")
-                    for x in cleaned.get("missing_objects", [])
-                ]
-                print(
-                    f"[unboxed-audit] missing={labels}",
-                    flush=True,
-                )
-            else:
-                print("[unboxed-audit] no clear missing object", flush=True)
-        except Exception as exc:
-            print(f"[unboxed-audit][WARN] {type(exc).__name__}: {exc}", flush=True)
-        finally:
-            with _SESSION_LOCK:
-                if session.unboxed_job_token == job_token:
-                    session.unboxed_pending = False
-            _QWEN_WORK_LOCK.release()
-
-    threading.Thread(
-        target=worker,
-        name=f"scene-narrator-unboxed-{job_token}",
-        daemon=True,
-    ).start()
-    return True
 
 
 def crop_object_for_qwen(
@@ -3154,7 +2098,7 @@ def call_qwen(
     if not required_ids:
         return {
             "object_descriptions": [],
-            "scene_summary": VLM_EMPTY_SCENE_TEXT,
+            "scene_summary": "",
         }
 
     contact_sheet = build_vlm_contact_sheet(
@@ -3216,23 +2160,10 @@ def call_qwen(
         ],
     }
 
-    request = urllib.request.Request(
-        QWEN_BASE_URL + "/chat/completions",
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        method="POST",
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": "Bearer local",
-            "Accept": "text/event-stream",
-        },
-    )
-
     rows_by_id: dict[int, dict] = {}
     scene_summary = ""
     protocol_buffer = ""
     full_content = ""
-    non_sse_lines: list[str] = []
-    saw_sse = False
 
     def accept_protocol_line(line: str) -> None:
         nonlocal scene_summary
@@ -3271,52 +2202,8 @@ def call_qwen(
             line, protocol_buffer = protocol_buffer.split("\n", 1)
             accept_protocol_line(line)
 
-    with urllib.request.urlopen(
-        request,
-        timeout=max(QWEN_TIMEOUT_SEC, 75.0),
-    ) as response:
-        for raw_line in response:
-            line = raw_line.decode("utf-8", errors="replace").strip()
-            if not line:
-                continue
-            if line.startswith("data:"):
-                saw_sse = True
-                payload_text = line[5:].strip()
-                if payload_text == "[DONE]":
-                    break
-                try:
-                    event = json.loads(payload_text)
-                except Exception:
-                    continue
-                choices = event.get("choices") or []
-                if not choices:
-                    continue
-                choice = choices[0] if isinstance(choices[0], dict) else {}
-                delta = choice.get("delta") or {}
-                content = delta.get("content")
-                if content is None:
-                    content = (choice.get("message") or {}).get("content")
-                if isinstance(content, list):
-                    content = "".join(
-                        str(item.get("text") or "")
-                        for item in content
-                        if isinstance(item, dict)
-                    )
-                feed_content(str(content or ""))
-            else:
-                non_sse_lines.append(line)
-
-    if not saw_sse and non_sse_lines:
-        raw = "".join(non_sse_lines)
-        data = json.loads(raw)
-        content = data["choices"][0]["message"]["content"]
-        if isinstance(content, list):
-            content = "".join(
-                str(item.get("text") or "")
-                for item in content
-                if isinstance(item, dict)
-            )
-        feed_content(str(content or ""))
+    payload["timeout"] = max(QWEN_TIMEOUT_SEC, 75.0)
+    _background_qwen_chat(payload, stream_callback=feed_content)
 
     accept_protocol_line(protocol_buffer)
 
@@ -3605,7 +2492,6 @@ def clean_narration(parsed: dict, valid_ids: set[int]) -> dict:
         "scene_summary": scene_summary,
         "object_descriptions": object_rows[:VLM_COMBINED_MAX_OBJECTS],
         "relationship_descriptions": relation_rows[:4],
-        "unboxed_observation": None,
     }
 
 
@@ -3699,815 +2585,6 @@ def label_zh(value: Any) -> str:
 
 
 
-def load_demo_description_bank(
-    path: Path = DEMO_DESCRIPTION_PATH,
-) -> dict[str, Any]:
-    """Load and validate the assisted-mode description bank."""
-    try:
-        config = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError as exc:
-        raise RuntimeError(f"找不到展示描述庫：{path}") from exc
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(
-            f"展示描述庫 JSON 格式錯誤：{path} "
-            f"line={exc.lineno} column={exc.colno}"
-        ) from exc
-
-    if not isinstance(config, dict):
-        raise RuntimeError("展示描述庫根節點必須是 JSON object")
-
-    objects = config.get("objects")
-    summaries = config.get("scene_summaries")
-    if not isinstance(objects, dict) or not objects:
-        raise RuntimeError("展示描述庫必須包含非空 objects")
-    if not isinstance(summaries, list) or not summaries:
-        raise RuntimeError("展示描述庫必須包含非空 scene_summaries")
-
-    normalized_objects: dict[str, dict[str, Any]] = {}
-    for raw_class_name, raw_config in objects.items():
-        class_name = str(raw_class_name or "").strip().lower()
-        if not class_name or not isinstance(raw_config, dict):
-            raise RuntimeError(f"objects.{raw_class_name} 格式錯誤")
-
-        raw_descriptions = raw_config.get("descriptions")
-        if not isinstance(raw_descriptions, list) or not raw_descriptions:
-            raise RuntimeError(
-                f"objects.{class_name}.descriptions 必須是非空陣列"
-            )
-
-        descriptions: list[dict[str, Any]] = []
-        seen_texts: set[str] = set()
-        for index, raw_entry in enumerate(raw_descriptions, start=1):
-            if isinstance(raw_entry, str):
-                entry = {
-                    "id": f"{class_name}_{index:02d}",
-                    "text": raw_entry,
-                    "tags": ["generic"],
-                }
-            elif isinstance(raw_entry, dict):
-                entry = dict(raw_entry)
-            else:
-                raise RuntimeError(
-                    f"objects.{class_name}.descriptions[{index - 1}] 格式錯誤"
-                )
-
-            text_value = str(entry.get("text") or "").strip()
-            if not text_value:
-                raise RuntimeError(
-                    f"objects.{class_name}.descriptions[{index - 1}] 缺少 text"
-                )
-            if text_value in seen_texts:
-                raise RuntimeError(
-                    f"objects.{class_name} 包含重複描述：{text_value}"
-                )
-            seen_texts.add(text_value)
-
-            tags = entry.get("tags")
-            if not isinstance(tags, list):
-                tags = []
-            required_classes = entry.get(
-                "requires_visible_classes"
-            )
-            if not isinstance(required_classes, list):
-                required_classes = []
-
-            descriptions.append({
-                "id": str(
-                    entry.get("id")
-                    or f"{class_name}_{index:02d}"
-                ).strip(),
-                "text": text_value,
-                "tags": [
-                    str(tag).strip().lower()
-                    for tag in tags
-                    if str(tag).strip()
-                ],
-                "requires_visible_classes": [
-                    str(value).strip().lower()
-                    for value in required_classes
-                    if str(value).strip()
-                ],
-                "requires_other_visible": bool(
-                    entry.get("requires_other_visible", False)
-                ),
-            })
-
-        normalized_objects[class_name] = {
-            "label_zh": str(
-                raw_config.get("label_zh")
-                or label_zh(class_name)
-            ).strip(),
-            "descriptions": descriptions,
-        }
-
-    normalized_summaries: list[dict[str, Any]] = []
-    for index, raw_entry in enumerate(summaries, start=1):
-        if isinstance(raw_entry, str):
-            entry = {
-                "id": f"scene_{index:02d}",
-                "text": raw_entry,
-                "tags": ["generic"],
-            }
-        elif isinstance(raw_entry, dict):
-            entry = dict(raw_entry)
-        else:
-            raise RuntimeError(
-                f"scene_summaries[{index - 1}] 格式錯誤"
-            )
-
-        text_value = str(entry.get("text") or "").strip()
-        if not text_value:
-            raise RuntimeError(
-                f"scene_summaries[{index - 1}] 缺少 text"
-            )
-        tags = entry.get("tags")
-        if not isinstance(tags, list):
-            tags = []
-        normalized_summaries.append({
-            "id": str(
-                entry.get("id")
-                or f"scene_{index:02d}"
-            ).strip(),
-            "text": text_value,
-            "tags": [
-                str(tag).strip().lower()
-                for tag in tags
-                if str(tag).strip()
-            ],
-        })
-
-    out = dict(config)
-    out["objects"] = normalized_objects
-    out["scene_summaries"] = normalized_summaries
-    return out
-
-
-def _demo_class_key(value: Any) -> str:
-    return canonical(value).replace(" ", "_")
-
-
-def _demo_object_tags(obj: dict) -> set[str]:
-    """Create assisted-mode tags in the real-world orientation.
-
-    coordinate_mapping=raw_top_is_real_right means the camera frame was not
-    rotated before inference:
-      raw top    -> real right
-      raw bottom -> real left
-      raw left   -> real upper
-      raw right  -> real lower
-    """
-    tags: set[str] = set()
-    box = extract_box(obj)
-    if box is None:
-        return {"generic", "medium", "center", "middle"}
-
-    raw_width = max(1.0, float(box[2]) - float(box[0]))
-    raw_height = max(1.0, float(box[3]) - float(box[1]))
-
-    frame_width = max(
-        1.0,
-        float(obj.get("frame_width") or max(float(box[2]), 1.0)),
-    )
-    frame_height = max(
-        1.0,
-        float(obj.get("frame_height") or max(float(box[3]), 1.0)),
-    )
-
-    raw_center_x_ratio = (
-        (float(box[0]) + float(box[2])) / 2.0
-    ) / frame_width
-    raw_center_y_ratio = (
-        (float(box[1]) + float(box[3])) / 2.0
-    ) / frame_height
-
-    coordinate_mapping = str(
-        DEMO_DESCRIPTION_BANK.get("coordinate_mapping")
-        or "identity"
-    ).strip().lower()
-
-    if coordinate_mapping == "raw_top_is_real_right":
-        # Rotate raw coordinates clockwise into the real-world orientation.
-        real_width = raw_height
-        real_height = raw_width
-        horizontal_ratio = 1.0 - raw_center_y_ratio
-        vertical_ratio = raw_center_x_ratio
-    else:
-        real_width = raw_width
-        real_height = raw_height
-        horizontal_ratio = raw_center_x_ratio
-        vertical_ratio = raw_center_y_ratio
-
-    aspect = real_width / max(1.0, real_height)
-    if aspect >= 1.30:
-        tags.add("wide")
-    elif aspect <= 0.77:
-        tags.add("tall")
-    else:
-        tags.add("compact")
-
-    area_ratio = (
-        raw_width * raw_height
-    ) / max(1.0, frame_width * frame_height)
-    if area_ratio < 0.025:
-        tags.add("small")
-    elif area_ratio < 0.12:
-        tags.add("medium")
-    else:
-        tags.add("large")
-
-    if horizontal_ratio < 0.34:
-        tags.add("left")
-    elif horizontal_ratio > 0.66:
-        tags.add("right")
-    else:
-        tags.add("center")
-
-    if vertical_ratio < 0.34:
-        tags.add("upper")
-    elif vertical_ratio > 0.66:
-        tags.add("lower")
-    else:
-        tags.add("middle")
-
-    return tags
-
-
-def _demo_choose_entry(
-    entries: list[dict[str, Any]],
-    *,
-    tags: set[str],
-    selection_key: str,
-    visible_classes: set[str] | None = None,
-    current_class: str = "",
-) -> dict[str, Any]:
-    """Choose only descriptions supported by the current YOLO scene.
-
-    A description may declare:
-    - requires_visible_classes: every listed YOLO class must currently exist.
-    - requires_other_visible: at least one class other than the current object
-      must currently exist.
-
-    Entries without these fields remain normal appearance-only candidates.
-    """
-    if not entries:
-        raise RuntimeError("展示描述候選為空")
-
-    normalized_visible = {
-        _demo_class_key(value)
-        for value in (visible_classes or set())
-        if str(value or "").strip()
-    }
-    normalized_current = _demo_class_key(current_class)
-
-    eligible_entries: list[dict[str, Any]] = []
-    for entry in entries:
-        required = {
-            _demo_class_key(value)
-            for value in (
-                entry.get("requires_visible_classes") or []
-            )
-            if str(value or "").strip()
-        }
-        if not required.issubset(normalized_visible):
-            continue
-
-        if entry.get("requires_other_visible"):
-            other_visible = normalized_visible - {
-                normalized_current
-            }
-            if not other_visible:
-                continue
-
-        eligible_entries.append(entry)
-
-    # Normally appearance-only entries guarantee a fallback. Keep this guard so
-    # a malformed description bank cannot stop the 5000 service.
-    if not eligible_entries:
-        eligible_entries = [
-            entry
-            for entry in entries
-            if not entry.get("requires_visible_classes")
-            and not entry.get("requires_other_visible")
-        ] or list(entries)
-
-    scored: list[tuple[int, dict[str, Any]]] = []
-    for entry in eligible_entries:
-        entry_tags = {
-            str(tag).strip().lower()
-            for tag in (entry.get("tags") or [])
-            if str(tag).strip()
-        }
-        score = len(tags & entry_tags)
-        if "generic" in entry_tags:
-            score += 0
-        scored.append((score, entry))
-
-    best_score = max(score for score, _ in scored)
-    candidates = [
-        entry
-        for score, entry in scored
-        if score == best_score
-    ]
-    digest = hashlib.sha256(
-        f"{DEMO_SEED}:{selection_key}".encode("utf-8")
-    ).hexdigest()
-    index = int(digest[:12], 16) % len(candidates)
-    return dict(candidates[index])
-
-
-def _demo_join_chinese(items: list[str]) -> str:
-    values = [str(item).strip() for item in items if str(item).strip()]
-    if not values:
-        return ""
-    if len(values) == 1:
-        return values[0]
-    if len(values) == 2:
-        return f"{values[0]}與{values[1]}"
-    return "、".join(values[:-1]) + f"與{values[-1]}"
-
-
-def _demo_scene_context(
-    objects: list[dict],
-) -> dict[str, str]:
-    """Summarize distribution and spacing from real YOLO geometry."""
-    regions: set[str] = set()
-    boxes: list[list[float]] = []
-
-    for obj in objects:
-        tags = _demo_object_tags(obj)
-        if "left" in tags:
-            regions.add("左側")
-        elif "right" in tags:
-            regions.add("右側")
-        else:
-            regions.add("中央")
-
-        box = extract_box(obj)
-        if box is not None:
-            boxes.append([float(value) for value in box[:4]])
-
-    region_order = ["左側", "中央", "右側"]
-    ordered_regions = [
-        region for region in region_order
-        if region in regions
-    ]
-
-    if len(ordered_regions) >= 3:
-        distribution = "物品大致分布於椅面左側、中央與右側"
-    elif len(ordered_regions) == 2:
-        distribution = (
-            "物品主要分布於椅面"
-            + _demo_join_chinese(ordered_regions)
-        )
-    elif ordered_regions:
-        distribution = f"物品集中於椅面{ordered_regions[0]}"
-    else:
-        distribution = "物品分布狀態目前無法可靠判定"
-
-    overlap_pairs = 0
-    near_pairs = 0
-
-    for first_index in range(len(boxes)):
-        for second_index in range(first_index + 1, len(boxes)):
-            first = boxes[first_index]
-            second = boxes[second_index]
-
-            if (
-                _intersection_area(first, second) > 0
-                or iou(first, second) >= 0.02
-            ):
-                overlap_pairs += 1
-                continue
-
-            first_short = max(
-                1.0,
-                min(
-                    first[2] - first[0],
-                    first[3] - first[1],
-                ),
-            )
-            second_short = max(
-                1.0,
-                min(
-                    second[2] - second[0],
-                    second[3] - second[1],
-                ),
-            )
-            near_limit = max(
-                8.0,
-                min(first_short, second_short) * 0.16,
-            )
-            if _box_edge_gap(first, second) <= near_limit:
-                near_pairs += 1
-
-    if overlap_pairs > 0:
-        spacing = (
-            "部分物件存在局部重疊，"
-            "但主要輪廓仍可分辨"
-        )
-    elif near_pairs > 0:
-        spacing = (
-            "部分物件彼此接近，"
-            "主要輪廓仍保持清楚"
-        )
-    else:
-        spacing = (
-            "物件之間保有間隔，"
-            "沒有形成明顯堆疊"
-        )
-
-    assessment = (
-        "整體屬於可依規則逐項分類整理的臨時置物場景"
-    )
-
-    return {
-        "distribution": distribution,
-        "spacing": spacing,
-        "assessment": assessment,
-    }
-
-
-def build_assisted_demo_narration(
-    objects: list[dict],
-    *,
-    scene_revision: int,
-    signature: str,
-) -> dict[str, Any]:
-    """Build deterministic green and purple text from real YOLO objects."""
-    rows: list[dict[str, Any]] = []
-    labels: list[str] = []
-    visible_classes = {
-        _demo_class_key(
-            obj.get("label")
-            or obj.get("class_name")
-            or obj.get("name")
-        )
-        for obj in objects
-        if isinstance(obj, dict)
-    }
-
-    for obj in sorted(
-        objects,
-        key=lambda item: int(item.get("id") or 0),
-    )[:VLM_COMBINED_MAX_OBJECTS]:
-        try:
-            object_id = int(obj.get("id"))
-        except Exception:
-            continue
-
-        class_name = _demo_class_key(
-            obj.get("label")
-            or obj.get("class_name")
-            or obj.get("name")
-        )
-        object_config = (
-            DEMO_DESCRIPTION_BANK.get("objects") or {}
-        ).get(class_name)
-        tags = _demo_object_tags(obj)
-
-        if isinstance(object_config, dict):
-            entry = _demo_choose_entry(
-                list(object_config.get("descriptions") or []),
-                tags=tags,
-                selection_key=(
-                    f"object:{scene_revision}:{signature}:"
-                    f"{object_id}:{class_name}:{','.join(sorted(tags))}:"
-                    f"{','.join(sorted(visible_classes))}"
-                ),
-                visible_classes=visible_classes,
-                current_class=class_name,
-            )
-            label = str(
-                object_config.get("label_zh")
-                or label_zh(class_name)
-            ).strip()
-            text_value = str(entry.get("text") or "").strip()
-            description_id = str(entry.get("id") or "")
-        else:
-            label = label_zh(class_name)
-            text_value = f"{label}外觀輪廓清楚，系統已完成辨識。"
-            description_id = "fallback"
-
-        text_value = normalize_narration_sentence(text_value)
-
-        rows.append({
-            "object_id": object_id,
-            "text": text_value,
-            "confidence": 0.85,
-            "source": "demo_description_bank",
-            "description_id": description_id,
-            "selection_tags": sorted(tags),
-        })
-        labels.append(label)
-
-    unique_labels = list(dict.fromkeys(labels))
-    objects_text = "、".join(unique_labels[:3]) or "已標記物品"
-    count = len(rows)
-    scene_tag = (
-        "single"
-        if count == 1
-        else "few"
-        if count <= 3
-        else "many"
-    )
-    scene_context = _demo_scene_context(objects)
-    scene_entry = _demo_choose_entry(
-        list(DEMO_DESCRIPTION_BANK.get("scene_summaries") or []),
-        tags={scene_tag},
-        selection_key=(
-            f"scene:{scene_revision}:{signature}:"
-            f"{count}:{objects_text}:"
-            f"{scene_context['distribution']}:"
-            f"{scene_context['spacing']}"
-        ),
-    )
-    scene_summary = str(scene_entry.get("text") or "").format(
-        objects=objects_text,
-        count=count,
-        distribution=scene_context["distribution"],
-        spacing=scene_context["spacing"],
-        assessment=scene_context["assessment"],
-    ).strip()
-    scene_summary = normalize_narration_sentence(scene_summary)
-
-    return {
-        "object_descriptions": rows,
-        "scene_summary": scene_summary,
-        "scene_summary_id": str(scene_entry.get("id") or ""),
-    }
-
-
-def publish_assisted_demo_output(
-    session: SessionState,
-    *,
-    signature: str,
-    objects: list[dict],
-) -> bool:
-    """Publish assisted rows progressively without calling Ollama."""
-    started_at = time.time()
-    object_copy = json.loads(json.dumps(
-        sorted(
-            objects,
-            key=lambda item: int(item.get("id") or 0),
-        )[:VLM_COMBINED_MAX_OBJECTS]
-    ))
-    expected_ids = [
-        int(obj["id"])
-        for obj in object_copy
-        if obj.get("id") is not None
-    ]
-    if not expected_ids:
-        return False
-
-    with _SESSION_LOCK:
-        if (
-            session.last_signature != signature
-            or session.last_enriched_signature == signature
-            or session.qwen_pending
-        ):
-            return False
-
-        scene_revision = int(session.scene_revision)
-        session.qwen_job_token += 1
-        job_token = int(session.qwen_job_token)
-
-        session.qwen_signature = signature
-        session.qwen_pending = True
-        session.qwen_error = ""
-        session.qwen_streaming = True
-        session.qwen_stream_started_at = started_at
-        session.qwen_first_result_at = 0.0
-        session.qwen_last_partial_at = 0.0
-        session.qwen_expected_object_ids = list(expected_ids)
-        session.qwen_received_object_ids = []
-        session.qwen_stream_scene_summary = ""
-        session.last_qwen_attempt_at = started_at
-        session.last_result = {
-            "scene_summary": "",
-            "object_descriptions": [],
-            "relationship_descriptions": [],
-            "unboxed_observation": None,
-            "source": "assisted_demo_description_bank",
-        }
-
-        expected_id_set = set(expected_ids)
-        session.object_description_cache = {
-            object_id: row
-            for object_id, row in session.object_description_cache.items()
-            if object_id not in expected_id_set
-        }
-
-        latest = session.latest_api_result
-        if (
-            isinstance(latest, dict)
-            and int(latest.get("scene_revision") or -1) == scene_revision
-        ):
-            narration = dict(latest.get("narration") or {})
-            narration["object_descriptions"] = []
-            narration["source"] = "assisted_demo_description_bank"
-            latest["narration"] = narration
-            latest["qwen_streaming"] = True
-            latest["qwen_pending"] = True
-            latest["qwen_expected_object_count"] = len(expected_ids)
-            latest["qwen_received_object_count"] = 0
-            latest["qwen_expected_object_ids"] = list(expected_ids)
-            latest["qwen_received_object_ids"] = []
-            latest["qwen_first_result_sec"] = None
-            latest["object_stage_complete"] = False
-            latest["environment_stage_complete"] = False
-            latest["output_mode"] = runtime_output_mode()
-            latest["demo_output"] = True
-            latest["demo_mode"] = "assisted"
-
-    generated = build_assisted_demo_narration(
-        object_copy,
-        scene_revision=scene_revision,
-        signature=signature,
-    )
-    rows = list(generated.get("object_descriptions") or [])
-    scene_summary = str(generated.get("scene_summary") or "").strip()
-
-    def job_is_current() -> bool:
-        return bool(
-            session.last_signature == signature
-            and int(session.scene_revision) == scene_revision
-            and int(session.qwen_job_token) == job_token
-            and assisted_output_enabled()
-        )
-
-    def worker() -> None:
-        completed_rows: list[dict] = []
-        stale = False
-
-        try:
-            for row in rows:
-                if ASSISTED_OUTPUT_GAP_SEC > 0:
-                    time.sleep(ASSISTED_OUTPUT_GAP_SEC)
-
-                with _SESSION_LOCK:
-                    if not job_is_current():
-                        stale = True
-                        return
-
-                    now_partial = time.time()
-                    object_id = int(row["object_id"])
-                    row_copy = dict(row)
-                    completed_rows.append(row_copy)
-                    session.object_description_cache[object_id] = row_copy
-                    session.qwen_received_object_ids = [
-                        int(item["object_id"])
-                        for item in completed_rows
-                    ]
-                    session.qwen_last_partial_at = now_partial
-
-                    if session.qwen_first_result_at <= 0:
-                        session.qwen_first_result_at = now_partial
-
-                    session.last_object_emit_at = now_partial
-                    session.last_result = {
-                        "scene_summary": "",
-                        "object_descriptions": [
-                            dict(item) for item in completed_rows
-                        ],
-                        "relationship_descriptions": [],
-                        "unboxed_observation": None,
-                        "source": "assisted_demo_description_bank",
-                    }
-
-                    latest = session.latest_api_result
-                    if (
-                        isinstance(latest, dict)
-                        and int(latest.get("scene_revision") or -1)
-                            == scene_revision
-                    ):
-                        narration = dict(latest.get("narration") or {})
-                        narration["object_descriptions"] = [
-                            dict(item) for item in completed_rows
-                        ]
-                        narration["source"] = (
-                            "assisted_demo_description_bank"
-                        )
-                        latest["narration"] = narration
-                        latest["qwen_streaming"] = True
-                        latest["qwen_pending"] = True
-                        latest["qwen_expected_object_count"] = len(
-                            expected_ids
-                        )
-                        latest["qwen_received_object_count"] = len(
-                            completed_rows
-                        )
-                        latest["qwen_received_object_ids"] = list(
-                            session.qwen_received_object_ids
-                        )
-                        latest["qwen_first_result_sec"] = round(
-                            session.qwen_first_result_at
-                            - session.qwen_stream_started_at,
-                            3,
-                        )
-                        latest["object_stage_complete"] = (
-                            len(completed_rows) >= len(expected_ids)
-                        )
-                        latest["environment_stage_complete"] = False
-
-                print(
-                    "[assisted-demo][object] "
-                    f"revision={scene_revision} "
-                    f"id={row.get('object_id')} "
-                    f"description={row.get('description_id')} "
-                    f"elapsed={time.time() - started_at:.3f}s",
-                    flush=True,
-                )
-
-            # Keep a final pause between the last green card and purple summary.
-            if ASSISTED_OUTPUT_GAP_SEC > 0:
-                time.sleep(ASSISTED_OUTPUT_GAP_SEC)
-
-            with _SESSION_LOCK:
-                if not job_is_current():
-                    stale = True
-                    return
-
-                completed_at = time.time()
-                final_rows = [dict(item) for item in completed_rows]
-
-                session.last_result = {
-                    "scene_summary": "",
-                    "object_descriptions": final_rows,
-                    "relationship_descriptions": [],
-                    "unboxed_observation": None,
-                    "source": "assisted_demo_description_bank",
-                }
-                session.last_enriched_signature = signature
-                session.last_general_signature = signature
-                session.general_idle_ready = scene_summary
-                session.qwen_stream_scene_summary = scene_summary
-                session.qwen_received_object_ids = list(expected_ids)
-                session.last_narrated_at = completed_at
-                session.qwen_error = ""
-                session.qwen_pending = False
-                session.qwen_streaming = False
-
-                latest = session.latest_api_result
-                if (
-                    isinstance(latest, dict)
-                    and int(latest.get("scene_revision") or -1)
-                        == scene_revision
-                ):
-                    narration = dict(latest.get("narration") or {})
-                    narration["object_descriptions"] = final_rows
-                    narration["source"] = (
-                        "assisted_demo_description_bank"
-                    )
-                    latest["narration"] = narration
-                    latest["qwen_streaming"] = False
-                    latest["qwen_pending"] = False
-                    latest["qwen_expected_object_count"] = len(expected_ids)
-                    latest["qwen_received_object_count"] = len(final_rows)
-                    latest["qwen_expected_object_ids"] = list(expected_ids)
-                    latest["qwen_received_object_ids"] = list(expected_ids)
-                    latest["object_stage_complete"] = True
-                    latest["environment_stage_complete"] = True
-                    latest["output_mode"] = runtime_output_mode()
-                    latest["demo_output"] = True
-                    latest["demo_mode"] = "assisted"
-
-            print(
-                "[assisted-demo] complete "
-                f"revision={scene_revision} objects={len(completed_rows)} "
-                f"scene_summary={generated.get('scene_summary_id')} "
-                f"total={time.time() - started_at:.3f}s",
-                flush=True,
-            )
-        except Exception as exc:
-            with _SESSION_LOCK:
-                if int(session.qwen_job_token) == job_token:
-                    session.qwen_error = f"{type(exc).__name__}: {exc}"
-            print(
-                "[assisted-demo][WARN] "
-                f"{type(exc).__name__}: {exc}",
-                flush=True,
-            )
-        finally:
-            with _SESSION_LOCK:
-                if (
-                    not stale
-                    and int(session.qwen_job_token) == job_token
-                ):
-                    session.qwen_pending = False
-                    session.qwen_streaming = False
-
-    threading.Thread(
-        target=worker,
-        name=f"scene-narrator-assisted-{job_token}",
-        daemon=True,
-    ).start()
-    return True
-
-
-if NARRATOR_OUTPUT_MODE in {"auto", "assisted"}:
-    DEMO_DESCRIPTION_BANK = load_demo_description_bank()
-
-
 def sanitize_detector_class_text(value: Any) -> str:
     """Translate any detector-class fragments that leaked into narration."""
     text_value = str(value or "").strip()
@@ -4546,32 +2623,10 @@ def localize_narration_text(value: Any) -> str:
     return sanitize_detector_class_text(text_value)
 
 
-_RELATION_ZH = {
-    "near": "與{object}相距很近",
-    "left_of": "位於{object}左側",
-    "right_of": "位於{object}右側",
-    "above": "位於{object}上方",
-    "below": "位於{object}下方",
-    "inside": "位於{object}內部",
-    "overlapping": "與{object}部分重疊",
-}
-
-
 def object_ref(object_id: int, objects_by_id: dict[int, dict]) -> str:
     obj = objects_by_id.get(object_id) or {}
     return label_zh(obj.get("label") or "物件")
 
-
-_LAST_FAST_PATTERN_INDEX: dict[str, int] = {}
-
-def _choose_fast_pattern(kind: str, patterns: tuple[str, ...]) -> str:
-    previous = _LAST_FAST_PATTERN_INDEX.get(kind)
-    choices = [(i, p) for i, p in enumerate(patterns) if i != previous]
-    if not choices:
-        choices = list(enumerate(patterns))
-    index, pattern = random.choice(choices)
-    _LAST_FAST_PATTERN_INDEX[kind] = index
-    return pattern
 
 PLACEMENT_RULE_PATH = Path(
     os.environ.get("TAIROS_PLACEMENT_RULES_PATH")
@@ -4766,225 +2821,9 @@ def build_object_preview_descriptions(
     return rows
 
 
-def complete_empty_scene_without_vlm(
-    session: SessionState,
-    *,
-    signature: str,
-) -> None:
-    """Finish an empty semantic scene immediately without spending a VLM call."""
-    with _SESSION_LOCK:
-        if session.last_signature != signature:
-            return
-        if (
-            session.last_enriched_signature == signature
-            and session.last_general_signature == signature
-        ):
-            return
-        if session.qwen_pending:
-            session.qwen_job_token += 1
-            session.qwen_pending = False
-
-        session.last_result = {
-            "scene_summary": "",
-            "object_descriptions": [],
-            "relationship_descriptions": [],
-            "unboxed_observation": None,
-        }
-        session.object_description_cache.clear()
-        session.last_enriched_signature = signature
-        session.last_general_signature = signature
-        session.general_idle_ready = VLM_EMPTY_SCENE_TEXT
-        session.qwen_streaming = False
-        session.qwen_stream_started_at = 0.0
-        session.qwen_first_result_at = 0.0
-        session.qwen_last_partial_at = 0.0
-        session.qwen_expected_object_ids = []
-        session.qwen_received_object_ids = []
-        session.qwen_stream_scene_summary = VLM_EMPTY_SCENE_TEXT
-        session.qwen_error = ""
-
-
-def build_fast_narration(
-    objects: list[dict],
-    relations: list[dict],
-    *,
-    presence_object_ids: set[int] | None = None,
-) -> dict:
-    """Generate concise event narration without waiting for Qwen.
-
-    Blue text is an event acknowledgement, not a continuous paraphraser.  The
-    caller passes only newly appeared/increased classes through object IDs.
-    """
-    objects_by_id = {int(obj["id"]): obj for obj in objects}
-    summary = ""
-    presence_rows = []
-    presence_source = objects
-    if presence_object_ids is not None:
-        presence_source = [
-            obj for obj in objects
-            if int(obj.get("id") or -1) in presence_object_ids
-        ]
-
-    for obj in presence_source[:2]:
-        object_id = int(obj["id"])
-        qualified_label = distinguish_duplicate_label(
-            object_id, str(obj.get("label") or "物件"), objects
-        )
-        object_name = label_zh(qualified_label)
-        bbox = obj.get("bbox") or [0, 0, 0, 0]
-        cx = (float(bbox[0]) + float(bbox[2])) / 2.0
-        if cx < 0.36 * max(1.0, float(obj.get("frame_width") or 1280)):
-            position = "畫面左側"
-        elif cx > 0.64 * max(1.0, float(obj.get("frame_width") or 1280)):
-            position = "畫面右側"
-        else:
-            position = "畫面中央"
-
-        presence_rows.append({
-            "object_id": object_id,
-            "text": f"偵測到{object_name}，位於{position}。",
-            "confidence": float(obj.get("confidence") or 0.7),
-        })
-
-    relation_rows = []
-    used_pairs = set()
-    relation_priority = {
-        "inside": 6,
-        "overlapping": 5,
-        "near": 4,
-        "above": 3,
-        "below": 3,
-        "left_of": 2,
-        "right_of": 2,
-    }
-    for row in sorted(
-        relations,
-        key=lambda r: (
-            relation_priority.get(str(r.get("relation")), 0),
-            float(r.get("confidence") or 0),
-        ),
-        reverse=True,
-    ):
-        try:
-            subject_id = int(row["subject_id"])
-            object_id = int(row["object_id"])
-        except Exception:
-            continue
-        relation = str(row.get("relation") or "")
-        if relation not in _RELATION_ZH:
-            continue
-
-        # Avoid describing the same pair twice in opposite directions.
-        pair_key = tuple(sorted((subject_id, object_id)))
-        if pair_key in used_pairs:
-            continue
-        used_pairs.add(pair_key)
-
-        subject = object_ref(subject_id, objects_by_id)
-        target = object_ref(object_id, objects_by_id)
-        phrase = _RELATION_ZH[relation].format(object=target)
-        relation_text = f"{subject}{phrase}。"
-        # Do not force a transition word here. The first visible narration must
-        # never begin with 「另外」 when there is no preceding observation.
-        relation_rows.append({
-            "subject_id": subject_id,
-            "object_id": object_id,
-            "relation": relation,
-            "text": relation_text,
-            "confidence": float(row.get("confidence") or 0.7),
-        })
-        if len(relation_rows) >= 1:
-            break
-
-    return {
-        "scene_summary": summary,
-        "presence_descriptions": presence_rows,
-        "object_descriptions": [],
-        "relationship_descriptions": relation_rows,
-        "source": "fast_presence_and_geometry",
-    }
-
-
-def build_idle_narration(
-    session: SessionState,
-    objects: list[dict],
-    enriched: dict,
-) -> dict | None:
-    """Emit one fresh, non-repetitive observation while the scene is static."""
-    now = time.time()
-    if now - session.last_idle_emit_at < IDLE_NARRATION_INTERVAL_SEC:
-        return None
-
-    object_rows = list(enriched.get("object_descriptions") or [])
-    if not object_rows:
-        return None
-
-    # Make only one supplementary pass per unchanged scene.
-    if session.idle_cycle_index >= len(object_rows):
-        return None
-    row = object_rows[session.idle_cycle_index]
-    session.idle_cycle_index += 1
-    session.last_idle_emit_at = now
-
-    text_value = str(row.get("text") or "").strip()
-    if not text_value:
-        return None
-
-    # Most idle lines start directly; only a minority receive a light transition.
-    prefixes = ("", "", "", "再補充一點，", "另外可以看到，")
-    prefix = random.choice(prefixes)
-
-    cleaned = re.sub(
-        r"^(我看到|我注意到|仔細看|畫面裡還有|接著我注意到|再看一下|換個角度看|還可以注意到|仔細觀察)[，,：:]?",
-        "",
-        text_value,
-    ).strip()
-
-    if not cleaned:
-        return None
-
-    return {
-        "type": "idle",
-        "text": prefix + cleaned,
-        "object_id": row.get("object_id"),
-    }
-
-
-def merge_narration(fast: dict, enriched: dict | None) -> dict:
-    if not enriched:
-        return fast
-
-    merged = {
-        "scene_summary": (
-            str(enriched.get("scene_summary") or "").strip()
-            or fast.get("scene_summary")
-            or ""
-        ),
-        "presence_descriptions": list(fast.get("presence_descriptions") or [])[:3],
-        "object_descriptions": list(enriched.get("object_descriptions") or [])[:VLM_COMBINED_MAX_OBJECTS],
-        "relationship_descriptions": [],
-        "unboxed_observation": enriched.get("unboxed_observation"),
-        "source": "presence_then_object_then_geometry",
-    }
-
-    seen_text = set()
-    for row in list(fast.get("relationship_descriptions") or []) + list(
-        enriched.get("relationship_descriptions") or []
-    ):
-        text_value = str(row.get("text") or "").strip()
-        if not text_value or text_value in seen_text:
-            continue
-        seen_text.add(text_value)
-        merged["relationship_descriptions"].append(row)
-        if len(merged["relationship_descriptions"]) >= 1:
-            break
-    return merged
-
-
 def call_qwen_general_scene_comment(
     image: Image.Image,
     objects: list[dict],
-    recent_comments: list[str],
 ) -> str:
     """
     產生紫色層的整體場景描述。
@@ -5002,7 +2841,6 @@ def call_qwen_general_scene_comment(
     # 保留既有函式介面；紫色描述仍只根據原始完整影像判斷，
     # 不把 YOLO 類別、數量、座標或 objects metadata 傳給 VLM。
     _ = objects
-    _ = recent_comments
 
     prompt = {
     "scene_context": (
@@ -5062,34 +2900,7 @@ def call_qwen_general_scene_comment(
         ],
     }
 
-    req = urllib.request.Request(
-        QWEN_BASE_URL + "/chat/completions",
-        data=json.dumps(
-            payload,
-            ensure_ascii=False,
-        ).encode("utf-8"),
-        method="POST",
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": "Bearer local",
-        },
-    )
-
-    with urllib.request.urlopen(
-        req,
-        timeout=QWEN_TIMEOUT_SEC,
-    ) as response:
-        raw = response.read().decode("utf-8")
-
-    data = json.loads(raw)
-    content = data["choices"][0]["message"]["content"]
-
-    if isinstance(content, list):
-        content = "".join(
-            str(item.get("text") or "")
-            for item in content
-            if isinstance(item, dict)
-        )
+    content = _background_qwen_chat(payload)["content"]
 
     comment = localize_narration_text(str(content or ""))
 
@@ -5193,39 +3004,23 @@ def start_general_idle_comment(
         if session.last_signature != signature:
             return False
 
-    if not _QWEN_WORK_LOCK.acquire(blocking=False):
-        return False
-
     with _SESSION_LOCK:
         if session.general_idle_pending or session.general_idle_ready:
-            _QWEN_WORK_LOCK.release()
             return False
         session.general_idle_job_token += 1
         token = session.general_idle_job_token
         session.general_idle_pending = True
-        recent = list(session.recent_general_idle)
 
     image_copy = image.copy()
     object_copy = json.loads(json.dumps(objects))
 
     def worker() -> None:
         try:
-            comment = call_qwen_general_scene_comment(image_copy, object_copy, recent)
-            comment_core = semantic_line_core(comment)
-            duplicate = any(
-                semantic_lines_similar(comment_core, semantic_line_core(old_comment))
-                for old_comment in recent
-                if str(old_comment or "").strip()
-            )
+            comment = call_qwen_general_scene_comment(image_copy, object_copy)
             with _SESSION_LOCK:
                 if session.last_signature == signature and session.general_idle_job_token == token:
-                    # A deduplicated answer still completes this scene's purple
-                    # stage; otherwise pairwise would be starved forever.
                     session.last_general_signature = signature
-                    if duplicate:
-                        print(f"[general-idle][dedup] skipped={comment}", flush=True)
-                    else:
-                        session.general_idle_ready = comment
+                    session.general_idle_ready = comment
         except Exception as exc:
             with _SESSION_LOCK:
                 if session.general_idle_job_token == token:
@@ -5234,7 +3029,6 @@ def start_general_idle_comment(
             with _SESSION_LOCK:
                 if session.general_idle_job_token == token:
                     session.general_idle_pending = False
-            _QWEN_WORK_LOCK.release()
 
     threading.Thread(
         target=worker,
@@ -5255,7 +3049,6 @@ def start_qwen_enrichment(
 ) -> bool:
     """Start one contact-sheet streaming job without blocking YOLO requests."""
     now = time.time()
-    assisted_mode = assisted_output_enabled()
     with _SESSION_LOCK:
         if session.last_signature != signature:
             return False
@@ -5266,23 +3059,10 @@ def start_qwen_enrichment(
         if not objects:
             return False
 
-        # Assisted output is ready immediately after the scene has passed the
-        # existing stable-object and scene-change gates.
-        if not assisted_mode:
-            if not force and now - session.last_scene_change_at < QWEN_ENRICH_DELAY_SEC:
-                return False
-            if now - session.last_qwen_attempt_at < QWEN_RETRY_INTERVAL_SEC:
-                return False
-
-    if assisted_mode:
-        return publish_assisted_demo_output(
-            session,
-            signature=signature,
-            objects=objects,
-        )
-
-    if not _QWEN_WORK_LOCK.acquire(blocking=False):
-        return False
+        if not force and now - session.last_scene_change_at < QWEN_ENRICH_DELAY_SEC:
+            return False
+        if now - session.last_qwen_attempt_at < QWEN_RETRY_INTERVAL_SEC:
+            return False
 
     object_copy = json.loads(json.dumps(
         sorted(
@@ -5298,7 +3078,6 @@ def start_qwen_enrichment(
 
     with _SESSION_LOCK:
         if session.last_signature != signature or session.qwen_pending:
-            _QWEN_WORK_LOCK.release()
             return False
         session.qwen_job_token += 1
         job_token = session.qwen_job_token
@@ -5376,7 +3155,6 @@ def start_qwen_enrichment(
                 "scene_summary": "",
                 "object_descriptions": partial_rows,
                 "relationship_descriptions": [],
-                "unboxed_observation": None,
             }
 
             latest = session.latest_api_result
@@ -5518,7 +3296,6 @@ def start_qwen_enrichment(
                 if session.qwen_job_token == job_token:
                     session.qwen_pending = False
                     session.qwen_streaming = False
-            _QWEN_WORK_LOCK.release()
 
     threading.Thread(
         target=worker,
@@ -5526,176 +3303,6 @@ def start_qwen_enrichment(
         daemon=True,
     ).start()
     return True
-
-
-def semantic_line_core(value: Any) -> str:
-    """Normalize narration for duplicate detection across track-ID changes."""
-    text_value = sanitize_detector_class_text(
-        localize_narration_text(value)
-    )
-    text_value = re.sub(
-        r"^(?:更正：剛才的「[^」]+」標籤不準確，實際看起來是|"
-        r"更正[:：]|目前[，,]|從畫面來看[，,]|另外可以看到[，,]|"
-        r"再補充一點[，,]|可以看到)",
-        "",
-        text_value,
-    )
-    text_value = re.sub(
-        r"(?:畫面|視野)(?:左側|右側|中央|中間|上方|下方)",
-        "",
-        text_value,
-    )
-    text_value = re.sub(r"(?:左側|右側|中央|中間|上方|下方)的?", "", text_value)
-    text_value = re.sub(r"[「」『』，。！？、：:；;\s\-_/]", "", text_value)
-    return text_value.lower().strip()
-
-
-def semantic_lines_similar(left: str, right: str) -> bool:
-    if not left or not right:
-        return False
-    if left == right:
-        return True
-
-    shorter, longer = sorted((left, right), key=len)
-    if len(shorter) >= 8 and shorter in longer:
-        return True
-
-    def bigrams(value: str) -> set[str]:
-        return {value[i:i + 2] for i in range(max(0, len(value) - 1))}
-
-    a = bigrams(left)
-    b = bigrams(right)
-    if not a or not b:
-        return False
-
-    overlap = len(a & b) / max(1, min(len(a), len(b)))
-    return overlap >= 0.78
-
-
-def filter_balanced_narration_lines(
-    session: SessionState,
-    lines: list[dict],
-    now_value: float,
-) -> list[dict]:
-    """Keep a useful five-line feed without repetitive filler."""
-    priority = {
-        "correction": 60,
-        "overlap_alert": 58,
-        "object": 55,
-        "unboxed": 45,
-        "relation": 40,
-        "presence": 30,
-        "summary": 25,
-        "idle": 15,
-    }
-
-    with _SESSION_LOCK:
-        session.recent_semantic_lines = [
-            row for row in session.recent_semantic_lines
-            if now_value - row[0] <= SEMANTIC_DEDUP_WINDOW_SEC
-        ]
-        recent = list(session.recent_semantic_lines)
-
-    candidates = list(enumerate(lines))
-    candidates.sort(
-        key=lambda item: (
-            priority.get(str(item[1].get("type") or ""), 20),
-            item[0],
-        ),
-        reverse=True,
-    )
-
-    selected_indexes: set[int] = set()
-    type_counts: dict[str, int] = {}
-    newly_seen: list[tuple[float, str, str]] = []
-
-    for original_index, line in candidates:
-        line_type = str(line.get("type") or "summary")
-        text_value = str(line.get("text") or "").strip()
-        core = semantic_line_core(text_value)
-        if not core:
-            continue
-
-        # Do not let a weaker blue presence line suppress a later green detail.
-        comparable_recent = [
-            row for row in recent
-            if not (
-                line_type in {"object", "correction"}
-                and row[2] == "presence"
-            )
-        ]
-
-        if any(
-            semantic_lines_similar(core, old_core)
-            for _, old_core, _ in comparable_recent
-        ):
-            continue
-        if any(
-            semantic_lines_similar(core, old_core)
-            for _, old_core, _ in newly_seen
-        ):
-            continue
-
-        type_limit = 1 if line_type == "idle" else MAX_LINES_PER_TYPE
-        if type_counts.get(line_type, 0) >= type_limit:
-            continue
-
-        selected_indexes.add(original_index)
-        type_counts[line_type] = type_counts.get(line_type, 0) + 1
-        newly_seen.append((now_value, core, line_type))
-
-        if len(selected_indexes) >= MAX_NARRATION_LINES:
-            break
-
-    accepted = [
-        line
-        for index, line in enumerate(lines)
-        if index in selected_indexes
-    ]
-
-    with _SESSION_LOCK:
-        session.recent_semantic_lines.extend(newly_seen)
-        session.recent_semantic_lines = session.recent_semantic_lines[-40:]
-
-    return accepted[-MAX_NARRATION_LINES:]
-
-
-def presence_event_object_ids(
-    session: SessionState,
-    objects: list[dict],
-    *,
-    now_value: float,
-) -> set[int]:
-    """Return object IDs that deserve a new blue event line.
-
-    The same class/count is not rephrased every polling cycle. A class becomes
-    eligible again only after a long confirmed absence.
-    """
-    grouped: dict[str, list[dict]] = {}
-    for obj in objects:
-        grouped.setdefault(canonical(obj.get("label") or "object"), []).append(obj)
-
-    with _SESSION_LOCK:
-        # Expire old announced state only after a genuine long absence.
-        for label in list(session.announced_presence_counts):
-            last_seen = float(session.presence_last_seen_at.get(label) or 0.0)
-            if label not in grouped and now_value - last_seen >= PRESENCE_REANNOUNCE_ABSENCE_SEC:
-                session.announced_presence_counts.pop(label, None)
-                session.presence_last_seen_at.pop(label, None)
-
-        event_ids: set[int] = set()
-        for label, rows in grouped.items():
-            rows = sorted(rows, key=lambda x: int(x.get("id") or 0))
-            session.presence_last_seen_at[label] = now_value
-            previous_count = int(session.announced_presence_counts.get(label) or 0)
-            current_count = len(rows)
-            if current_count > previous_count:
-                for row in rows[previous_count:current_count]:
-                    event_ids.add(int(row["id"]))
-            session.announced_presence_counts[label] = max(previous_count, current_count)
-
-        return event_ids
-
 
 
 def _normalize_external_detections(raw_items: Any, *, width: int, height: int) -> list[dict]:
@@ -5739,41 +3346,9 @@ def _analyze_with_detections(
     force_narration: bool,
     started: float,
     yolo_inference_ms: Any = None,
-    task_active: bool | None = None,
-    allow_task_vlm: bool = False,
     source_meta: dict | None = None,
 ) -> dict:
     session = get_session(session_id)
-    if task_active is not None:
-        with _SESSION_LOCK:
-            was_active = bool(session.task_active)
-            session.task_active = bool(task_active)
-            if session.task_active and not was_active:
-                session.task_started_at = time.time()
-                # Invalidate queued low-priority jobs. Running HTTP calls cannot
-                # be killed, but stale tokens prevent their results committing.
-                session.qwen_job_token += 1
-                session.qwen_pending = False
-                reset_qwen_stream_state(session)
-                session.general_idle_job_token += 1
-                session.general_idle_pending = False
-                session.general_idle_ready = ""
-                session.unboxed_job_token += 1
-                session.unboxed_pending = False
-            elif not session.task_active and was_active:
-                session.task_id = ""
-                session.task_started_at = 0.0
-                session.reobserve_requested = True
-                session.last_scene_change_at = time.time()
-                session.last_result = {}
-                session.object_description_cache.clear()
-                session.last_enriched_signature = ""
-                session.last_general_signature = ""
-                session.general_idle_ready = ""
-                session.last_object_emit_at = 0.0
-                reset_qwen_stream_state(session)
-    with _SESSION_LOCK:
-        task_mode_active = bool(session.task_active)
 
     objects = assign_stable_ids(session, detections)
 
@@ -5860,7 +3435,6 @@ def _analyze_with_detections(
             session.reobserve_requested = False
             session.last_scene_event_reason = ",".join(scene_change_reasons)
             session.last_result = {}
-            session.unboxed_result = None
             # Pairwise overlap state is intentionally NOT reset by unrelated
             # whole-scene changes. A new toy, tissue, or small bbox motion must
             # not erase a confirmed warning for the same two detected objects.
@@ -5893,11 +3467,6 @@ def _analyze_with_detections(
         scene_revision = session.scene_revision
         scene_confirm_count = int(session.pending_scene_confirm_count)
 
-    blue_event_ids = presence_event_object_ids(
-        session,
-        state_objects,
-        now_value=now,
-    )
     state_label_counts: dict[str, int] = {}
     for obj in state_objects:
         label_key = canonical(obj.get("label") or "object")
@@ -5905,24 +3474,10 @@ def _analyze_with_detections(
     presence_key = "|".join(
         f"{label}:{count}" for label, count in sorted(state_label_counts.items())
     )
-    presence_changed = bool(blue_event_ids)
-    fast_narration = build_fast_narration(
-        state_objects,
-        relations,
-        presence_object_ids=None if force_narration else blue_event_ids,
-    )
-
-    if not (force_narration or blue_event_ids):
-        fast_narration["presence_descriptions"] = []
-
-    if not scene_changed and not force_narration:
-        fast_narration["relationship_descriptions"] = []
-
     # Qwen is deliberately delayed until YOLO reports a stable scene. The
     # current response always returns the boxes first; text arrives in a later
     # polling response. Only create the annotated Qwen image when a job is due.
     qwen_started = False
-    unboxed_started = False
     pairwise_started = False
     pairwise_objects = recent_pairwise_objects(
         session,
@@ -6001,22 +3556,7 @@ def _analyze_with_detections(
         and pairwise_attempts_available
     )
 
-    # Empty semantic scenes do not need a VLM call. Wait until the held-track
-    # window expires, then publish a deterministic purple sentence immediately.
-    if (
-        not objects
-        and not state_objects
-        and not task_mode_active
-        and not scene_change_pending
-    ):
-        complete_empty_scene_without_vlm(
-            session,
-            signature=signature,
-        )
-
-    # Event-driven VLM order:
-    #   1) one contact-sheet streaming request supplies green + purple
-    #   2) pairwise / unboxed work may run only after that request completes
+    # One contact-sheet streaming request supplies object and scene descriptions.
     with _SESSION_LOCK:
         object_stage_complete = bool(
             not state_objects
@@ -6033,7 +3573,6 @@ def _analyze_with_detections(
 
     if (
         state_objects
-        and not task_mode_active
         and not scene_change_pending
         and not combined_scene_complete
     ):
@@ -6046,8 +3585,7 @@ def _analyze_with_detections(
             force=force_narration,
         )
 
-    # Refresh completion flags after scheduling. Assisted and live narration
-    # both publish asynchronously, so the current response may still be pending.
+    # Refresh completion flags after asynchronous scheduling.
     with _SESSION_LOCK:
         object_stage_complete = bool(
             not state_objects
@@ -6063,8 +3601,6 @@ def _analyze_with_detections(
         and object_stage_complete
         and environment_stage_complete
         and not qwen_started
-        and not task_mode_active
-        and not assisted_output_enabled()
     ):
         pairwise_started = start_pairwise_pickup_audit(
             session,
@@ -6072,22 +3608,6 @@ def _analyze_with_detections(
             fingerprint=pairwise_fingerprint,
             image=pil,
             candidates=pairwise_candidates,
-        )
-
-    if (
-        UNBOXED_AUDIT_ENABLED
-        and object_stage_complete
-        and environment_stage_complete
-        and not pairwise_started
-        and not qwen_started
-        and not task_mode_active
-        and not assisted_output_enabled()
-    ):
-        unboxed_started = start_unboxed_audit(
-            session,
-            signature=signature,
-            annotated=draw_numbered_frame(pil, objects),
-            existing_objects=state_objects,
         )
 
     object_preview_descriptions = build_object_preview_descriptions(
@@ -6126,11 +3646,6 @@ def _analyze_with_detections(
             if qwen_first_result_at > 0 and qwen_stream_started_at > 0
             else None
         )
-        current_unboxed = (
-            dict(session.unboxed_result)
-            if isinstance(session.unboxed_result, dict)
-            else None
-        )
         current_pairwise = (
             dict(session.pairwise_result)
             if (
@@ -6153,24 +3668,17 @@ def _analyze_with_detections(
         pairwise_pending = bool(session.pairwise_pending)
         pairwise_error = str(session.pairwise_error or "")
 
-    # A previous audit result may become stale when YOLO detects the object on a
-    # later frame. Re-filter every response so an already visible cyan box can
-    # never continue to appear in the yellow missing-object reminder.
-    if current_unboxed:
-        current_unboxed = filter_already_boxed_unboxed_candidates(
-            current_unboxed,
-            state_objects,
-            (pil.width, pil.height),
-            stage="response",
-        )
-        current_unboxed = clean_unboxed_observation(current_unboxed)
-        if not current_unboxed:
-            with _SESSION_LOCK:
-                session.unboxed_result = None
-
-    narration = merge_narration(fast_narration, enriched_result)
-    if current_unboxed:
-        narration["unboxed_observation"] = current_unboxed
+    narration = {
+        "scene_summary": str(enriched_result.get("scene_summary") or "").strip(),
+        "presence_descriptions": [],
+        "object_descriptions": list(
+            enriched_result.get("object_descriptions") or []
+        )[:VLM_COMBINED_MAX_OBJECTS],
+        "relationship_descriptions": list(
+            enriched_result.get("relationship_descriptions") or []
+        )[:1],
+        "source": "qwen3_vl",
+    }
 
     idle_line = None
     general_idle_line = None
@@ -6195,8 +3703,7 @@ def _analyze_with_detections(
             - (now_for_idle - session.last_object_emit_at),
         ) if session.last_object_emit_at > 0 else 0.0
         general_ready_allowed = (
-            not task_mode_active
-            and ready_comment
+            ready_comment
             and green_gap_remaining <= 0.0
         )
 
@@ -6219,7 +3726,6 @@ def _analyze_with_detections(
         )
         can_start_general_idle = (
             GENERAL_IDLE_ENABLED
-            and not task_mode_active
             and not scene_change_pending
             and scene_stable_long_enough
             # 空場景不會執行綠色物件 Qwen，但仍可進入紫色環境描述。
@@ -6245,13 +3751,6 @@ def _analyze_with_detections(
         lines.append({"type": "summary", "text": narration["scene_summary"]})
     # Exhibition narration is object-first: appearance/state descriptions are
     # more informative and change less often than geometric relations.
-    for row in narration.get("presence_descriptions") or []:
-        lines.append({
-            "type": "presence",
-            "text": row["text"],
-            "object_id": row.get("object_id"),
-        })
-
     for row in narration.get("object_descriptions") or []:
         lines.append({
             "type": "object",
@@ -6261,14 +3760,6 @@ def _analyze_with_detections(
 
     if pairwise_ready_line:
         lines.append(pairwise_ready_line)
-
-    unboxed = narration.get("unboxed_observation")
-    if isinstance(unboxed, dict) and unboxed.get("text"):
-        lines.append({
-            "type": "unboxed",
-            "text": unboxed["text"],
-            "possible_label": unboxed.get("possible_label"),
-        })
 
     for row in narration.get("relationship_descriptions") or []:
         lines.append({
@@ -6291,11 +3782,7 @@ def _analyze_with_detections(
     for line in lines:
         line["text"] = sanitize_detector_class_text(line.get("text"))
 
-    lines = filter_balanced_narration_lines(
-        session,
-        lines,
-        time.time(),
-    )
+    lines = lines[-MAX_NARRATION_LINES:]
 
     # 紫色整體描述原本只存在一個 response，下一個 bridge frame 就會消失。
     # 同一 scene signature 完成後，持續把最後一筆紫色文字放進 state，
@@ -6314,7 +3801,7 @@ def _analyze_with_detections(
         persistent_general_text
         and not any(
             str(line.get("type") or "") in {
-                "idle", "summary", "relation", "unboxed"
+                "idle", "summary", "relation"
             }
             for line in lines
         )
@@ -6378,15 +3865,8 @@ def _analyze_with_detections(
         "narration": narration,
         "lines": lines,
         "narration_updated": bool(enriched_result),
-        "configured_output_mode": NARRATOR_OUTPUT_MODE,
-        "output_mode": runtime_output_mode(),
-        "demo_output": assisted_output_enabled(),
-        "demo_mode": "assisted" if assisted_output_enabled() else "",
-        "description_source": (
-            "demo_description_bank"
-            if assisted_output_enabled()
-            else "qwen3_vl"
-        ),
+        "output_mode": "live",
+        "description_source": "qwen3_vl",
         "scene_changed": scene_changed,
         "scene_revision": scene_revision,
         "scene_change_reasons": scene_change_reasons,
@@ -6397,7 +3877,6 @@ def _analyze_with_detections(
         "object_stage_complete": bool(object_stage_complete),
         "environment_stage_complete": bool(environment_stage_complete),
         "event_trigger_only": True,
-        "presence_changed": presence_changed,
         "presence_key": presence_key,
         "idle_line_emitted": bool(idle_line),
         "general_idle_line_emitted": bool(general_idle_line),
@@ -6407,7 +3886,6 @@ def _analyze_with_detections(
         "pairwise_error": pairwise_error,
         "pairwise_latched": bool(session.pairwise_latched),
         "pairwise_attempt_count": int(session.pairwise_attempt_count),
-        "unboxed_started": unboxed_started,
         "qwen_pending": qwen_pending,
         "qwen_error": qwen_error,
         "qwen_streaming": qwen_streaming,
@@ -6436,10 +3914,7 @@ def _analyze_with_detections(
         "frame_id": (source_meta or {}).get("frame_id"),
         "vision_latest_time": (source_meta or {}).get("latest_time"),
         "coordinate_mode": (source_meta or {}).get("coordinate_mode"),
-        "qwen_engine_busy": _QWEN_WORK_LOCK.locked(),
-        "task_active": task_mode_active,
-        "vlm_suppressed": bool(task_mode_active and not allow_task_vlm),
-        "allow_task_vlm": bool(allow_task_vlm),
+        "qwen_engine_busy": llm_service.runtime_busy(),
         "elapsed_sec": round(time.perf_counter() - started, 3),
     }
     with _SESSION_LOCK:
@@ -6492,63 +3967,28 @@ def _pil_from_snapshot(snapshot: dict[str, Any]) -> Image.Image | None:
 
 
 def _read_vision_snapshot() -> dict[str, Any] | None:
-    """Read the newest TaiROS vision state directly from vision_service.
+    """Read a cached TaiROS vision snapshot without capturing a fresh frame.
 
-    Preferred future contract:
-        vision_service.get_latest_scene_snapshot(include_robot_xyz=False)
-
-    Until that helper is added, this falls back to the two existing public
-    functions. The fallback remains in-process, but the preferred helper is
-    atomic and guarantees image/detection alignment.
+    Narrator is a best-effort background consumer.  It must never become a
+    camera producer or affect camera lifecycle, so absence of the optional
+    cache API (or of a cached snapshot) is a normal no-work condition.
     """
     atomic_getter = getattr(vision_service, "get_latest_scene_snapshot", None)
-    if callable(atomic_getter):
-        try:
-            snapshot = atomic_getter(include_robot_xyz=False)
-        except TypeError:
-            snapshot = atomic_getter()
-        if snapshot is None:
-            return None
-        if not isinstance(snapshot, dict):
-            raise RuntimeError("vision_service scene snapshot is not a dict")
-        if snapshot.get("status") not in {None, "success"}:
-            raise RuntimeError(
-                str(snapshot.get("message") or "vision snapshot failed")
-            )
-        return snapshot
-
-    detections_result = vision_service.get_latest_detections(
-        include_robot_xyz=False,
-    )
-    if not isinstance(detections_result, dict):
-        raise RuntimeError("vision_service detections result is not a dict")
-    if detections_result.get("status") not in {None, "success"}:
+    if not callable(atomic_getter):
+        return None
+    try:
+        snapshot = atomic_getter(include_robot_xyz=False)
+    except TypeError:
+        snapshot = atomic_getter()
+    if snapshot is None:
+        return None
+    if not isinstance(snapshot, dict):
+        raise RuntimeError("vision_service scene snapshot is not a dict")
+    if snapshot.get("status") not in {None, "success"}:
         raise RuntimeError(
-            str(detections_result.get("message") or "vision detections failed")
+            str(snapshot.get("message") or "vision snapshot failed")
         )
-
-    jpeg_bytes, jpeg_info = vision_service.get_latest_color_jpeg(
-        quality=VLM_NARRATOR_JPEG_QUALITY,
-    )
-    if not jpeg_bytes:
-        message = (
-            (jpeg_info or {}).get("message")
-            if isinstance(jpeg_info, dict)
-            else "no latest color frame"
-        )
-        raise RuntimeError(str(message or "no latest color frame"))
-
-    return {
-        "jpeg_bytes": jpeg_bytes,
-        "objects": list(detections_result.get("objects") or []),
-        "latest_time": detections_result.get("latest_time"),
-        "coordinate_mode": detections_result.get("coordinate_mode"),
-        "has_synced_tcp_pose": detections_result.get("has_synced_tcp_pose"),
-        "coordinate_success_count": detections_result.get(
-            "coordinate_success_count"
-        ),
-        "source": "tairos_vision_service_fallback",
-    }
+    return snapshot
 
 
 def process_snapshot(
@@ -6556,7 +3996,6 @@ def process_snapshot(
     *,
     session_id: str = VLM_SESSION_ID,
     force_narration: bool = False,
-    allow_task_vlm: bool = False,
 ) -> dict[str, Any]:
     """Process one in-memory vision_service snapshot."""
     started = time.perf_counter()
@@ -6575,6 +4014,7 @@ def process_snapshot(
             "frame_id",
             "latest_time",
             "captured_at",
+            "camera_name",
             "coordinate_mode",
             "camera_mode",
             "has_synced_tcp_pose",
@@ -6592,8 +4032,6 @@ def process_snapshot(
         force_narration=force_narration,
         started=started,
         yolo_inference_ms=None,
-        task_active=None,
-        allow_task_vlm=allow_task_vlm,
         source_meta=source_meta,
     )
 
@@ -6602,7 +4040,6 @@ def process_latest_snapshot(
     *,
     session_id: str = VLM_SESSION_ID,
     force_narration: bool = False,
-    allow_task_vlm: bool = False,
 ) -> dict[str, Any] | None:
     snapshot = _read_vision_snapshot()
     if snapshot is None:
@@ -6611,8 +4048,88 @@ def process_latest_snapshot(
         snapshot,
         session_id=session_id,
         force_narration=force_narration,
-        allow_task_vlm=allow_task_vlm,
     )
+
+
+def _observe_once(
+    *,
+    session_id: str = VLM_SESSION_ID,
+    force_narration: bool = False,
+    stop_event: threading.Event | None = None,
+) -> dict[str, Any]:
+    """Consume one cached snapshot and wait for its narrator jobs to finish."""
+    if stop_event is not None:
+        acquired = (
+            not stop_event.is_set()
+            and _NARRATOR_OBSERVE_LOCK.acquire(timeout=0.1)
+        )
+    else:
+        _NARRATOR_OBSERVE_LOCK.acquire()
+        acquired = True
+
+    if not acquired:
+        return {"ok": True, "status": "stopped", "session_id": session_id}
+
+    try:
+        snapshot = _read_vision_snapshot()
+        if snapshot is None:
+            return {
+                "ok": True,
+                "status": "no_snapshot",
+                "description": "",
+                "session_id": session_id,
+            }
+
+        process_snapshot(
+            snapshot,
+            session_id=session_id,
+            force_narration=force_narration,
+        )
+
+        session = get_session(session_id)
+        deadline = time.monotonic() + max(5.0, QWEN_TIMEOUT_SEC + 5.0)
+        while time.monotonic() < deadline:
+            with _SESSION_LOCK:
+                pending = bool(
+                    session.qwen_pending
+                    or session.pairwise_pending
+                    or session.general_idle_pending
+                )
+            if not pending or (stop_event and stop_event.is_set()):
+                break
+            time.sleep(0.05)
+
+        state = get_state(session_id=session_id)
+        scene = state.get("scene") or {}
+        lines = state.get("lines") or []
+        description = "\n".join(
+            str(line.get("text") or "").strip()
+            for line in lines
+            if isinstance(line, dict) and str(line.get("text") or "").strip()
+        )
+        source = scene.get("source_meta") or {}
+        return {
+            **state,
+            "status": "completed",
+            "description": description,
+            "timestamp": (
+                source.get("captured_at")
+                or source.get("latest_time")
+                or time.time()
+            ),
+            "camera": source.get("camera_name") or VLM_CAMERA_NAME,
+            "source": source.get("source") or source.get("detector_source"),
+        }
+    finally:
+        _NARRATOR_OBSERVE_LOCK.release()
+
+
+def narrate_once(
+    *,
+    session_id: str = VLM_SESSION_ID,
+) -> dict[str, Any]:
+    """Analyze one cached scene without starting the monitor runtime."""
+    return _observe_once(session_id=session_id, force_narration=True)
 
 
 def _narrator_runtime_worker() -> None:
@@ -6620,15 +4137,16 @@ def _narrator_runtime_worker() -> None:
     global _NARRATOR_LAST_ERROR
     global _NARRATOR_LAST_RESULT_AT
 
-    interval = 1.0 / VLM_NARRATOR_HZ
     while not _NARRATOR_RUNTIME_STOP.is_set():
-        started = time.monotonic()
         try:
             snapshot = _read_vision_snapshot()
             if snapshot is not None:
                 key = _frame_key(snapshot)
                 if key != _NARRATOR_LAST_FRAME_KEY:
-                    process_snapshot(snapshot, session_id=VLM_SESSION_ID)
+                    _observe_once(
+                        session_id=VLM_SESSION_ID,
+                        stop_event=_NARRATOR_RUNTIME_STOP,
+                    )
                     _NARRATOR_LAST_FRAME_KEY = key
                     _NARRATOR_LAST_RESULT_AT = time.time()
                     if _NARRATOR_LAST_ERROR:
@@ -6643,55 +4161,13 @@ def _narrator_runtime_worker() -> None:
                 print(f"[vlm-narrator][WARN] {error_text}", flush=True)
                 _NARRATOR_LAST_ERROR = error_text
 
-        elapsed = time.monotonic() - started
-        _NARRATOR_RUNTIME_STOP.wait(max(0.05, interval - elapsed))
+        _NARRATOR_RUNTIME_STOP.wait(VLM_NARRATOR_INTERVAL_SEC)
 
 
-def _start_qwen_and_mode_workers() -> None:
+def _start_qwen_worker() -> None:
     global _QWEN_KEEPALIVE_THREAD
-    global _UI_MODE_WATCHDOG_THREAD
 
-    print(
-        "[narrator-mode] "
-        f"configured={NARRATOR_OUTPUT_MODE} "
-        f"effective={runtime_output_mode()} "
-        f"heartbeat_ttl={UI_MODE_HEARTBEAT_TTL_SEC:.1f}s "
-        f"description_bank={DEMO_DESCRIPTION_PATH}",
-        flush=True,
-    )
-
-    if NARRATOR_OUTPUT_MODE in {"auto", "assisted"}:
-        object_count = len(DEMO_DESCRIPTION_BANK.get("objects") or {})
-        description_count = sum(
-            len((item or {}).get("descriptions") or [])
-            for item in (DEMO_DESCRIPTION_BANK.get("objects") or {}).values()
-            if isinstance(item, dict)
-        )
-        print(
-            "[assisted-demo] ready "
-            f"objects={object_count} descriptions={description_count} "
-            f"seed={DEMO_SEED} "
-            f"output_gap={ASSISTED_OUTPUT_GAP_SEC:.2f}s "
-            f"track_hold={ASSISTED_TRACK_HOLD_SEC:.2f}s "
-            "coordinate_mapping="
-            f"{DEMO_DESCRIPTION_BANK.get('coordinate_mapping') or 'identity'}",
-            flush=True,
-        )
-
-    if NARRATOR_OUTPUT_MODE == "auto":
-        _UI_MODE_WATCHDOG_STOP.clear()
-        if not (
-            _UI_MODE_WATCHDOG_THREAD
-            and _UI_MODE_WATCHDOG_THREAD.is_alive()
-        ):
-            _UI_MODE_WATCHDOG_THREAD = threading.Thread(
-                target=_ui_mode_watchdog_worker,
-                name="vlm-ui-mode-watchdog",
-                daemon=True,
-            )
-            _UI_MODE_WATCHDOG_THREAD.start()
-
-    if NARRATOR_OUTPUT_MODE == "assisted" or not QWEN_KEEPALIVE_ENABLED:
+    if not QWEN_KEEPALIVE_ENABLED:
         return
 
     _QWEN_KEEPALIVE_STOP.clear()
@@ -6715,6 +4191,7 @@ def _start_qwen_and_mode_workers() -> None:
 def start_runtime() -> dict[str, Any]:
     """Start the in-process narrator consumer once inside the 5000 process."""
     global _NARRATOR_RUNTIME_THREAD
+    global _NARRATOR_LAST_FRAME_KEY
 
     with _NARRATOR_RUNTIME_LOCK:
         if (
@@ -6728,8 +4205,8 @@ def start_runtime() -> dict[str, Any]:
                 "session_id": VLM_SESSION_ID,
             }
 
-        _start_qwen_and_mode_workers()
         _NARRATOR_RUNTIME_STOP.clear()
+        _NARRATOR_LAST_FRAME_KEY = ""
         _NARRATOR_RUNTIME_THREAD = threading.Thread(
             target=_narrator_runtime_worker,
             name="tairos-vlm-narrator",
@@ -6739,7 +4216,8 @@ def start_runtime() -> dict[str, Any]:
 
     print(
         "[vlm-narrator] started "
-        f"session={VLM_SESSION_ID} hz={VLM_NARRATOR_HZ:g} "
+        f"session={VLM_SESSION_ID} interval={VLM_NARRATOR_INTERVAL_SEC:g}s "
+        f"camera={VLM_CAMERA_NAME} "
         "vision_source=services.vision_service",
         flush=True,
     )
@@ -6748,7 +4226,7 @@ def start_runtime() -> dict[str, Any]:
         "result": True,
         "runtime_status": "running",
         "session_id": VLM_SESSION_ID,
-        "hz": VLM_NARRATOR_HZ,
+        "interval_sec": VLM_NARRATOR_INTERVAL_SEC,
     }
 
 
@@ -6756,14 +4234,21 @@ def stop_runtime() -> dict[str, Any]:
     """Stop narrator-owned background workers without stopping vision_service."""
     global _NARRATOR_RUNTIME_THREAD
 
-    _NARRATOR_RUNTIME_STOP.set()
-    _QWEN_KEEPALIVE_STOP.set()
-    _UI_MODE_WATCHDOG_STOP.set()
+    with _NARRATOR_RUNTIME_LOCK:
+        thread = _NARRATOR_RUNTIME_THREAD
+        was_running = bool(thread and thread.is_alive())
+        _NARRATOR_RUNTIME_STOP.set()
+        _QWEN_KEEPALIVE_STOP.set()
 
-    thread = _NARRATOR_RUNTIME_THREAD
-    if thread and thread.is_alive():
-        thread.join(timeout=2.0)
-    _NARRATOR_RUNTIME_THREAD = None
+    if was_running:
+        thread.join()
+
+    with _NARRATOR_RUNTIME_LOCK:
+        if _NARRATOR_RUNTIME_THREAD is thread:
+            _NARRATOR_RUNTIME_THREAD = None
+
+    if was_running:
+        print("[vlm-narrator] stopped", flush=True)
 
     return {
         "ok": True,
@@ -6782,21 +4267,18 @@ def get_health() -> dict[str, Any]:
         "vision_source": "services.vision_service",
         "vision_input_mode": "in_process",
         "narrator_runtime_running": runtime_running,
-        "narrator_hz": VLM_NARRATOR_HZ,
+        "narrator_interval_sec": VLM_NARRATOR_INTERVAL_SEC,
         "session_id": VLM_SESSION_ID,
         "last_result_at": _NARRATOR_LAST_RESULT_AT,
         "last_error": _NARRATOR_LAST_ERROR,
-        "qwen_api": QWEN_BASE_URL,
+        "qwen_api": "services.llm_service",
         "qwen_model": QWEN_MODEL,
         "qwen_resident": bool(
-            QWEN_KEEPALIVE_ENABLED and not assisted_output_enabled()
+            _QWEN_KEEPALIVE_THREAD and _QWEN_KEEPALIVE_THREAD.is_alive()
         ),
         "qwen_keep_alive": QWEN_KEEP_ALIVE,
         "pairwise_pickup_enabled": PAIRWISE_PICKUP_ENABLED,
-        "configured_output_mode": NARRATOR_OUTPUT_MODE,
-        "output_mode": runtime_output_mode(),
-        "demo_output": assisted_output_enabled(),
-        "demo_description_bank": str(DEMO_DESCRIPTION_PATH),
+        "output_mode": "live",
     }
 
 
@@ -6805,7 +4287,7 @@ def request_reobserve(
     session_id: str = VLM_SESSION_ID,
     reason: str = "main_ui_request",
 ) -> dict[str, Any]:
-    """Handle normal reobserve requests and page-mode heartbeats."""
+    """Handle reobserve requests and ignore legacy page-mode heartbeats."""
     reason_text = str(reason or "main_ui_request").strip()
 
     heartbeat_match = re.fullmatch(
@@ -6814,15 +4296,11 @@ def request_reobserve(
         reason_text,
     )
     if heartbeat_match:
-        mode_state = register_ui_mode_heartbeat(
-            requested_mode=heartbeat_match.group(1),
-            client_id=heartbeat_match.group(2),
-        )
         return {
             "ok": True,
             "session_id": session_id,
             "heartbeat": True,
-            **mode_state,
+            "output_mode": "live",
         }
 
     release_match = re.fullmatch(
@@ -6830,13 +4308,12 @@ def request_reobserve(
         reason_text,
     )
     if release_match:
-        mode_state = release_ui_mode_client(release_match.group(1))
         return {
             "ok": True,
             "session_id": session_id,
             "heartbeat": False,
             "released": True,
-            **mode_state,
+            "output_mode": "live",
         }
 
     session = get_session(session_id)
@@ -6854,48 +4331,7 @@ def request_reobserve(
         "green_cache_cleared": True,
         "purple_cache_cleared": True,
         "reason": reason_text,
-        "output_mode": runtime_output_mode(),
-    }
-
-
-def set_task_mode(
-    *,
-    active: bool,
-    session_id: str = VLM_SESSION_ID,
-    task_id: str = "",
-) -> dict[str, Any]:
-    """Pause/resume low-priority VLM work while still consuming vision state."""
-    session = get_session(session_id)
-    with _SESSION_LOCK:
-        was_active = bool(session.task_active)
-        session.task_active = bool(active)
-        session.task_id = str(task_id or "") if active else ""
-        session.task_started_at = time.time() if active else 0.0
-        if active and not was_active:
-            session.qwen_job_token += 1
-            session.qwen_pending = False
-            reset_qwen_stream_state(session)
-            session.general_idle_job_token += 1
-            session.general_idle_pending = False
-            session.general_idle_ready = ""
-            session.unboxed_job_token += 1
-            session.unboxed_pending = False
-        elif not active and was_active:
-            session.reobserve_requested = True
-            session.last_scene_change_at = time.time()
-            session.last_result = {}
-            session.object_description_cache.clear()
-            session.last_enriched_signature = ""
-            session.last_general_signature = ""
-            session.general_idle_ready = ""
-            session.last_object_emit_at = 0.0
-            reset_qwen_stream_state(session)
-
-    return {
-        "ok": True,
-        "session_id": session_id,
-        "task_active": bool(active),
-        "task_id": session.task_id,
+        "output_mode": "live",
     }
 
 
@@ -6974,8 +4410,17 @@ def get_state(
         return {
             "ok": True,
             "session_id": session_id,
-            "task_active": bool(session.task_active),
-            "task_id": session.task_id,
+            "monitor_running": bool(
+                _NARRATOR_RUNTIME_THREAD
+                and _NARRATOR_RUNTIME_THREAD.is_alive()
+            ),
+            "runtime_status": (
+                "running"
+                if _NARRATOR_RUNTIME_THREAD
+                and _NARRATOR_RUNTIME_THREAD.is_alive()
+                else "stopped"
+            ),
+            "interval_sec": VLM_NARRATOR_INTERVAL_SEC,
             "scene_revision": int(session.scene_revision),
             "scene": result,
             "stable_objects": list(result.get("stable_objects") or []),
@@ -6989,556 +4434,5 @@ def get_state(
                 (session.pairwise_result or {}).get("reviewed_pairs", [])
             ),
             "pairwise_pending": bool(session.pairwise_pending),
-            "configured_output_mode": NARRATOR_OUTPUT_MODE,
-            "output_mode": runtime_output_mode(),
-            "demo_output": assisted_output_enabled(),
-        }
-
-def cabinet_state_image_data_url(
-    image: Image.Image,
-) -> str:
-    """
-    將上層櫃門狀態判斷影像縮小並壓縮成 Data URL。
-
-    此函式只供櫃門開關判斷使用，
-    不影響其他 VLM 場景描述的影像品質。
-    """
-    img = image.convert("RGB").copy()
-
-    resampling = getattr(
-        Image,
-        "Resampling",
-        Image,
-    )
-
-    img.thumbnail(
-        (192, 192),
-        resampling.BILINEAR,
-    )
-
-    buffer = io.BytesIO()
-
-    img.save(
-        buffer,
-        format="JPEG",
-        quality=40,
-        optimize=False,
-    )
-
-    encoded = base64.b64encode(
-        buffer.getvalue()
-    ).decode("ascii")
-
-    return (
-        "data:image/jpeg;base64,"
-        + encoded
-    )
-
-
-def check_top_cabinet_door_open_state(
-    fresh_frame_timeout=1.5,
-    qwen_lock_timeout=3.0,
-    confidence_threshold=0.60,
-):
-    """
-    等待一張可用的新相機畫面，使用 Qwen 判斷上層櫃門狀態。
-
-    回傳狀態：
-        open：
-            明確判斷櫃門已開啟。
-
-        closed：
-            明確判斷櫃門尚未開啟。
-
-        uncertain：
-            沒有畫面、模型忙碌、解析失敗，
-            或判斷信心低於門檻。
-
-    uncertain 的處理由呼叫端決定。
-    目前 task_service 會停止操作，不執行開門。
-    """
-    snapshot = None
-    baseline_time = None
-    last_candidate_time = None
-    last_snapshot_error = None
-    baseline_has_frame = False
-
-    def _get_snapshot_time(value):
-        if not isinstance(value, dict):
-            return None
-
-        for field in (
-            "latest_time",
-            "captured_at",
-            "frame_id",
-        ):
-            raw_value = value.get(field)
-
-            if raw_value is None:
-                continue
-
-            try:
-                return float(raw_value)
-            except (TypeError, ValueError):
-                continue
-
-        return None
-
-    def _snapshot_is_valid(value):
-        return (
-            isinstance(value, dict)
-            and value.get("status") == "success"
-            and value.get("result") is True
-            and value.get("color_frame") is not None
-        )
-
-    try:
-        # ==================================================
-        # Step 1：取得目前畫面作為時間基準
-        # ==================================================
-        baseline = (
-            vision_service
-            .get_latest_scene_snapshot(
-                include_robot_xyz=False,
-            )
-        )
-
-        if _snapshot_is_valid(baseline):
-            baseline_has_frame = True
-            baseline_time = _get_snapshot_time(
-                baseline
-            )
-
-        elif isinstance(baseline, dict):
-            last_snapshot_error = (
-                baseline.get("message")
-                or baseline.get("error")
-                or baseline.get("reason")
-            )
-
-        wait_started_at = time.monotonic()
-
-        deadline = (
-            wait_started_at
-            + max(
-                0.1,
-                float(fresh_frame_timeout),
-            )
-        )
-
-        # ==================================================
-        # Step 2：等待移動完成後的新畫面
-        # ==================================================
-        while time.monotonic() < deadline:
-            candidate = (
-                vision_service
-                .get_latest_scene_snapshot(
-                    include_robot_xyz=False,
-                )
-            )
-
-            if _snapshot_is_valid(candidate):
-                candidate_time = _get_snapshot_time(
-                    candidate
-                )
-
-                last_candidate_time = candidate_time
-
-                # 呼叫前沒有有效畫面時，
-                # 第一張有效畫面即可使用。
-                if not baseline_has_frame:
-                    snapshot = candidate
-                    break
-
-                # 兩張畫面都有時間資訊時，
-                # 新畫面時間必須大於基準時間。
-                if (
-                    baseline_time is not None
-                    and candidate_time is not None
-                    and candidate_time > baseline_time
-                ):
-                    snapshot = candidate
-                    break
-
-                # Snapshot 沒有時間資訊時，
-                # 至少等待 0.3 秒再接受。
-                if (
-                    (
-                        baseline_time is None
-                        or candidate_time is None
-                    )
-                    and (
-                        time.monotonic()
-                        - wait_started_at
-                    ) >= 0.3
-                ):
-                    snapshot = candidate
-                    break
-
-            elif isinstance(candidate, dict):
-                last_snapshot_error = (
-                    candidate.get("message")
-                    or candidate.get("error")
-                    or candidate.get("reason")
-                    or last_snapshot_error
-                )
-
-            time.sleep(0.05)
-
-        if snapshot is None:
-            reason = "沒有取得新的相機畫面"
-
-            if last_snapshot_error:
-                reason += (
-                    f"：{last_snapshot_error}"
-                )
-
-            return {
-                "status": "success",
-                "result": True,
-                "state": "uncertain",
-                "is_open": False,
-                "confidence": 0.0,
-                "reason": reason,
-                "baseline_time": baseline_time,
-                "latest_time": last_candidate_time,
-            }
-
-        # ==================================================
-        # Step 3：將相機畫面轉換為 PIL Image
-        # ==================================================
-        image = _pil_from_snapshot(snapshot)
-
-        if image is None:
-            return {
-                "status": "success",
-                "result": True,
-                "state": "uncertain",
-                "is_open": False,
-                "confidence": 0.0,
-                "reason": "相機畫面無法轉換為影像",
-                "baseline_time": baseline_time,
-                "latest_time": _get_snapshot_time(
-                    snapshot
-                ),
-            }
-
-        # ==================================================
-        # Step 4：取得 Qwen 共用鎖
-        # ==================================================
-        lock_acquired = (
-            _QWEN_WORK_LOCK.acquire(
-                timeout=max(
-                    0.1,
-                    float(qwen_lock_timeout),
-                ),
-            )
-        )
-
-        if not lock_acquired:
-            return {
-                "status": "success",
-                "result": True,
-                "state": "uncertain",
-                "is_open": False,
-                "confidence": 0.0,
-                "reason": "VLM 目前正在執行其他工作",
-                "baseline_time": baseline_time,
-                "latest_time": _get_snapshot_time(
-                    snapshot
-                ),
-            }
-
-        try:
-            # ==================================================
-            # Step 5：建立 Qwen 請求
-            # ==================================================
-            payload = {
-                "model": QWEN_MODEL,
-                "temperature": 0.0,
-                "top_p": 0.5,
-                "max_tokens": 32,
-                "stream": False,
-                "response_format": {
-                    "type": "json_object",
-                },
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": (
-                            "這是固定位置的上層醫療櫃門狀態分類。"
-                            "closed 的外觀："
-                            "畫面中可看到完整、平整的灰色矩形門板，"
-                            "黑色直立把手位於門板正面，"
-                            "門板覆蓋櫃子開口，"
-                            "看不到白色櫃內空間或層板。"
-                            "符合此情況必須判定 closed。"
-
-                            "open 的外觀："
-                            "白色櫃內空間或白色層板明顯可見，"
-                            "灰色門板已移至右側、向外展開，"
-                            "不再覆蓋櫃子開口。"
-                            "符合此情況才可判定 open。"
-                            "不要因為看到櫃體側面、門板邊框或把手，"
-                            "就判定為 open。"
-                            "無法清楚看到完整門板與櫃內空間時，"
-                            "判定 uncertain。"
-                            "只輸出單行 JSON，不要解釋。"
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": (
-                                    "只輸出單行："
-                                    '{"state":"open|closed|uncertain",'
-                                    '"confidence":0.0}'
-                                ),
-                            },
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": (
-                                        cabinet_state_image_data_url(
-                                            image
-                                        )
-                                    ),
-                                },
-                            },
-                        ],
-                    },
-                ],
-            }
-
-            request = urllib.request.Request(
-                (
-                    QWEN_BASE_URL
-                    + "/chat/completions"
-                ),
-                data=json.dumps(
-                    payload,
-                    ensure_ascii=False,
-                ).encode("utf-8"),
-                method="POST",
-                headers={
-                    "Content-Type": (
-                        "application/json"
-                    ),
-                    "Authorization": (
-                        "Bearer local"
-                    ),
-                },
-            )
-
-            # ==================================================
-            # Step 6：呼叫 Qwen
-            # ==================================================
-            with urllib.request.urlopen(
-                request,
-                timeout=20.0,
-            ) as response:
-                raw_response = (
-                    response
-                    .read()
-                    .decode(
-                        "utf-8",
-                        errors="replace",
-                    )
-                )
-
-            response_data = json.loads(
-                raw_response
-            )
-
-            choices = (
-                response_data.get("choices")
-                or []
-            )
-
-            if not choices:
-                raise RuntimeError(
-                    "Qwen 回傳中沒有 choices"
-                )
-
-            content = (
-                choices[0].get("message")
-                or {}
-            ).get("content")
-
-            # ==================================================
-            # Step 7：解析 Qwen JSON
-            # ==================================================
-            try:
-                parsed = _parse_qwen_json_content(
-                    content
-                )
-
-                if not isinstance(parsed, dict):
-                    raise TypeError(
-                        "Qwen JSON 根節點不是 object"
-                    )
-
-            except Exception as parse_exc:
-                # Qwen 若在 reason 中途被截斷，
-                # 嘗試從不完整 JSON 中救回必要欄位。
-                raw_content = str(content or "")
-
-                state_match = re.search(
-                    (
-                        r'"state"\s*:\s*'
-                        r'"(open|closed|uncertain)"'
-                    ),
-                    raw_content,
-                    flags=re.IGNORECASE,
-                )
-
-                confidence_match = re.search(
-                    (
-                        r'"confidence"\s*:\s*'
-                        r'([0-9]+(?:\.[0-9]+)?)'
-                    ),
-                    raw_content,
-                    flags=re.IGNORECASE,
-                )
-
-                if (
-                    state_match is not None
-                    and confidence_match is not None
-                ):
-                    parsed = {
-                        "state": (
-                            state_match
-                            .group(1)
-                            .lower()
-                        ),
-                        "confidence": float(
-                            confidence_match.group(1)
-                        ),
-                        "reason": (
-                            "說明被截斷，已恢復判斷"
-                        ),
-                    }
-
-                    print(
-                        "[cabinet-vlm][WARN] "
-                        "Qwen JSON truncated; "
-                        "state and confidence recovered. "
-                        f"raw={raw_content!r}",
-                        flush=True,
-                    )
-
-                else:
-                    raise RuntimeError(
-                        "無法解析 Qwen 回傳："
-                        f"{type(parse_exc).__name__}: "
-                        f"{parse_exc}；"
-                        f"raw={raw_content!r}"
-                    ) from parse_exc
-
-            # ==================================================
-            # Step 8：正規化 Qwen 回傳
-            # ==================================================
-            state = str(
-                parsed.get("state")
-                or "uncertain"
-            ).strip().lower()
-
-            if state not in {
-                "open",
-                "closed",
-                "uncertain",
-            }:
-                state = "uncertain"
-
-            try:
-                confidence = float(
-                    parsed.get("confidence")
-                    or 0.0
-                )
-            except (TypeError, ValueError):
-                confidence = 0.0
-
-            confidence = max(
-                0.0,
-                min(1.0, confidence),
-            )
-
-            reason = str(
-                parsed.get("reason")
-                or ""
-            ).strip()
-
-            threshold = float(
-                confidence_threshold
-            )
-
-            # 模型即使輸出 open 或 closed，
-            # 信心不足時仍統一改為 uncertain。
-            if (
-                state in {"open", "closed"}
-                and confidence < threshold
-            ):
-                original_state = state
-                state = "uncertain"
-
-                if reason:
-                    reason = (
-                        f"{reason}；"
-                        f"原判斷為 {original_state}，"
-                        f"但信心低於 {threshold:.2f}"
-                    )
-                else:
-                    reason = (
-                        f"原判斷為 {original_state}，"
-                        f"但信心低於 {threshold:.2f}"
-                    )
-
-            is_open = state == "open"
-
-            result = {
-                "status": "success",
-                "result": True,
-                "state": state,
-                "is_open": is_open,
-                "confidence": confidence,
-                "reason": reason,
-                "baseline_time": baseline_time,
-                "latest_time": _get_snapshot_time(
-                    snapshot
-                ),
-            }
-
-            print(
-                "[cabinet-vlm] "
-                f"state={state} "
-                f"is_open={is_open} "
-                f"confidence={confidence:.3f} "
-                f"reason={reason}",
-                flush=True,
-            )
-
-            return result
-
-        finally:
-            _QWEN_WORK_LOCK.release()
-
-    except Exception as exc:
-        return {
-            "status": "success",
-            "result": True,
-            "state": "uncertain",
-            "is_open": False,
-            "confidence": 0.0,
-            "reason": (
-                "櫃門狀態判斷失敗："
-                f"{type(exc).__name__}: {exc}"
-            ),
-            "baseline_time": baseline_time,
-            "latest_time": (
-                _get_snapshot_time(snapshot)
-                if isinstance(snapshot, dict)
-                else last_candidate_time
-            ),
+            "output_mode": "live",
         }
