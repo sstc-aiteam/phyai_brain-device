@@ -1,0 +1,1117 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LeRobot 錄製</title>
+    <style>
+        * { box-sizing: border-box; }
+        [hidden] { display: none !important; }
+        body {
+            margin: 0;
+            padding: 24px;
+            font-family: Arial, "Microsoft JhengHei", sans-serif;
+            color: #1f2937;
+            background: #f3f4f6;
+        }
+        .container { width: min(960px, 100%); margin: 0 auto; }
+        .header { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 20px; }
+        .page-nav {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            display: flex;
+            gap: 8px;
+            margin: 0 0 18px;
+            padding: 10px;
+            overflow-x: auto;
+            border: 1px solid #d8dce2;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, .96);
+            box-shadow: 0 5px 18px rgba(15, 23, 42, .08);
+            backdrop-filter: blur(8px);
+        }
+        .page-nav a {
+            flex: 1 0 auto;
+            padding: 10px 14px;
+            border-radius: 8px;
+            color: #475569;
+            font-weight: 700;
+            text-align: center;
+            text-decoration: none;
+            white-space: nowrap;
+            transition: color .15s ease, background .15s ease;
+        }
+        .page-nav a:hover { color: #1d4ed8; background: #eff6ff; }
+        .page-nav a.active { color: #fff; background: #2563eb; }
+        .page-section { scroll-margin-top: 86px; }
+        h1, h2 { margin: 0; }
+        h1 { font-size: 28px; }
+        h2 { margin-bottom: 16px; font-size: 20px; }
+        .back-link { color: #2563eb; font-weight: 700; text-decoration: none; }
+        .card {
+            margin-bottom: 18px;
+            padding: 20px;
+            background: #fff;
+            border: 1px solid #d8dce2;
+            border-radius: 12px;
+        }
+        .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+        .field { display: flex; flex-direction: column; gap: 7px; }
+        .field.full { grid-column: 1 / -1; }
+        label { font-weight: 700; }
+        select, input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #b8c0cc;
+            border-radius: 7px;
+            background: #fff;
+            color: #1f2937;
+            font: inherit;
+        }
+        select:disabled, input:disabled { background: #eef1f5; }
+        .hint { color: #64748b; font-size: 13px; }
+        .action-hint { flex: 1 0 100%; margin: 0 0 4px; padding: 10px 13px; border: 1px solid #fcd34d; border-radius: 8px; color: #92400e; background: #fffbeb; font-size: 14px; }
+        .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+        button {
+            padding: 11px 18px;
+            border: 0;
+            border-radius: 7px;
+            color: #fff;
+            background: #2563eb;
+            font: inherit;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        button.secondary { background: #64748b; }
+        button.danger { background: #dc2626; }
+        button.gripper { background: #7c3aed; }
+        button.freedrive { background: #0f766e; }
+        button:disabled { opacity: .45; cursor: not-allowed; }
+        .status-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+        .status-item { padding: 13px; border-radius: 9px; background: #f8fafc; border: 1px solid #e2e8f0; }
+        .status-label { margin-bottom: 5px; color: #64748b; font-size: 13px; }
+        .status-value { font-weight: 700; word-break: break-word; }
+        .recording { color: #047857; }
+        .stopped { color: #b91c1c; }
+        #message, #playbackMessage, #uploadMessage { min-height: 24px; margin-top: 14px; white-space: pre-wrap; }
+        #message.success, #playbackMessage.success, #uploadMessage.success { color: #047857; }
+        #message.error, #playbackMessage.error, #uploadMessage.error { color: #b91c1c; }
+        #apiResponse,
+        #taskRegistry {
+            min-height: 90px;
+            margin: 0;
+            padding: 14px;
+            overflow: auto;
+            border-radius: 8px;
+            background: #111827;
+            color: #d1fae5;
+            font: 13px/1.5 monospace;
+            white-space: pre-wrap;
+        }
+        .preview-wrapper {
+            position: relative;
+            display: flex;
+            width: 100%;
+            min-height: 360px;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            border-radius: 10px;
+            background: #111827;
+        }
+        #cameraPreview {
+            display: none;
+            width: 100%;
+            max-height: 600px;
+            object-fit: contain;
+        }
+        #previewPlaceholder { padding: 24px; color: #cbd5e1; text-align: center; }
+        .preview-badge {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            display: none;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(220, 38, 38, .9);
+            color: #fff;
+            font-size: 13px;
+            font-weight: 700;
+        }
+        @media (max-width: 700px) {
+            body { padding: 14px; }
+            .header { align-items: flex-start; flex-direction: column; }
+            .form-grid, .status-grid { grid-template-columns: 1fr; }
+            .field.full { grid-column: auto; }
+            button { flex: 1 1 140px; }
+            .page-nav { margin-right: -4px; margin-left: -4px; }
+            .page-nav a { flex: 0 0 auto; }
+        }
+    </style>
+</head>
+<body>
+    <main class="container">
+        <header class="header">
+            <div>
+                <h1>LeRobot 示範錄製</h1>
+                <div class="hint">錄製手臂狀態、local/base TCP actions、action_joints、夾爪事件與相機影像</div>
+            </div>
+            <a class="back-link" href="/">返回控制首頁</a>
+        </header>
+
+        <nav class="page-nav" aria-label="錄製功能導覽">
+            <a href="#record-settings" data-section="record-settings">錄製參數調整</a>
+            <a href="#replay-recordings" data-section="replay-recordings">Replay 錄製軌跡</a>
+            <a href="#training-upload" data-section="training-upload">上傳訓練資料與訓練</a>
+        </nav>
+
+        <section id="record-settings" class="card page-section">
+            <h2>錄製參數</h2>
+            <form id="recordForm">
+                <div class="form-grid">
+                    <div class="field">
+                        <label for="datasetFormat">dataset format</label>
+                        <select id="datasetFormat" name="dataset_format">
+                            <option value="lerobot_v3">LeRobot v3</option>
+                            <option value="lerobot_v2">LeRobot v2</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="trainingTarget">training target</label>
+                        <select id="trainingTarget" name="training_target"></select>
+                        <span id="trainingTargetHint" class="hint"></span>
+                    </div>
+                    <div class="field">
+                        <label for="datasetMode">dataset mode</label>
+                        <select id="datasetMode" name="dataset_mode">
+                            <option value="multi_task">multi-task（同一 dataset 共用多個 task）</option>
+                            <option value="single_task">single-task（依 task 分資料夾）</option>
+                        </select>
+                    </div>
+                    <div id="multiDatasetField" class="field">
+                        <label for="multiDatasetName">multi-task dataset name</label>
+                        <input id="multiDatasetName" name="dataset_name" type="text"
+                            value="medical_multi_task_v1" maxlength="100" required>
+                        <span class="hint">所有 task episode 都會寫入這個 dataset。</span>
+                    </div>
+                    <div class="field">
+                        <label for="armName">arm_name</label>
+                        <select id="armName" name="arm_name">
+                            <option value="">正在讀取已連接設備...</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="gripperName">gripper_name</label>
+                        <select id="gripperName" name="gripper_name">
+                            <option value="">正在讀取已連接設備...</option>
+                        </select>
+                    </div>
+                    <div class="field full">
+                        <label>output_path（依 format / arm 自動決定）</label>
+                        <div class="status-item">
+                            <div class="status-label">資料集根目錄</div>
+                            <div id="datasetRoot" class="status-value">~/robot/lerobot_datasets</div>
+                            <div class="status-label" style="margin-top: 10px">本次輸出路徑</div>
+                            <div id="resolvedOutputPath" class="status-value">輸入 task 後自動配置</div>
+                        </div>
+                        <span class="hint">multi-task：同一 format / arm 的所有 task 共用 dataset。single-task：同一 task / arm 共用
+                            dataset，不同 task 分開。每個 episode 都保留 task 標籤。</span>
+                    </div>
+                    <div class="field">
+                        <label for="interval">interval（秒）</label>
+                        <input id="interval" name="interval" type="number" min="0.033" max="10" step="0.001" value="0.1"
+                            required>
+                        <span class="hint">0.1 秒約為 10 FPS。</span>
+                    </div>
+                    <div class="field">
+                        <label for="freedrive">freedrive</label>
+                        <select id="freedrive" name="freedrive">
+                            <option value="true">true（手動拖曳示範）</option>
+                            <option value="false">false</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="recordVideo">record_video</label>
+                        <select id="recordVideo" name="record_video">
+                            <option value="true">true（錄製相機）</option>
+                            <option value="false">false</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="initialGripperPosition">initial_gripper_position</label>
+                        <select id="initialGripperPosition" name="initial_gripper_position">
+                            <option value="0">0（全開）</option>
+                            <option value="64">64（約 25%）</option>
+                            <option value="128">128（約 50%）</option>
+                            <option value="192">192（約 75%）</option>
+                            <option value="255">255（全關）</option>
+                        </select>
+                    </div>
+                    <div id="singleTaskField" class="field full" hidden>
+                        <label for="task">task</label>
+                        <input id="task" name="task" type="text" value="pick up object" maxlength="200" required>
+                    </div>
+                    <div id="multiTaskField" class="field full">
+                        <label for="registeredTask">已註冊 task</label>
+                        <select id="registeredTask" name="registered_task" required></select>
+                        <span class="hint">Multi-task 錄製只能選擇已註冊的英文小寫指令。</span>
+                        <div class="actions" style="margin-top: 10px">
+                            <input id="newTaskName" type="text" maxlength="200"
+                                placeholder="例如：open the drawer">
+                            <button id="registerTaskButton" class="secondary" type="button">註冊 Task</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="actions">
+                    <button id="startButton" type="submit">開始錄製</button>
+                    <button id="stopButton" class="danger" type="button" disabled>停止並儲存</button>
+                    <button id="refreshButton" class="secondary" type="button">更新狀態</button>
+                    <button id="startFreedriveButton" class="freedrive" type="button">開始 Freedrive</button>
+                    <button id="stopFreedriveButton" class="danger" type="button" disabled>結束 Freedrive</button>
+                    <button id="openGripperButton" class="gripper" type="button" disabled>開啟夾爪</button>
+                    <button id="closeGripperButton" class="gripper" type="button" disabled>關閉夾爪</button>
+                </div>
+            </form>
+            <div id="message" aria-live="polite"></div>
+        </section>
+
+        <section class="card">
+            <h2>錄製相機畫面</h2>
+            <div class="preview-wrapper">
+                <img id="cameraPreview" alt="錄製中的相機即時畫面">
+                <div id="previewPlaceholder">開始錄製並啟用 record_video 後，這裡會顯示即時畫面。</div>
+                <div id="previewBadge" class="preview-badge">● REC</div>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>錄製狀態</h2>
+            <div class="status-grid">
+                <div class="status-item"><div class="status-label">狀態</div><div id="recordingStatus" class="status-value stopped">未錄製</div></div>
+                <div class="status-item"><div class="status-label">錄製時間</div><div id="elapsedStatus" class="status-value">0.0 秒</div></div>
+                <div class="status-item"><div class="status-label">Samples</div><div id="sampleStatus" class="status-value">0</div></div>
+                <div class="status-item"><div class="status-label">Episode</div><div id="episodeStatus" class="status-value">—</div></div>
+                <div class="status-item"><div class="status-label">手臂／夾爪</div><div id="hardwareStatus" class="status-value">—</div></div>
+                <div class="status-item"><div class="status-label">相機</div><div id="cameraStatus" class="status-value">—</div></div>
+                <div class="status-item" style="grid-column: span 2"><div class="status-label">輸出位置</div><div id="pathStatus" class="status-value">—</div></div>
+            </div>
+        </section>
+
+        <section id="replay-recordings" class="card page-section">
+            <h2>Replay 錄製軌跡</h2>
+            <div class="hint" style="margin-bottom: 14px">Replay 會讓實體手臂先移動到 episode 起點，再依原始 FPS 播放joints與夾爪。開始前請清空工作區並準備急停。</div>
+            <div class="form-grid">
+                <div class="field full">
+                    <label for="replayDataset">Task / Dataset</label>
+                    <select id="replayDataset"></select>
+                </div>
+                <div class="field">
+                    <label for="replayEpisode">Episode</label>
+                    <select id="replayEpisode"></select>
+                </div>
+                <div class="field">
+                    <label for="replayArm">Arm</label>
+                    <select id="replayArm">
+                        <option value="">正在讀取已連接設備...</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="replayGripper">Gripper</label>
+                    <select id="replayGripper">
+                        <option value="">正在讀取已連接設備...</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="replayMoveToStart">Move to start</label>
+                    <select id="replayMoveToStart">
+                        <option value="true">true（建議）</option>
+                        <option value="false">false</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="replaySpeed">Speed</label>
+                    <select id="replaySpeed">
+                        <option value="0.05">0.05（慢速）</option>
+                        <option value="0.1" selected>0.10（一般）</option>
+                        <option value="0.2">0.20</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="replayAcceleration">Acceleration</label>
+                    <select id="replayAcceleration">
+                        <option value="0.05">0.05（慢速）</option>
+                        <option value="0.1" selected>0.10（一般）</option>
+                        <option value="0.2">0.20</option>
+                    </select>
+                </div>
+            </div>
+            <div class="actions">
+                <div class="action-hint" role="note">ⓘ 開始播放前，請先更新資料夾以載入最新錄製內容。</div>
+                <button id="startReplayButton" type="button">開始 Replay</button>
+                <button id="refreshReplayButton" class="secondary" type="button">更新資料夾</button>
+            </div>
+            <div class="status-grid" style="margin-top: 16px">
+                <div class="status-item"><div class="status-label">播放狀態</div><div id="playingStatus" class="status-value stopped">未播放</div></div>
+                <div class="status-item"><div class="status-label">經過時間</div><div id="playbackElapsed">0.0 秒</div></div>
+                <div class="status-item" style="grid-column: span 2"><div class="status-label">目前資料集</div><div id="playbackPath" class="status-value">—</div></div>
+            </div>
+            <div id="playbackMessage" aria-live="polite"></div>
+        </section>
+
+        <section id="training-upload" class="card page-section">
+            <h2>上傳訓練資料與訓練</h2>
+            <div class="hint" style="margin-bottom: 14px">選擇 recording 產生的完整 LeRobot dataset；後端會打包、送至訓練 server，並請求建立訓練工作。</div>
+            <div class="form-grid">
+                <div class="field full">
+                    <label for="uploadDataset">Dataset</label>
+                    <select id="uploadDataset"></select>
+                </div>
+                <div class="field full">
+                    <label for="trainingServerUrl">Training server upload URL</label>
+                    <input id="trainingServerUrl" type="url" placeholder="https://training.example.com/api/datasets/upload">
+                    <span class="hint">可由伺服器環境變數 TRAINING_SERVER_URL 預填。</span>
+                </div>
+                <div class="field full">
+                    <label for="trainingApiToken">API token（選填）</label>
+                    <input id="trainingApiToken" type="password" autocomplete="off" placeholder="Bearer token">
+                </div>
+            </div>
+            <div class="actions">
+                <button id="uploadDatasetButton" type="button">上傳並開始訓練</button>
+                <button id="refreshUploadButton" class="secondary" type="button">更新狀態</button>
+            </div>
+            <div class="status-grid" style="margin-top: 16px">
+                <div class="status-item"><div class="status-label">狀態</div><div id="uploadStatus" class="status-value stopped">尚未上傳</div></div>
+                <div class="status-item"><div class="status-label">壓縮檔大小</div><div id="uploadSize" class="status-value">—</div></div>
+                <div class="status-item" style="grid-column: span 2"><div class="status-label">Dataset</div><div id="uploadPath" class="status-value">—</div></div>
+            </div>
+            <div id="uploadMessage" aria-live="polite"></div>
+        </section>
+
+        <section class="card">
+            <h2>API 回應</h2>
+            <pre id="apiResponse">尚未呼叫 API</pre>
+        </section>
+
+        <section class="card">
+            <h2>Task Registry</h2>
+            <div class="hint" style="margin-bottom: 10px">檔案：<span id="registryPath">~/robot/lerobot_datasets/task_registry.json</span></div>
+            <pre id="taskRegistry">尚無 task</pre>
+        </section>
+    </main>
+
+    <script type="module">
+        import { getJson } from "/web/includes/library/JSFile/modules/core.js";
+        import { start_arm_freedrive, stop_arm_freedrive } from "/web/includes/library/JSFile/modules/arm.js";
+        import { getRecordingStatus, getTaskRegistry, registerTask, moveRecordingGripper, startRecording, stopRecording } from "/recording-training-replay/static/recording.js";
+        import { getPlaybackStatus, getReplayCatalog, startPlayback, stopPlayback } from "/recording-training-replay/static/replay.js";
+        import { getTrainingUploadStatus, submitTrainingDataset } from "/recording-training-replay/static/training.js";
+
+        const form = document.getElementById("recordForm");
+        const startButton = document.getElementById("startButton");
+        const stopButton = document.getElementById("stopButton");
+        const refreshButton = document.getElementById("refreshButton");
+        const startFreedriveButton = document.getElementById("startFreedriveButton");
+        const stopFreedriveButton = document.getElementById("stopFreedriveButton");
+        const openGripperButton = document.getElementById("openGripperButton");
+        const closeGripperButton = document.getElementById("closeGripperButton");
+        const message = document.getElementById("message");
+        const apiResponse = document.getElementById("apiResponse");
+        const cameraPreview = document.getElementById("cameraPreview");
+        const previewPlaceholder = document.getElementById("previewPlaceholder");
+        const previewBadge = document.getElementById("previewBadge");
+        let pollingTimer = null;
+        let replayPollingTimer = null;
+        let uploadPollingTimer = null;
+        let replayCatalogSignature = "";
+        let previewCameraName = null;
+        let taskRegistryData = { tasks: [], dataset_root: "~/robot/lerobot_datasets" };
+        let replayDatasets = [];
+        let recordingDevices = [];
+        const pageNavLinks = [...document.querySelectorAll(".page-nav a[data-section]")];
+        function booleanValue(id) { return document.getElementById(id).value === "true"; }
+        function datasetSlug(value) {
+            return value.toLowerCase().replace(/[^a-z0-9._-]+/g, "_").replace(/^[._-]+|[._-]+$/g, "").slice(0, 64) || "dataset";
+        }
+        function selectedTask() {
+            return document.getElementById("datasetMode").value === "multi_task"
+                ? document.getElementById("registeredTask").value.trim()
+                : document.getElementById("task").value.trim();
+        }
+        function syncDatasetModeUI() {
+            const multiTask = document.getElementById("datasetMode").value === "multi_task";
+            document.getElementById("multiDatasetField").hidden = !multiTask;
+            document.getElementById("multiTaskField").hidden = !multiTask;
+            document.getElementById("singleTaskField").hidden = multiTask;
+            document.getElementById("multiDatasetName").disabled = !multiTask;
+            document.getElementById("registeredTask").disabled = !multiTask;
+            document.getElementById("newTaskName").disabled = !multiTask;
+            document.getElementById("registerTaskButton").disabled = !multiTask;
+            document.getElementById("task").disabled = multiTask;
+        }
+
+        function activatePageNav(sectionId) {
+            for (const link of pageNavLinks) {
+                const active = link.dataset.section === sectionId;
+                link.classList.toggle("active", active);
+                if (active) link.setAttribute("aria-current", "location");
+                else link.removeAttribute("aria-current");
+            }
+        }
+
+        pageNavLinks.forEach((link) => link.addEventListener("click", (event) => {
+            const section = document.getElementById(link.dataset.section);
+            if (!section) return;
+            event.preventDefault();
+            section.scrollIntoView({ behavior: "smooth", block: "start" });
+            window.history.replaceState(null, "", `#${link.dataset.section}`);
+            activatePageNav(link.dataset.section);
+        }));
+
+        const sectionObserver = new IntersectionObserver((entries) => {
+            const visible = entries
+                .filter((entry) => entry.isIntersecting)
+                .sort((left, right) => right.intersectionRatio - left.intersectionRatio)[0];
+            if (visible) activatePageNav(visible.target.id);
+        }, { rootMargin: "-75px 0px -55% 0px", threshold: [0, .15, .4] });
+        pageNavLinks.forEach((link) => {
+            const section = document.getElementById(link.dataset.section);
+            if (section) sectionObserver.observe(section);
+        });
+        activatePageNav(window.location.hash.slice(1) || "record-settings");
+        function responseData(response) { return response?.data ?? {}; }
+        function responseSucceeded(response) { return response?.status === "success" && response?.result !== false; }
+        function responseError(response) {
+            return response?.error?.message
+                ?? response?.error
+                ?? response?.message
+                ?? (response == null ? "伺服器回傳空內容" : JSON.stringify(response));
+        }
+        function taskSlug(task) {
+            return task.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "task";
+        }
+        function fillGripperSelect(selectId, armName) {
+            const select = document.getElementById(selectId);
+            const previous = select.value;
+            const arm = recordingDevices.find((item) => item.arm_name === armName);
+            select.replaceChildren();
+            for (const gripper of arm?.grippers ?? []) {
+                const option = document.createElement("option");
+                option.value = gripper.gripper_name;
+                option.textContent = `${gripper.gripper_name}（${gripper.driver ?? "unknown"}）`;
+                select.appendChild(option);
+            }
+            if ([...select.options].some((option) => option.value === previous)) select.value = previous;
+            if (!select.options.length) {
+                const option = document.createElement("option");
+                option.value = "";
+                option.textContent = "沒有已連接的 gripper";
+                select.appendChild(option);
+            }
+        }
+        function fillArmSelect(selectId, gripperSelectId) {
+            const select = document.getElementById(selectId);
+            const previous = select.value;
+            select.replaceChildren();
+            for (const arm of recordingDevices) {
+                const option = document.createElement("option");
+                option.value = arm.arm_name;
+                option.textContent = `${arm.arm_name}（${arm.driver}）`;
+                select.appendChild(option);
+            }
+            if ([...select.options].some((option) => option.value === previous)) select.value = previous;
+            if (!select.options.length) {
+                const option = document.createElement("option");
+                option.value = "";
+                option.textContent = "沒有已連接的 arm";
+                select.appendChild(option);
+            }
+            fillGripperSelect(gripperSelectId, select.value);
+        }
+        async function loadRecordingDevices() {
+            const [armResponse, gripperResponse] = await Promise.all([
+                getJson("/api/arm/get_arm_status"),
+                getJson("/api/gripper/get_gripper_status"),
+            ]);
+            for (const response of [armResponse, gripperResponse]) {
+                if (!responseSucceeded(response)) throw new Error(responseError(response));
+            }
+            const grippers = responseData(gripperResponse).grippers ?? [];
+            recordingDevices = (responseData(armResponse).arms ?? []).map((arm) => ({
+                ...arm,
+                grippers: grippers.filter((item) =>
+                    item.gripper_name === arm.arm_name
+                    && item.connected !== false
+                    && !item.error
+                ),
+                cameras: [{ camera_name: arm.arm_name, arm_name: arm.arm_name }],
+            }));
+            fillArmSelect("armName", "gripperName");
+            fillArmSelect("replayArm", "replayGripper");
+            if (!recordingDevices.length) throw new Error("arm_service 沒有回報任何已連接手臂");
+            renderResolvedOutputPath();
+        }
+        function showMessage(text, isError = false) {
+            message.textContent = text;
+            message.className = isError ? "error" : "success";
+        }
+
+        function showResponse(response) {
+            apiResponse.textContent = JSON.stringify(response, null, 2);
+        }
+        // 依 LeRobot 格式更新可選的訓練模型。
+        function syncTrainingTargets() {
+            const format = document.getElementById("datasetFormat").value;
+            const select = document.getElementById("trainingTarget");
+            const hint = document.getElementById("trainingTargetHint");
+            const targets = {
+                lerobot_v2: [{ value: "groot_n15", label: "GR00T N1.5" }],
+                lerobot_v3: [],
+            }[format] ?? [];
+            select.replaceChildren();
+            if (!targets.length) {
+                select.add(new Option("不轉換（保留原始格式）", ""));
+                select.disabled = true;
+                hint.textContent = "此格式目前尚未實作訓練模型轉換。";
+                return;
+            }
+            for (const target of targets) select.add(new Option(target.label, target.value));
+            select.disabled = false;
+            hint.textContent = "選擇錄製資料要產生的訓練模型格式。";
+        }
+        function renderResolvedOutputPath() {
+            const task = selectedTask();
+            const arm = document.getElementById("armName").value;
+            const format = document.getElementById("datasetFormat").value;
+            const mode = document.getElementById("datasetMode").value;
+            const datasetName = document.getElementById("multiDatasetName").value.trim();
+            const datasetRoot = taskRegistryData.dataset_root;
+            document.getElementById("datasetRoot").textContent = datasetRoot;
+            const folderName = mode === "multi_task" ? datasetSlug(datasetName) : taskSlug(task);
+            const folder = `${mode}/${folderName}`;
+            const target = document.getElementById("trainingTarget").value;
+            const formatPath = target ? `${format}/${target}` : format;
+            const expectedPath = `${datasetRoot}/${formatPath}/${folder}`;
+            const existing = (taskRegistryData.tasks ?? []).find((item) =>
+                String(item.task ?? "").toLowerCase() === task.toLowerCase()
+                && String(item.arm_name ?? "").toLowerCase() === arm
+                && String(item.dataset_path ?? "") === expectedPath
+            );
+            if (existing) {
+                document.getElementById("resolvedOutputPath").textContent = `${existing.dataset_path}（下一個 episode：${existing.episode_count ?? 0}）`;
+                return;
+            }
+            const description = mode === "multi_task" ? "multi-task 共用 dataset" : "single-task dataset";
+            document.getElementById("resolvedOutputPath").textContent = `${expectedPath}（${description}）`;
+        }
+        async function loadTaskRegistry() {
+            try {
+                const response = await getTaskRegistry();
+                if (!responseSucceeded(response)) throw new Error(responseError(response));
+                taskRegistryData = responseData(response);
+                const taskSelect = document.getElementById("registeredTask");
+                const previousTask = taskSelect.value;
+                taskSelect.replaceChildren();
+                for (const item of taskRegistryData.tasks ?? []) {
+                    const option = document.createElement("option");
+                    option.value = item.task;
+                    option.textContent = `${item.task_index} — ${item.task}`;
+                    taskSelect.appendChild(option);
+                }
+                if ([...taskSelect.options].some((option) => option.value === previousTask)) {
+                    taskSelect.value = previousTask;
+                }
+                if (!taskSelect.options.length) {
+                    const option = document.createElement("option");
+                    option.value = "";
+                    option.textContent = "請先註冊 task";
+                    taskSelect.appendChild(option);
+                }
+                document.getElementById("datasetRoot").textContent = taskRegistryData.dataset_root;
+                document.getElementById("registryPath").textContent = taskRegistryData.registry_path;
+                document.getElementById("taskRegistry").textContent = JSON.stringify({
+                    active_tasks: taskRegistryData.tasks ?? [],
+                    legacy_datasets: taskRegistryData.legacy_datasets ?? [],
+                }, null, 2);
+                renderResolvedOutputPath();
+            } catch (error) {
+                showMessage(`Task registry 載入失敗：${error.message}`, true);
+            }
+        }
+
+        function selectedReplayDataset() {
+            const index = Number(document.getElementById("replayDataset").value);
+            return replayDatasets[index] ?? null;
+        }
+
+        function updateReplaySelection() {
+            const dataset = selectedReplayDataset();
+            const episodeSelect = document.getElementById("replayEpisode");
+            episodeSelect.replaceChildren();
+            for (const episode of dataset?.episodes ?? []) {
+                const option = document.createElement("option");
+                option.value = String(episode);
+                const detail = (dataset.episode_details ?? []).find((item) => Number(item.episode_index) === Number(episode));
+                option.textContent = detail?.label ?? `episode_${String(episode).padStart(6, "0")}`;
+                episodeSelect.appendChild(option);
+            }
+            const arm = dataset?.compatible_arms?.[0];
+            if (arm) {
+                document.getElementById("replayArm").value = arm;
+                fillGripperSelect("replayGripper", arm);
+            }
+            document.getElementById("playbackPath").textContent = dataset?.dataset_path ?? "—";
+            document.getElementById("startReplayButton").disabled = !dataset || !(dataset.episodes ?? []).length || !(dataset.compatible_arms ?? []).length;
+        }
+
+        function updateUploadDatasets() {
+            const select = document.getElementById("uploadDataset");
+            const previous = select.value;
+            const uniqueDatasets = [...new Map(replayDatasets.map((item) => [item.dataset_path, item])).values()];
+            select.replaceChildren();
+            for (const dataset of uniqueDatasets) {
+                const option = document.createElement("option");
+                option.value = dataset.dataset_path;
+                option.textContent = `${dataset.task} — ${dataset.dataset_total_episodes ?? dataset.total_episodes} episodes — ${dataset.dataset_path}`;
+                select.appendChild(option);
+            }
+            if ([...select.options].some((option) => option.value === previous)) select.value = previous;
+            if (!select.options.length) {
+                const option = document.createElement("option");
+                option.value = "";
+                option.textContent = "目前沒有可上傳的 dataset";
+                select.appendChild(option);
+            }
+            document.getElementById("uploadDatasetButton").disabled = !select.value;
+        }
+
+        async function loadReplayCatalog(force = false) {
+            const response = await getReplayCatalog();
+            if (!responseSucceeded(response)) throw new Error(responseError(response));
+            const nextDatasets = responseData(response).datasets ?? [];
+            const nextSignature = JSON.stringify(nextDatasets.map((dataset) => ({
+                dataset_path: dataset.dataset_path,
+                total_episodes: dataset.total_episodes,
+                total_frames: dataset.total_frames,
+                episodes: dataset.episodes,
+                episode_details: dataset.episode_details,
+            })));
+            if (!force && nextSignature === replayCatalogSignature) return false;
+            
+            const select = document.getElementById("replayDataset");
+            const previousSelection = selectedReplayDataset();
+            const previousDataset = previousSelection?.dataset_path;
+            const previousTaskId = previousSelection?.task_id;
+            const previousEpisode = document.getElementById("replayEpisode").value;
+            replayDatasets = nextDatasets;
+            replayCatalogSignature = nextSignature;
+            select.replaceChildren();
+            replayDatasets.forEach((dataset, index) => {
+                const option = document.createElement("option");
+                option.value = String(index);
+                const legacy = dataset.legacy ? " [legacy]" : "";
+                option.textContent = `${dataset.task_id ?? "legacy"} — ${dataset.task}${legacy} — ${dataset.total_episodes} episodes — ${dataset.robot_type} — ${dataset.dataset_path}`;
+                select.appendChild(option);
+            });
+            if (!replayDatasets.length) {
+                const option = document.createElement("option");
+                option.textContent = "目前沒有可播放的 dataset";
+                option.value = "";
+                select.appendChild(option);
+            }
+            const previousIndex = replayDatasets.findIndex((dataset) =>
+                dataset.dataset_path === previousDataset && dataset.task_id === previousTaskId
+            );
+            if (previousIndex >= 0) select.value = String(previousIndex);
+            updateReplaySelection();
+            updateUploadDatasets();
+            const episodeSelect = document.getElementById("replayEpisode");
+            if ([...episodeSelect.options].some((option) => option.value === previousEpisode)) {
+                episodeSelect.value = previousEpisode;
+            }
+            return true;
+        }
+
+        function showPlaybackMessage(text, isError = false) {
+            const element = document.getElementById("playbackMessage");
+            element.textContent = text;
+            element.className = isError ? "error" : "success";
+        }
+
+        async function refreshReplayStatus() {
+            try {
+                const response = await getPlaybackStatus();
+                if (!responseSucceeded(response)) throw new Error(responseError(response));
+                const data = responseData(response);
+                const playing = Boolean(data.playing);
+                const labels = {
+                    idle: "未播放", starting: "準備中", loading: "載入 Episode",
+                    validating_arm: "檢查手臂", validating_gripper: "檢查夾爪",
+                    waiting_for_motion_session: "等待手臂控制權",
+                    moving_to_start: "移動至起點",
+                    playing: "播放中", completed: "播放完成", stopped: "已停止", failed: "播放失敗",
+                };
+                const status = document.getElementById("playingStatus");
+                status.textContent = labels[data.phase] ?? (playing ? "播放中" : "未播放");
+                status.className = `status-value ${playing ? "recording" : "stopped"}`;
+                document.getElementById("playbackElapsed").textContent = `${Number(data.elapsed_seconds ?? 0).toFixed(1)} 秒`;
+                document.getElementById("playbackPath").textContent = data.input_path ?? selectedReplayDataset()?.dataset_path ?? "—";
+                document.getElementById("replayDataset").disabled = playing;
+                document.getElementById("replayEpisode").disabled = playing;
+                document.getElementById("replayArm").disabled = playing;
+                document.getElementById("replayGripper").disabled = playing;
+                if (playing) {
+                    document.getElementById("startReplayButton").disabled = true;
+                    if (replayPollingTimer === null) replayPollingTimer = window.setInterval(refreshReplayStatus, 500);
+                } else {
+                    if (replayPollingTimer !== null) {
+                        window.clearInterval(replayPollingTimer);
+                        replayPollingTimer = null;
+                    }
+                    updateReplaySelection();
+                    if (data.phase === "completed") showPlaybackMessage("Replay 播放完成。");
+                    else if (data.phase === "failed") showPlaybackMessage(`Replay 失敗：${data.error ?? "未知錯誤"}`, true);
+                    else if (data.phase === "stopped") showPlaybackMessage("Replay 已停止。");
+                }
+            } catch (error) {
+                showPlaybackMessage(`Replay 狀態更新失敗：${error.message}`, true);
+            }
+        }
+
+        function showUploadMessage(text, isError = false) {
+            const element = document.getElementById("uploadMessage");
+            element.textContent = text;
+            element.className = isError ? "error" : "success";
+        }
+
+        function formatBytes(bytes) {
+            const value = Number(bytes ?? 0);
+            if (!value) return "—";
+            const units = ["B", "KB", "MB", "GB"];
+            const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
+            return `${(value / (1024 ** index)).toFixed(index ? 1 : 0)} ${units[index]}`;
+        }
+
+        async function refreshUploadStatus() {
+            try {
+                const response = await getTrainingUploadStatus();
+                if (!responseSucceeded(response)) throw new Error(responseError(response));
+                const data = responseData(response);
+                if (!document.getElementById("trainingServerUrl").value && data.default_server_url) {
+                    document.getElementById("trainingServerUrl").value = data.default_server_url;
+                }
+                const labels = { idle: "尚未上傳", starting: "準備中", packaging: "正在打包", uploading: "正在上傳", completed: "上傳完成", failed: "上傳失敗" };
+                const status = document.getElementById("uploadStatus");
+                status.textContent = labels[data.phase] ?? data.phase;
+                status.className = `status-value ${data.phase === "completed" ? "recording" : (data.uploading ? "" : "stopped")}`;
+                document.getElementById("uploadSize").textContent = formatBytes(data.archive_bytes);
+                document.getElementById("uploadPath").textContent = data.dataset_path ?? "—";
+                document.getElementById("uploadDatasetButton").disabled = Boolean(data.uploading) || !document.getElementById("uploadDataset").value;
+                document.getElementById("uploadDataset").disabled = Boolean(data.uploading);
+                document.getElementById("trainingServerUrl").disabled = Boolean(data.uploading);
+                document.getElementById("trainingApiToken").disabled = Boolean(data.uploading);
+                if (data.error) showUploadMessage(`上傳失敗：${data.error}`, true);
+                else if (data.phase === "completed") showUploadMessage(`上傳完成（HTTP ${data.response_status}）。`);
+                else if (data.uploading) showUploadMessage(data.phase === "packaging" ? "正在壓縮 dataset…" : "資料正在傳送，請勿關閉後端服務…");
+                if (data.uploading && uploadPollingTimer === null) uploadPollingTimer = window.setInterval(refreshUploadStatus, 1000);
+                if (!data.uploading && uploadPollingTimer !== null) {
+                    window.clearInterval(uploadPollingTimer);
+                    uploadPollingTimer = null;
+                }
+            } catch (error) {
+                showUploadMessage(`無法讀取上傳狀態：${error.message}`, true);
+            }
+        }
+
+        function setFormLocked(locked) {
+            form.querySelectorAll("select, input").forEach((element) => { element.disabled = locked; });
+            startButton.disabled = locked;
+            stopButton.disabled = !locked;
+            openGripperButton.disabled = !locked;
+            closeGripperButton.disabled = !locked;
+            if (!locked) {
+                syncDatasetModeUI();
+                syncTrainingTargets();
+            }
+        }
+        function startPreview(cameraName) {
+            if (!cameraName || previewCameraName === cameraName) return;
+            previewCameraName = cameraName;
+            const params = new URLSearchParams({ camera_name: cameraName, t: String(Date.now()) });
+            cameraPreview.src = `/api/vision/camera_stream?${params.toString()}`;
+            cameraPreview.style.display = "block";
+            previewPlaceholder.style.display = "none";
+            previewBadge.style.display = "block";
+        }
+
+        function stopPreview(messageText = "開始錄製並啟用 record_video 後，這裡會顯示即時畫面。") {
+            previewCameraName = null;
+            cameraPreview.removeAttribute("src");
+            cameraPreview.style.display = "none";
+            previewBadge.style.display = "none";
+            previewPlaceholder.textContent = messageText;
+            previewPlaceholder.style.display = "block";
+        }
+
+        cameraPreview.addEventListener("error", () => {
+            if (previewCameraName) {
+                stopPreview("相機串流暫時無法顯示，請確認錄製與相機狀態。")
+            }
+        });
+
+        function renderStatus(response) {
+            const data = responseData(response);
+            const recording = Boolean(data.recording);
+            const status = document.getElementById("recordingStatus");
+            status.textContent = recording ? "錄製中" : "未錄製";
+            status.className = `status-value ${recording ? "recording" : "stopped"}`;
+            document.getElementById("elapsedStatus").textContent = `${Number(data.elapsed_seconds ?? 0).toFixed(1)} 秒`;
+            document.getElementById("sampleStatus").textContent = String(data.sample_count ?? 0);
+            document.getElementById("episodeStatus").textContent = data.episode_index ?? "—";
+            document.getElementById("hardwareStatus").textContent = data.arm_name ? `${data.arm_name} / ${data.gripper_name}` : "—";
+            document.getElementById("cameraStatus").textContent = (data.camera_names ?? []).join(", ") || "未錄影";
+            document.getElementById("pathStatus").textContent = data.output_path ?? "—";
+            const cameraName = (data.camera_names ?? [])[0];
+            if (recording && data.record_video && cameraName) startPreview(cameraName);
+            else if (!recording || !data.record_video) stopPreview();
+            setFormLocked(recording);
+            if (recording && pollingTimer === null) pollingTimer = window.setInterval(refreshStatus, 1000);
+            if (!recording && pollingTimer !== null) { window.clearInterval(pollingTimer); pollingTimer = null; }
+        }
+
+        async function refreshStatus() {
+            try {
+                const format = document.getElementById("datasetFormat").value;
+                const response = await getRecordingStatus(format);
+                if (!responseSucceeded(response)) throw new Error(responseError(response));
+                renderStatus(response);
+            } catch (error) {
+                showMessage(`狀態更新失敗：${error.message}`, true);
+            }
+        }
+
+        form.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const interval = Number(document.getElementById("interval").value);
+            const task = selectedTask();
+            if (!Number.isFinite(interval) || interval <= 0) return showMessage("interval 必須大於 0。", true);
+            if (!task) return showMessage("task 不可為空。", true);
+            const payload = {
+                arm_name: document.getElementById("armName").value,
+                gripper_name: document.getElementById("gripperName").value,
+                output_path: null,
+                interval,
+                freedrive: booleanValue("freedrive"),
+                record_video: booleanValue("recordVideo"),
+                task,
+                initial_gripper_position: Number(document.getElementById("initialGripperPosition").value),
+                dataset_mode: document.getElementById("datasetMode").value,
+                dataset_format: document.getElementById("datasetFormat").value,
+                training_target: document.getElementById("trainingTarget").value || null,
+                dataset_name: document.getElementById("multiDatasetName").value.trim(),
+            };
+            startButton.disabled = true;
+            showMessage("正在啟動錄製…");
+            try {
+                const response = await startRecording(payload);
+                showResponse(response);
+                if (!responseSucceeded(response)) throw new Error(responseError(response));
+                const startedData = responseData(response);
+                document.getElementById("resolvedOutputPath").textContent = startedData.absolute_path ?? startedData.output_path;
+                const cameraName = (startedData.camera_names ?? [])[0];
+                if (startedData.record_video && cameraName) startPreview(cameraName);
+                const startupSeconds = Number(startedData.startup_seconds ?? 0).toFixed(1);
+                showMessage(`錄製已開始（啟動 ${startupSeconds} 秒）。請完成示範後按「停止並儲存」。`);
+                await refreshStatus();
+            } catch (error) {
+                showMessage(`開始失敗：${error.message}`, true);
+                startButton.disabled = false;
+            }
+        });
+
+        stopButton.addEventListener("click", async () => {
+            stopButton.disabled = true;
+            stopPreview("錄製已停止；正在寫入 dataset…");
+            showMessage("正在停止並寫入 LeRobot episode…");
+            try {
+                const response = await stopRecording({
+                    arm_name: document.getElementById("armName").value,
+                    gripper_name: document.getElementById("gripperName").value,
+                    dataset_format: document.getElementById("datasetFormat").value,
+                });
+                showResponse(response);
+                if (!responseSucceeded(response)) throw new Error(responseError(response));
+                stopPreview("錄製已停止；相機預覽已關閉。")
+                const stoppedData = responseData(response);
+                const stopSeconds = Number(stoppedData.stop_timings?.total_seconds ?? 0).toFixed(1);
+                showMessage(`錄製已儲存（停止與寫入 ${stopSeconds} 秒）：${stoppedData.output_path ?? "完成"}`);
+                await loadTaskRegistry();
+                await refreshStatus();
+            } catch (error) {
+                showMessage(`停止失敗：${error.message}`, true);
+                stopButton.disabled = false;
+            }
+        });
+
+        async function moveGripper(action) {
+            const gripper = document.getElementById("gripperName").value;
+            try {
+                const response = await moveRecordingGripper(action, { gripper_name: gripper, speed: 100, force: 100, wait: true });
+                showResponse(response);
+                if (!responseSucceeded(response)) throw new Error(responseError(response));
+                showMessage(action === "open" ? "夾爪已開啟。" : "夾爪已關閉。");
+            } catch (error) {
+                showMessage(`夾爪操作失敗：${error.message}`, true);
+            }
+        }
+
+        async function setFreedrive(start) {
+            const armName = document.getElementById("armName").value;
+            if (!armName) return showMessage("請先選擇手臂。", true);
+            startFreedriveButton.disabled = true;
+            stopFreedriveButton.disabled = true;
+            showMessage(start ? "正在啟動 Freedrive…" : "正在結束 Freedrive…");
+            try {
+                const response = await (start
+                    ? start_arm_freedrive(armName)
+                    : stop_arm_freedrive(armName));
+                showResponse(response);
+                if (!responseSucceeded(response)) throw new Error(responseError(response));
+                startFreedriveButton.disabled = start;
+                stopFreedriveButton.disabled = !start;
+                showMessage(start
+                    ? `${armName} Freedrive 已啟動。`
+                    : `${armName} Freedrive 已結束。`);
+            } catch (error) {
+                startFreedriveButton.disabled = false;
+                stopFreedriveButton.disabled = false;
+                showMessage(`Freedrive 操作失敗：${error.message}`, true);
+            }
+        }
+
+        document.getElementById("armName").addEventListener("change", (event) => {
+            fillGripperSelect("gripperName", event.target.value);
+            renderResolvedOutputPath();
+        });
+        document.getElementById("task").addEventListener("input", renderResolvedOutputPath);
+        document.getElementById("registeredTask").addEventListener("change", renderResolvedOutputPath);
+        document.getElementById("multiDatasetName").addEventListener("input", renderResolvedOutputPath);
+        document.getElementById("datasetFormat").addEventListener("change", () => {
+            syncTrainingTargets();
+            renderResolvedOutputPath();
+        });
+        document.getElementById("trainingTarget").addEventListener("change", renderResolvedOutputPath);
+        document.getElementById("datasetMode").addEventListener("change", () => {
+            syncDatasetModeUI();
+            renderResolvedOutputPath();
+        });
+        document.getElementById("registerTaskButton").addEventListener("click", async () => {
+            const input = document.getElementById("newTaskName");
+            const task = input.value.trim().toLowerCase();
+            if (!task) return showMessage("請輸入要註冊的 task。", true);
+            try {
+                const response = await registerTask(task);
+                showResponse(response);
+                if (!responseSucceeded(response)) throw new Error(responseError(response));
+                input.value = "";
+                await loadTaskRegistry();
+                document.getElementById("registeredTask").value = responseData(response).task.task;
+                renderResolvedOutputPath();
+                showMessage(`Task 已註冊：${responseData(response).task.task}`);
+            } catch (error) {
+                showMessage(`Task 註冊失敗：${error.message}`, true);
+            }
+        });
+        document.getElementById("replayDataset").addEventListener("change", updateReplaySelection);
+        document.getElementById("replayArm").addEventListener("change", (event) => {
+            fillGripperSelect("replayGripper", event.target.value);
+        });
+        document.getElementById("startReplayButton").addEventListener("click", async () => {
+            const dataset = selectedReplayDataset();
+            if (!dataset) return showPlaybackMessage("請先選擇 dataset。", true);
+            const arm = document.getElementById("replayArm").value;
+            if (!(dataset.compatible_arms ?? []).includes(arm)) return showPlaybackMessage(`此 dataset 的 robot_type=${dataset.robot_type}，不可使用 ${arm}。`, true);
+            const episode = Number(document.getElementById("replayEpisode").value);
+            if (!window.confirm(`即將移動實體 ${arm} 手臂並播放 episode ${episode}。\n\n請確認工作區無人、無障礙物且急停可用。\n\n確定開始嗎？`)) return;
+            showPlaybackMessage("正在載入 episode 並啟動 Replay…");
+            try {
+                const response = await startPlayback({
+                    input_path: dataset.dataset_path,
+                    dataset_format: dataset.format,
+                    arm_name: arm,
+                    gripper_name: document.getElementById("replayGripper").value,
+                    episode_index: episode,
+                    speed: Number(document.getElementById("replaySpeed").value),
+                    acceleration: Number(document.getElementById("replayAcceleration").value),
+                    lookahead_time: 0.1,
+                    gain: 300,
+                    move_to_start: document.getElementById("replayMoveToStart").value === "true",
+                    move_to_start_speed: 0.1,
+                    move_to_start_acceleration: 0.1,
+                });
+                showResponse(response);
+                if (!responseSucceeded(response)) throw new Error(responseError(response));
+                showPlaybackMessage("Replay 已開始；播放結束後狀態會自動更新。")
+                document.getElementById("playingStatus").textContent = "播放中";
+                document.getElementById("playingStatus").className = "status-value recording";
+                document.getElementById("startReplayButton").disabled = true;
+                document.getElementById("replayDataset").disabled = true;
+                document.getElementById("replayEpisode").disabled = true;
+                await refreshReplayStatus();
+            } catch (error) {
+                showPlaybackMessage(`Replay 啟動失敗：${error.message}`, true);
+            }
+        });
+        document.getElementById("refreshReplayButton").addEventListener("click", async () => {
+            try { await loadReplayCatalog(true); showPlaybackMessage("資料夾已重新掃描，資料集清單已更新。"); }
+            catch (error) { showPlaybackMessage(`資料夾更新失敗：${error.message}`, true); }
+        });
+        document.getElementById("uploadDatasetButton").addEventListener("click", async () => {
+            const datasetPath = document.getElementById("uploadDataset").value;
+            const serverUrl = document.getElementById("trainingServerUrl").value.trim();
+            if (!datasetPath) return showUploadMessage("請先選擇 dataset。", true);
+            if (!serverUrl) return showUploadMessage("請輸入 training server upload URL。", true);
+            if (!window.confirm(`確定要將以下資料集上傳到訓練 server？\n\n${datasetPath}\n\n${serverUrl}`)) return;
+            showUploadMessage("正在啟動上傳…");
+            try {
+                const response = await submitTrainingDataset({
+                    dataset_path: datasetPath,
+                    server_url: serverUrl,
+                    api_token: document.getElementById("trainingApiToken").value,
+                    metadata: { request_training: true },
+                });
+                showResponse(response);
+                if (!responseSucceeded(response)) throw new Error(responseError(response));
+                document.getElementById("trainingApiToken").value = "";
+                await refreshUploadStatus();
+            } catch (error) {
+                showUploadMessage(`啟動上傳失敗：${error.message}`, true);
+            }
+        });
+        document.getElementById("refreshUploadButton").addEventListener("click", refreshUploadStatus);
+        refreshButton.addEventListener("click", refreshStatus);
+        startFreedriveButton.addEventListener("click", () => setFreedrive(true));
+        stopFreedriveButton.addEventListener("click", () => setFreedrive(false));
+        openGripperButton.addEventListener("click", () => moveGripper("open"));
+        closeGripperButton.addEventListener("click", () => moveGripper("close"));
+        window.addEventListener("beforeunload", () => {
+            if (pollingTimer !== null) window.clearInterval(pollingTimer);
+            if (replayPollingTimer !== null) window.clearInterval(replayPollingTimer);
+            if (uploadPollingTimer !== null) window.clearInterval(uploadPollingTimer);
+            stopPreview();
+        });
+        try { await loadRecordingDevices(); } catch (error) { showMessage(`设备读取失败：${error.message}`, true); }
+        syncDatasetModeUI();
+        syncTrainingTargets();
+        await loadTaskRegistry();
+        try {
+            await loadReplayCatalog(true);
+        } catch (error) {
+            showPlaybackMessage(`資料夾初始化失敗：${error.message}`, true);
+        }
+        refreshUploadStatus();
+        refreshStatus();
+    </script>
+</body>
+</html>
