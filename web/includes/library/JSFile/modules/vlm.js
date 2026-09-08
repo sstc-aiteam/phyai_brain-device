@@ -22,7 +22,6 @@ const VLM_STATE_URL = resolveApiUrl("/api/vlm/state");
 const VLM_REOBSERVE_URL = resolveApiUrl("/api/vlm/reobserve");
 
 const VLM_POLL_INTERVAL_MS = 250;
-const VLM_MODE_HEARTBEAT_INTERVAL_MS = 1500;
 const LAYER_TYPE_INTERVAL_MS = 42;
 const OBJECT_TYPE_INTERVAL_MS = 46;
 const OBJECT_CARD_GAP_MS = 260;
@@ -78,10 +77,6 @@ let reobserveGateActive = false;
 let reobserveBaseRevision = null;
 
 let latestVlmPayload = null;
-
-let vlmModeHeartbeatTimer = null;
-let vlmModeHeartbeatRunning = false;
-let lastConfirmedPageMode = null;
 
 let objectPlaybackSceneKey = null;
 let objectPlaybackActiveKey = null;
@@ -382,168 +377,6 @@ function createInitialLayer(kind)
         detail: "尚未取得場景狀態。",
         updatedAt: null,
     };
-}
-
-function createVlmPageClientId()
-{
-    const storageKey = "tairosVlmPageClientId";
-    let clientId = sessionStorage.getItem(storageKey);
-
-    if (clientId)
-    {
-        return clientId;
-    }
-
-    if (typeof crypto?.randomUUID === "function")
-    {
-        clientId = crypto.randomUUID();
-    }
-    else
-    {
-        clientId = (
-            `vlm-${Date.now().toString(36)}-`
-            + Math.random().toString(36).slice(2, 12)
-        );
-    }
-
-    clientId = clientId.replace(/[^A-Za-z0-9_-]/g, "-");
-    sessionStorage.setItem(storageKey, clientId);
-    return clientId;
-}
-
-const VLM_PAGE_CLIENT_ID = createVlmPageClientId();
-
-function resolveVlmPageMode()
-{
-    const explicitMode = normalizeText(
-        document.documentElement?.dataset?.vlmOutputMode
-        ?? document.body?.dataset?.vlmOutputMode
-        ?? document.querySelector(
-            'meta[name="vlm-output-mode"]',
-        )?.content,
-    ).toLowerCase();
-
-    if (explicitMode === "live" || explicitMode === "assisted")
-    {
-        return explicitMode;
-    }
-
-    const path = window.location.pathname
-        .toLowerCase()
-        .replace(/\/+$/, "");
-    const title = normalizeText(document.title);
-
-    const isDemoPage = (
-        path === "/demo"
-        || path.endsWith("/demo.html")
-        || path.endsWith("/web/demo.html")
-    );
-
-    return isDemoPage ? "assisted" : "live";
-}
-
-async function sendVlmModeHeartbeat()
-{
-    if (vlmModeHeartbeatRunning)
-    {
-        return null;
-    }
-
-    vlmModeHeartbeatRunning = true;
-
-    try
-    {
-        const requestedMode = resolveVlmPageMode();
-        const payload = await requestVlmReobserve(
-            `ui_mode_heartbeat|${requestedMode}|${VLM_PAGE_CLIENT_ID}`,
-        );
-
-        const effectiveMode = normalizeText(
-            payload?.effective_mode
-            ?? payload?.output_mode
-            ?? requestedMode,
-        ).toLowerCase();
-
-        if (
-            payload?.mode_changed === true
-            || (
-                lastConfirmedPageMode !== null
-                && lastConfirmedPageMode !== effectiveMode
-            )
-        )
-        {
-            reobserveBaseRevision = lastSceneRevision;
-            reobserveGateActive = true;
-            resetLayersForNewScene();
-            renderUnderstanding();
-        }
-
-        lastConfirmedPageMode = effectiveMode;
-
-        console.debug(
-            "[vlm-page-mode]",
-            `page=${window.location.pathname}`,
-            `requested=${requestedMode}`,
-            `effective=${effectiveMode}`,
-        );
-
-        return payload;
-    }
-    catch (error)
-    {
-        console.warn(
-            "[vlm-page-mode] heartbeat failed:",
-            error,
-        );
-        return null;
-    }
-    finally
-    {
-        vlmModeHeartbeatRunning = false;
-    }
-}
-
-function startVlmModeHeartbeat()
-{
-    if (vlmModeHeartbeatTimer !== null)
-    {
-        return;
-    }
-
-    void sendVlmModeHeartbeat();
-    vlmModeHeartbeatTimer = window.setInterval(
-        () => void sendVlmModeHeartbeat(),
-        VLM_MODE_HEARTBEAT_INTERVAL_MS,
-    );
-}
-
-function stopVlmModeHeartbeat({release = false} = {})
-{
-    if (vlmModeHeartbeatTimer !== null)
-    {
-        window.clearInterval(vlmModeHeartbeatTimer);
-        vlmModeHeartbeatTimer = null;
-    }
-
-    if (!release)
-    {
-        return;
-    }
-
-    void fetch(
-        VLM_REOBSERVE_URL,
-        {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Accept: "application/json",
-            },
-            body: JSON.stringify({
-                reason: `ui_mode_release|${VLM_PAGE_CLIENT_ID}`,
-            }),
-            keepalive: true,
-        },
-    ).catch(() => {});
 }
 
 function isVlmPollingAllowed()
@@ -1308,9 +1141,7 @@ function buildEnvironmentText(payload)
         return ensureSentence(relationships.join("；"));
     }
 
-    return ensureSentence(
-        entryText(narration.unboxed_observation),
-    );
+    return "";
 }
 
 function booleanText(value)
@@ -1462,13 +1293,6 @@ function updateAllLayerStates(payload)
             sceneValue(payload, "green_purple_gap_remaining_sec", 0),
         ),
     );
-    const taskActive = Boolean(
-        sceneValue(payload, "task_active", payload?.task_active ?? false),
-    );
-    const vlmSuppressed = Boolean(
-        sceneValue(payload, "vlm_suppressed", false),
-    );
-
     const yoloText = buildYoloText(payload);
     const placementText = buildPlacementText(payload);
     const objectText = buildObjectText(payload);
@@ -1618,18 +1442,6 @@ function updateAllLayerStates(payload)
                     + `engine_busy=${booleanText(engineBusy)}`
                 ),
                 completed: true,
-            },
-        );
-    }
-    else if (taskActive && vlmSuppressed)
-    {
-        setLayerState(
-            "object",
-            {
-                text: "任務執行期間暫停物件 VLM 推理。",
-                status: "VLM 已暫停",
-                statusTone: "idle",
-                detail: "task_active=是｜vlm_suppressed=是",
             },
         );
     }
@@ -1788,18 +1600,6 @@ function updateAllLayerStates(payload)
                 status: "功能未啟用",
                 statusTone: "idle",
                 detail: "purple_allowed=否",
-            },
-        );
-    }
-    else if (taskActive && vlmSuppressed)
-    {
-        setLayerState(
-            "environment",
-            {
-                text: "任務執行期間暫停整體場景 VLM 推理。",
-                status: "VLM 已暫停",
-                statusTone: "idle",
-                detail: "task_active=是｜vlm_suppressed=是",
             },
         );
     }
@@ -2612,7 +2412,6 @@ async function pollVlmState()
             vlmFailureCount = 0;
             renderVlmDisabled();
             stopVlmPolling();
-            stopVlmModeHeartbeat();
             return;
         }
 
@@ -2800,10 +2599,6 @@ function initVlmUI()
         installStatusTestStyles();
         resetLayersForNewScene();
         renderUnderstanding();
-        startVlmModeHeartbeat();
-
-        // Give the page-mode heartbeat a brief head start so demo.html does
-        // not render one stale live result before 8014 switches to assisted.
         window.setTimeout(
             startVlmPolling,
             120,
@@ -2829,26 +2624,12 @@ window.addEventListener(
     () =>
     {
         stopVlmPolling();
-        stopVlmModeHeartbeat({release: true});
-    },
-);
-
-document.addEventListener(
-    "visibilitychange",
-    () =>
-    {
-        if (!document.hidden)
-        {
-            void sendVlmModeHeartbeat();
-        }
     },
 );
 
 window.startVlmPolling = startVlmPolling;
 window.stopVlmPolling = stopVlmPolling;
 window.pollVlmState = pollVlmState;
-window.resolveVlmPageMode = resolveVlmPageMode;
-window.sendVlmModeHeartbeat = sendVlmModeHeartbeat;
 
 export {
     initVlmUI,
@@ -2857,10 +2638,6 @@ export {
     pollVlmState,
     clearUnderstanding,
     requestVlmReobserve,
-    resolveVlmPageMode,
-    sendVlmModeHeartbeat,
-    startVlmModeHeartbeat,
-    stopVlmModeHeartbeat,
     buildYoloText,
     buildPlacementText,
     buildObjectText,
