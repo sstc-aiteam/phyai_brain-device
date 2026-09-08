@@ -1,4 +1,9 @@
-"""Resolve task-critical facts from explicit, structured, cached, then VLM data."""
+"""Resolve semantic world facts from explicit, structured, cached, then VLM data.
+
+Primary APIs for the closed-loop runtime are observe_fact()/observe_facts().
+observe_requirement()/observe_requirements() and inspect_visual_state() are
+retained for backward compatibility with the existing planning path.
+"""
 
 from __future__ import annotations
 
@@ -17,12 +22,16 @@ from services import llm_service, vision_service
 
 _CONTAINER_SUBJECTS = {"trash_can", "second_drawer", "top_cabinet"}
 _SEMANTIC_PREDICATES = {"open_state", "semantic_relation", "visual_state"}
-_PLANNING_CAMERA_ROUTES = {
+_DEFAULT_CAMERA_ROUTES = {
     ("trash_can", "open_state"): "middle",
     ("second_drawer", "open_state"): "middle",
     ("top_cabinet", "open_state"): "middle",
 }
-_PLANNING_VLM_MAX_WIDTH = 960
+_SEMANTIC_VLM_MAX_WIDTH = 960
+
+# Backward-compatible aliases used by older imports/tests.
+_PLANNING_CAMERA_ROUTES = _DEFAULT_CAMERA_ROUTES
+_PLANNING_VLM_MAX_WIDTH = _SEMANTIC_VLM_MAX_WIDTH
 
 
 def _resize_planning_vlm_jpeg(jpeg: bytes) -> bytes:
@@ -30,13 +39,13 @@ def _resize_planning_vlm_jpeg(jpeg: bytes) -> bytes:
     with Image.open(io.BytesIO(jpeg)) as image:
         image = image.convert("RGB")
         width, height = image.size
-        if width > _PLANNING_VLM_MAX_WIDTH:
+        if width > _SEMANTIC_VLM_MAX_WIDTH:
             target_height = max(
                 1,
-                round(height * _PLANNING_VLM_MAX_WIDTH / width),
+                round(height * _SEMANTIC_VLM_MAX_WIDTH / width),
             )
             image = image.resize(
-                (_PLANNING_VLM_MAX_WIDTH, target_height),
+                (_SEMANTIC_VLM_MAX_WIDTH, target_height),
                 Image.Resampling.LANCZOS,
             )
         output = io.BytesIO()
@@ -464,51 +473,258 @@ def observe_requirements(
     ]
 
 
+
+def observe_fact(
+    *,
+    subject: str,
+    predicate: str,
+    context: dict[str, Any] | None = None,
+    camera_source: str | None = None,
+    freshness: str = "current",
+) -> dict[str, Any]:
+    """Resolve one semantic fact for WorldState.
+
+    Priority:
+      explicit task fact -> structured sensor/vision -> fresh cache -> VLM.
+
+    This function does not mutate WorldState; world_state_service owns that
+    update boundary.
+    """
+    subject = str(subject or "").strip()
+    predicate = str(predicate or "").strip()
+    if not subject or not predicate:
+        raise ValueError("subject 與 predicate 必須是非空字串")
+
+    context = dict(context or {})
+    effective_camera = (
+        str(camera_source).strip()
+        if isinstance(camera_source, str)
+        and camera_source.strip()
+        else _DEFAULT_CAMERA_ROUTES.get(
+            (subject, predicate)
+        )
+    )
+
+    requirement = {
+        "subject": subject,
+        "predicate": predicate,
+        "timing": "runtime_observation",
+        "freshness": freshness,
+    }
+    if effective_camera:
+        requirement["camera_source"] = effective_camera
+
+    observed = observe_requirement(
+        requirement,
+        context=context,
+    )
+
+    fact = observed.get("fact")
+    result = {
+        "subject": subject,
+        "predicate": predicate,
+        "source": observed.get("source"),
+        "camera_source": effective_camera,
+        "status": observed.get("status", "resolved"),
+    }
+
+    if isinstance(fact, dict):
+        result.update(deepcopy(fact))
+    else:
+        result["value"] = None
+
+    if observed.get("reason"):
+        result["reason"] = observed["reason"]
+
+    return result
+
+
+def observe_facts(
+    requests: list[dict[str, Any]],
+    *,
+    context: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Resolve multiple semantic facts while sharing at most one snapshot."""
+    if not isinstance(requests, list):
+        raise ValueError("requests 必須是 list")
+
+    context = dict(context or {})
+    requirements: list[dict[str, Any]] = []
+    normalized: list[tuple[str, str, str | None]] = []
+
+    for request in requests:
+        if not isinstance(request, dict):
+            raise ValueError("requests item 必須是 dict")
+
+        subject = str(
+            request.get("subject") or ""
+        ).strip()
+        predicate = str(
+            request.get("predicate") or ""
+        ).strip()
+        if not subject or not predicate:
+            raise ValueError(
+                "每個 request 必須包含 subject/predicate"
+            )
+
+        camera_source = request.get("camera_source")
+        if not (
+            isinstance(camera_source, str)
+            and camera_source.strip()
+        ):
+            camera_source = _DEFAULT_CAMERA_ROUTES.get(
+                (subject, predicate)
+            )
+        else:
+            camera_source = camera_source.strip()
+
+        requirement = {
+            "subject": subject,
+            "predicate": predicate,
+            "timing": request.get(
+                "timing",
+                "runtime_observation",
+            ),
+            "freshness": request.get(
+                "freshness",
+                "current",
+            ),
+        }
+        if camera_source:
+            requirement["camera_source"] = camera_source
+
+        if isinstance(request.get("binding"), dict):
+            requirement["binding"] = deepcopy(
+                request["binding"]
+            )
+
+        requirements.append(requirement)
+        normalized.append(
+            (subject, predicate, camera_source)
+        )
+
+    observed_rows = observe_requirements(
+        requirements,
+        context=context,
+    )
+
+    results: list[dict[str, Any]] = []
+    for (
+        subject,
+        predicate,
+        camera_source,
+    ), observed in zip(
+        normalized,
+        observed_rows,
+    ):
+        fact = (
+            observed.get("fact")
+            if isinstance(observed, dict)
+            else None
+        )
+        result = {
+            "subject": subject,
+            "predicate": predicate,
+            "source": (
+                observed.get("source")
+                if isinstance(observed, dict)
+                else "unresolved"
+            ),
+            "camera_source": camera_source,
+            "status": (
+                observed.get("status", "resolved")
+                if isinstance(observed, dict)
+                else "unresolved"
+            ),
+        }
+        if isinstance(fact, dict):
+            result.update(deepcopy(fact))
+        else:
+            result["value"] = None
+
+        if (
+            isinstance(observed, dict)
+            and observed.get("reason")
+        ):
+            result["reason"] = observed["reason"]
+
+        results.append(result)
+
+    return results
+
 def inspect_visual_state(
     *,
     subject: str,
     predicate: str,
     context: dict[str, Any] | None = None,
+    camera_source: str | None = None,
 ) -> dict[str, Any]:
-    """Planning-time perception tool; never creates a robot execution action."""
-    context = dict(context or {})
-    camera_source = _PLANNING_CAMERA_ROUTES.get((subject, predicate))
-    if camera_source is None:
-        raise ValueError(f"沒有 planning perception route：{subject}.{predicate}")
+    """Backward-compatible semantic inspection helper.
 
-    requirement = {
-        "subject": subject,
-        "predicate": predicate,
-        "camera_source": camera_source,
-        "timing": "planning_time",
-        "freshness": "current",
-    }
-    explicit = _explicit_fact(subject, predicate, context)
-    if explicit is None:
+    New closed-loop callers should prefer observe_fact().
+    """
+    context = dict(context or {})
+    effective_camera = (
+        str(camera_source).strip()
+        if isinstance(camera_source, str)
+        and camera_source.strip()
+        else _DEFAULT_CAMERA_ROUTES.get(
+            (subject, predicate)
+        )
+    )
+
+    explicit = _explicit_fact(
+        subject,
+        predicate,
+        context,
+    )
+    if explicit is None and effective_camera:
         image_urls = context.get("image_urls")
-        has_image = isinstance(image_urls, dict) and bool(image_urls.get(camera_source))
+        has_image = (
+            isinstance(image_urls, dict)
+            and bool(image_urls.get(effective_camera))
+        )
+
         if not has_image and not context.get("image_url"):
-            jpeg = vision_service.get_camera_rgb_jpeg(camera_name=camera_source)
-            if not isinstance(jpeg, (bytes, bytearray)) or not jpeg:
-                raise RuntimeError(f"{camera_source} camera 沒有可用影像")
-            jpeg = _resize_planning_vlm_jpeg(bytes(jpeg))
+            jpeg = vision_service.get_camera_rgb_jpeg(
+                camera_name=effective_camera
+            )
+            if (
+                not isinstance(jpeg, (bytes, bytearray))
+                or not jpeg
+            ):
+                raise RuntimeError(
+                    f"{effective_camera} camera 沒有可用影像"
+                )
+
+            jpeg = _resize_planning_vlm_jpeg(
+                bytes(jpeg)
+            )
             image_urls = dict(image_urls or {})
-            image_urls[camera_source] = (
-                "data:image/jpeg;base64," + base64.b64encode(bytes(jpeg)).decode("ascii")
+            image_urls[effective_camera] = (
+                "data:image/jpeg;base64,"
+                + base64.b64encode(
+                    bytes(jpeg)
+                ).decode("ascii")
             )
             context["image_urls"] = image_urls
 
-    observed = observe_requirement(requirement, context=context)
-    fact = observed.get("fact")
-    if observed.get("status") == "unresolved" or not isinstance(fact, dict):
+    observed = observe_fact(
+        subject=subject,
+        predicate=predicate,
+        context=context,
+        camera_source=effective_camera,
+    )
+
+    if (
+        observed.get("status") == "unresolved"
+        or "value" not in observed
+        or observed.get("value") is None
+    ):
         raise RuntimeError(
-            f"planning perception 無法解析 {subject}.{predicate}："
+            f"semantic perception 無法解析 "
+            f"{subject}.{predicate}："
             f"{observed.get('reason') or observed!r}"
         )
-    return {
-        "subject": subject,
-        "predicate": predicate,
-        **deepcopy(fact),
-        "source": observed.get("source"),
-        "camera_source": camera_source,
-    }
+
+    return observed
