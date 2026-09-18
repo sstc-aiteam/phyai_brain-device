@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from .coordination_schema import CoordinationSpec
-from .goal_schema import GoalSet
+from .coordination import CoordinationSpec
+from .goals import GoalSet
 from .world_state import WorldState
 
 

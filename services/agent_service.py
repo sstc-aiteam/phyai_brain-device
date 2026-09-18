@@ -1,15 +1,12 @@
 """
 對外 AI Agent 服務層。
 """
-
-from agent.agent import build_prompt
+import time
+from agent.agent import (build_agent_command_data, route_command)
 from time import perf_counter
-from agent.executor import execute_tools
-from services.agent_planning_service import build_read_only_plan
-from services.arm_service import get_arm_status
-from services.vision_service import get_detections
-from utils.object_identity import assign_request_object_ids
-from utils.response import success, error
+# from agent.executor import execute_tools
+from services import arm_service, perception_service, camera_service, vlm_narrator_service, plan_service
+from utils import response
 
 
 MODULE = "agent"
@@ -20,7 +17,7 @@ def _get_robot_status():
     取得提供給 AI Agent 的精簡機器人狀態。
     """
     try:
-        response = get_arm_status()
+        response = arm_service.get_arm_status()
 
         if not isinstance(response, dict):
             return {
@@ -73,181 +70,146 @@ def _get_robot_status():
             "connected": False,
             "status_error": (f"取得機器手臂狀態時發生錯誤：{type(exc).__name__}"),
         }
+def _get_perception_context(
+    camera_names=("left", "right"),
+    model_name="object_detector",
+    include_robot_xyz=True,
+):
+    """
+    Agent 共用 perception context。
 
-def _get_detected_objects():
+    現階段透過 perception_service.get_detections() 聚合多相機結果。
+    未來 perception_service 提供 multi-camera API 時，只需修改此函式，
+    其他 Agent / Plan 邏輯不用變。
     """
-    取得提供給 AI Agent 的左右相機 structured detections。
-    """
-    try:
-        raw_objects = []
-        timestamps = {}
-        camera_errors = {}
-        for camera_name in ("left", "right"):
-            response = get_detections(
+
+    raw_objects = []
+    timestamps = {}
+    camera_errors = {}
+
+    for camera_name in camera_names:
+        try:
+            response = perception_service.get_detections(
                 camera_name=camera_name,
-                include_robot_xyz=True,
+                model_name=model_name,
+                include_robot_xyz=include_robot_xyz,
             )
+
+            # 第一次失敗時，嘗試啟動相機後再偵測一次
+            if (
+                not isinstance(response, dict)
+                or response.get("status") != "success"
+                or response.get("result") is not True
+            ):
+                start_response = camera_service.start_camera(
+                    camera_name=camera_name,
+                )
+
+                if (
+                    isinstance(start_response, dict)
+                    and start_response.get("status") == "success"
+                    and start_response.get("result") is True
+                ):
+                    time.sleep(0.3)
+
+                    response = perception_service.get_detections(
+                        camera_name=camera_name,
+                        model_name=model_name,
+                        include_robot_xyz=include_robot_xyz,
+                    )
+
             if not isinstance(response, dict):
-                camera_errors[camera_name] = "vision service 回傳格式錯誤"
+                camera_errors[camera_name] = (
+                    "vision service 回傳格式錯誤"
+                )
                 continue
+
             data = response.get("data") or {}
-            objects = data.get("detections")
-            if response.get("status") != "success" or response.get("result") is not True \
-                    or not isinstance(objects, list):
+            detections = data.get("detections")
+
+            if (
+                response.get("status") != "success"
+                or response.get("result") is not True
+                or not isinstance(detections, list)
+            ):
                 camera_errors[camera_name] = str(
-                    response.get("message") or "無法取得最新物件辨識結果"
-                ).strip()
+                    response.get("message")
+                    or "無法取得物件辨識結果"
+                )
                 continue
+
             timestamps[camera_name] = data.get("timestamp")
-            raw_objects.extend({**obj, "camera_source": camera_name} for obj in objects)
 
-        if not timestamps:
-            return {
-                "detection_available": False,
-                "objects": [],
-                "count": 0,
-                "detection_error": "; ".join(
-                    f"{camera}: {message}" for camera, message in camera_errors.items()
-                ),
-                "camera_errors": camera_errors,
-            }
+            for detection in detections:
+                if not isinstance(detection, dict):
+                    continue
 
-        normalized_objects = []
-        objects = assign_request_object_ids(raw_objects)
+                raw_objects.append({
+                    **detection,
+                    "camera_source": camera_name,
+                })
 
-        for obj in objects:
-            if not isinstance(obj, dict):
-                return {
-                    "detection_available": False,
-                    "objects": [],
-                    "count": 0,
-                    "detection_error": "vision service 的物件資料格式錯誤",
-                    "latest_time": data.get("timestamp"),
-                }
+        except Exception as exc:
+            camera_errors[camera_name] = (
+                f"{type(exc).__name__}: {exc}"
+            )
 
-            normalized_objects.append({
-                "object_id": obj.get("object_id"),
-                "class_name": obj.get("class_name"),
-                "camera_source": obj.get("camera_source"),
-                "confidence": obj.get("confidence"),
-                "robot_xyz": obj.get("robot_xyz"),
-                "yaw_deg": obj.get("yaw_deg"),
-                "condition": obj.get("condition"),
-                "visual_description": obj.get("visual_description"),
-                "state_tags": obj.get("state_tags"),
-            })
-
-        return {
-            "detection_available": True,
-            "objects": normalized_objects,
-            "count": len(normalized_objects),
-            "latest_time": timestamps.get("left") or timestamps.get("right"),
-            "camera_timestamps": timestamps,
-            "camera_errors": camera_errors,
-        }
-
-    except Exception as exc:
+    if not timestamps:
         return {
             "detection_available": False,
             "objects": [],
             "count": 0,
-            "detection_error": (f"取得最新物件辨識結果時發生錯誤：{type(exc).__name__}"),
+            "latest_time": None,
+            "detection_error": "; ".join(
+                f"{camera}: {message}"
+                for camera, message in camera_errors.items()
+            ),
+            "camera_timestamps": {},
+            "camera_errors": camera_errors,
         }
 
-def _plan_result(user_text):
-    robot_status = _get_robot_status()
-    detected_objects = _get_detected_objects()
-    result = build_prompt(
-        user_text=user_text,
-        robot_status=robot_status,
-        detected_objects=detected_objects,
+    # Reuse the centralized multi-camera identity assignment.
+    objects = vlm_narrator_service.assign_object_ids(raw_objects)
+
+    normalized_objects = []
+
+    for obj in objects:
+        if not isinstance(obj, dict):
+            continue
+
+        normalized_objects.append({
+            "object_id": obj.get("object_id"),
+            "class_name": obj.get("class_name"),
+            "camera_source": obj.get("camera_source"),
+            "confidence": obj.get("confidence"),
+            "robot_xyz": obj.get("robot_xyz"),
+            "yaw_deg": obj.get("yaw_deg"),
+            "condition": obj.get("condition"),
+            "visual_description": obj.get("visual_description"),
+            "state_tags": obj.get("state_tags"),
+        })
+
+    latest_time = next(
+        (
+            timestamps.get(camera_name)
+            for camera_name in reversed(camera_names)
+            if timestamps.get(camera_name) is not None
+        ),
+        None,
     )
-    if not isinstance(result, dict):
-        raise TypeError("Agent 回傳結果必須是 dict")
-    required_fields = {"user_text", "answer", "tool_calls"}
-    missing_fields = required_fields - result.keys()
-    if missing_fields:
-        raise ValueError("欄位缺少：" + "、".join(sorted(missing_fields)))
-    if not isinstance(result["user_text"], str):
-        raise TypeError("user_text 必須是字串")
-    if not isinstance(result["answer"], str):
-        raise TypeError("answer 必須是字串")
-    if not isinstance(result["tool_calls"], list):
-        raise TypeError("tool_calls 必須是 list")
-    return result
+
+    return {
+        "detection_available": True,
+        "objects": normalized_objects,
+        "count": len(normalized_objects),
+        "latest_time": latest_time,
+        "camera_timestamps": timestamps,
+        "camera_errors": camera_errors,
+    }
 
 
-def _normalize_planning_options(options):
-    if options is None:
-        return {}
-    if not isinstance(options, dict):
-        raise ValueError("planning_options 必須是 object")
-    unknown = set(options) - {"stage1", "stage2", "openai_api_key"}
-    if unknown:
-        raise ValueError(f"planning_options 包含未知欄位：{sorted(unknown)}")
-    normalized = {}
-    for stage in ("stage1", "stage2"):
-        value = options.get(stage) or {}
-        if not isinstance(value, dict):
-            raise ValueError(f"planning_options.{stage} 必須是 object")
-        if set(value) - {"provider", "model"}:
-            raise ValueError(f"planning_options.{stage} 包含未知欄位")
-        provider = value.get("provider")
-        model = value.get("model")
-        if provider not in {None, "local", "openai"}:
-            raise ValueError(f"planning_options.{stage}.provider 只支援 local/openai")
-        if model is not None and (not isinstance(model, str) or not model.strip()):
-            raise ValueError(f"planning_options.{stage}.model 必須是非空字串")
-        normalized[stage] = {
-            "provider": provider,
-            "model": model.strip() if isinstance(model, str) else None,
-        }
-    key = options.get("openai_api_key")
-    if key is not None and (not isinstance(key, str) or not key.strip()):
-        raise ValueError("planning_options.openai_api_key 必須是非空字串")
-    if isinstance(key, str):
-        normalized["openai_api_key"] = key.strip()
-    return normalized
 
-
-def plan_command(user_text, planning_options=None):
-    """Build a resolved Abstract Plan without executing any tool."""
-    action = "plan_command"
-    started = perf_counter()
-    try:
-        options = _normalize_planning_options(planning_options)
-        perception_started = perf_counter()
-        detected_objects = _get_detected_objects()
-        perception_ms = (perf_counter() - perception_started) * 1000
-        result = build_read_only_plan(
-            user_text,
-            context={"detected_objects": detected_objects},
-            llm_options=options,
-        )
-        timings = result.setdefault("timings_ms", {})
-        timings["perception_context"] = round(perception_ms, 2)
-        timings["request_total_backend"] = round(
-            (perf_counter() - started) * 1000, 2
-        )
-        return success(
-            MODULE,
-            action,
-            data=result,
-        )
-    except Exception as exc:
-        return error(
-            MODULE,
-            action,
-            error=exc,
-            error_type=type(exc).__name__,
-            timings_ms={
-                "request_total_backend": round(
-                    (perf_counter() - started) * 1000, 2
-                )
-            },
-        )
-
-
+#0待刪除
 def action_command(user_text):
     """
     解析自然語言指令，建立工具執行序列。
@@ -255,7 +217,7 @@ def action_command(user_text):
     action = "action_command"
 
     try:
-        result = _plan_result(user_text)
+        # result = _plan_result(user_text)
         user_text_result = result["user_text"]
         answer = result["answer"]
         tool_calls = result["tool_calls"]
@@ -269,7 +231,7 @@ def action_command(user_text):
             # execute_tools 會直接拒絕，避免兩組實體動作同時進行。
             execution = execute_tools(tool_calls)
 
-        return success(
+        return response.success(
             MODULE,
             action,
             data={
@@ -281,9 +243,217 @@ def action_command(user_text):
         )
 
     except Exception as exc:
-        return error(
+        return response.error(
             MODULE,
             action,
             error=exc,
             error_type=type(exc).__name__,
+        )
+
+def _command_perceive(user_text,camera_names, started,):
+    perception = _get_perception_context(
+        camera_names=camera_names,
+    )
+
+    if perception["detection_available"] is not True:
+        raise RuntimeError(
+            "無法取得物件辨識結果"
+        )
+
+    objects = perception["objects"]
+
+    return build_agent_command_data(
+        user_text=user_text,
+        used_modules=["perceive"],
+        answer=f"共辨識到 {len(objects)} 個物件。",
+        objects=objects,
+        timings_ms={
+            "total": round(
+                (perf_counter() - started) * 1000,
+                2,
+            ),
+        },
+    )
+
+def _command_plan(user_text,planning_options, started,):
+
+    perception_started = perf_counter()
+
+    perception = _get_perception_context()
+
+    perception_ms = (
+        perf_counter() - perception_started
+    ) * 1000
+
+    result = (
+        plan_service
+        .build_one_shot_value(
+            user_text,
+            context={
+                "detected_objects":
+                    perception,
+            },
+            planning_options=
+                planning_options,
+        )
+    )
+
+    if not isinstance(result, dict):
+        raise RuntimeError(
+            "plan module 回傳格式錯誤"
+        )
+
+    objects = perception.get("objects")
+    if not isinstance(objects, list):
+        objects = []
+
+    steps = result.get("steps")
+    if not isinstance(steps, list):
+        steps = []
+
+    timings = dict(
+        result.get("timings_ms") or {}
+    )
+
+    timings["perception_context"] = round(
+        perception_ms,
+        2,
+    )
+
+    timings["total"] = round(
+        (perf_counter() - started) * 1000,
+        2,
+    )
+
+    return build_agent_command_data(
+        user_text=user_text,
+        used_modules=[
+            "perceive",
+            "plan",
+        ],
+        answer=result.get("answer") or "",
+        objects=objects,
+        steps=steps,
+        trace_id=result.get("trace_id"),
+        timings_ms=timings,
+    )
+
+def command(user_text, planning_options=None):
+    """Agent 統一自然語言入口。"""
+
+    action = "command"
+    started = perf_counter()
+    used_modules = []
+
+    try:
+        if not isinstance(user_text, str) or not user_text.strip():
+            raise ValueError("user_text 必須是非空字串")
+
+        user_text = user_text.strip()
+
+        # Agent 只負責理解需求並選擇下一層 module
+        route = route_command(user_text)
+
+        module = route["module"]
+        camera_names = tuple(
+            route.get("camera_names") or []
+        )
+
+        # ----------------------------------------------------
+        # perceive
+        # ----------------------------------------------------
+        if module == "perceive":
+            used_modules = ["perceive"]
+
+            if not camera_names:
+                camera_names = ("left", "right")
+
+            data = _command_perceive(
+                user_text,
+                camera_names,
+                started,
+            )
+
+        # ----------------------------------------------------
+        # plan
+        # ----------------------------------------------------
+        elif module == "plan":
+            used_modules = [
+                "perceive",
+                "plan",
+            ]
+
+            data = _command_plan(
+                user_text,
+                planning_options,
+                started,
+            )
+
+        # ----------------------------------------------------
+        # world-model
+        # ----------------------------------------------------
+        elif module == "world-model":
+            raise NotImplementedError(
+                "world-model 尚未接入 Agent command"
+            )
+
+        # ----------------------------------------------------
+        # action
+        # ----------------------------------------------------
+        elif module == "action":
+            raise NotImplementedError(
+                "action 尚未接入 Agent command"
+            )
+
+        # ----------------------------------------------------
+        # calibrate
+        # ----------------------------------------------------
+        elif module == "calibrate":
+            raise NotImplementedError(
+                "calibrate 尚未接入 Agent command"
+            )
+
+        # ----------------------------------------------------
+        # train
+        # ----------------------------------------------------
+        elif module == "train":
+            raise NotImplementedError(
+                "train 尚未接入 Agent command"
+            )
+
+        else:
+            raise RuntimeError(
+                f"不支援的 Agent module：{module}"
+            )
+
+        return response.success(
+            MODULE,
+            action,
+            data=data,
+        )
+
+    except Exception as exc:
+        data = build_agent_command_data(
+            user_text=(
+                user_text
+                if isinstance(user_text, str)
+                else ""
+            ),
+            used_modules=used_modules,
+            answer=str(exc),
+            timings_ms={
+                "total": round(
+                    (perf_counter() - started) * 1000,
+                    2,
+                ),
+            },
+        )
+
+        return response.error(
+            MODULE,
+            action,
+            error=exc,
+            error_type=type(exc).__name__,
+            result=False,
+            data=data,
         )

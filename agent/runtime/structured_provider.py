@@ -1,0 +1,474 @@
+"""
+Structured LLM provider used by planning modules.
+
+Supported providers:
+- local:
+    Use services.llm_service on the Edge machine.
+- remote:
+    Use agent.vlm.remote_vlm to call the remote OpenAI-compatible
+    llama.cpp server.
+
+Rules:
+- Default provider is always "local".
+- "remote" is used only when explicitly requested.
+- There is NO automatic fallback between local and remote.
+- OpenAI API is intentionally not used here.
+
+The returned message shape is normalized to:
+
+    {
+        "role": "assistant",
+        "content": "<JSON string>",
+    }
+
+so callers can share the same parser regardless of backend.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from agent.vlm import remote_vlm
+from services import llm_service
+
+
+DEFAULT_PROVIDER = "local"
+
+SUPPORTED_PROVIDERS = {
+    "local",
+    "remote",
+}
+
+DEFAULT_TEMPERATURE = 0.0
+DEFAULT_MAX_TOKENS = 2048
+DEFAULT_NUM_CTX = 8192
+DEFAULT_TIMEOUT = 60.0
+DEFAULT_KEEP_ALIVE = -1
+
+
+class StructuredProviderError(RuntimeError):
+    """Structured LLM provider request failed."""
+
+
+# ============================================================
+# Provider
+# ============================================================
+
+def resolve_provider(
+    stage: str,
+    provider: str | None = None,
+) -> str:
+    """
+    Resolve the LLM provider for one planning stage.
+
+    Default:
+        local
+
+    Explicit:
+        local
+        remote
+
+    No environment-based or automatic fallback is performed here.
+    """
+
+    if not isinstance(stage, str) or not stage.strip():
+        raise StructuredProviderError(
+            "stage 必須是非空字串"
+        )
+
+    if provider is None:
+        return DEFAULT_PROVIDER
+
+    if not isinstance(provider, str):
+        raise StructuredProviderError(
+            "provider 必須是字串"
+        )
+
+    normalized = provider.strip().lower()
+
+    if not normalized:
+        return DEFAULT_PROVIDER
+
+    if normalized not in SUPPORTED_PROVIDERS:
+        raise StructuredProviderError(
+            f"{stage} 不支援 provider={normalized!r}；"
+            "只支援 local/remote"
+        )
+
+    return normalized
+
+
+# ============================================================
+# Validation
+# ============================================================
+
+def _validate_messages(
+    messages: Any,
+) -> list[dict[str, Any]]:
+    if not isinstance(messages, list) or not messages:
+        raise StructuredProviderError(
+            "messages 必須是非空 list"
+        )
+
+    for index, message in enumerate(messages):
+        if not isinstance(message, dict):
+            raise StructuredProviderError(
+                f"messages[{index}] 必須是 object"
+            )
+
+        role = message.get("role")
+
+        if (
+            not isinstance(role, str)
+            or not role.strip()
+        ):
+            raise StructuredProviderError(
+                f"messages[{index}].role 必須是非空字串"
+            )
+
+        if "content" not in message:
+            raise StructuredProviderError(
+                f"messages[{index}] 缺少 content"
+            )
+
+    return messages
+
+
+def _validate_response_schema(
+    response_schema: Any,
+) -> dict[str, Any]:
+    if not isinstance(response_schema, dict):
+        raise StructuredProviderError(
+            "response_schema 必須是 dict"
+        )
+
+    return response_schema
+
+
+def _validate_model(
+    model: Any,
+) -> str | None:
+    if model is None:
+        return None
+
+    if (
+        not isinstance(model, str)
+        or not model.strip()
+    ):
+        raise StructuredProviderError(
+            "model 必須是非空字串或 None"
+        )
+
+    return model.strip()
+
+
+def _normalize_message(
+    message: Any,
+    *,
+    provider: str,
+    stage: str,
+) -> dict[str, Any]:
+    if not isinstance(message, dict):
+        raise StructuredProviderError(
+            f"{stage}/{provider} 回傳格式不是 message object"
+        )
+
+    content = message.get("content")
+
+    if (
+        not isinstance(content, str)
+        or not content.strip()
+    ):
+        raise StructuredProviderError(
+            f"{stage}/{provider} 回傳缺少有效 content"
+        )
+
+    return {
+        "role": str(
+            message.get("role")
+            or "assistant"
+        ),
+        "content": content,
+    }
+
+
+# ============================================================
+# Local backend
+# ============================================================
+
+def _chat_local(
+    *,
+    stage: str,
+    messages: list[dict[str, Any]],
+    response_schema: dict[str, Any],
+    model: str | None,
+    temperature: float,
+    max_tokens: int,
+    num_ctx: int,
+    timeout: float,
+    keep_alive: int | str,
+    wait: bool,
+    owner: str | None,
+) -> dict[str, Any]:
+    """
+    Run structured inference on the Edge local LLM service.
+    """
+
+    effective_owner = (
+        owner.strip()
+        if isinstance(owner, str) and owner.strip()
+        else f"planning_{stage}"
+    )
+
+    try:
+        message = llm_service.chat_structured(
+            messages=messages,
+            response_schema=response_schema,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            num_ctx=num_ctx,
+            timeout=timeout,
+            keep_alive=keep_alive,
+            wait=wait,
+            owner=effective_owner,
+        )
+
+    except Exception as exc:
+        raise StructuredProviderError(
+            f"{stage}/local structured inference 失敗："
+            f"{type(exc).__name__}: {exc}"
+        ) from exc
+
+    return _normalize_message(
+        message,
+        provider="local",
+        stage=stage,
+    )
+
+
+# ============================================================
+# Remote backend
+# ============================================================
+
+def _chat_remote(
+    *,
+    stage: str,
+    messages: list[dict[str, Any]],
+    response_schema: dict[str, Any],
+    model: str | None,
+    temperature: float,
+    max_tokens: int,
+    timeout: float,
+) -> dict[str, Any]:
+    """
+    Run structured inference on the explicitly selected remote llama.cpp server.
+
+    remote_vlm.py owns:
+    - remote URL
+    - HTTP request
+    - OpenAI-compatible llama.cpp payload
+    - remote connectivity errors
+    """
+
+    try:
+        message = remote_vlm.chat_structured(
+            messages=messages,
+            response_schema=response_schema,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout=timeout,
+        )
+
+    except Exception as exc:
+        raise StructuredProviderError(
+            f"{stage}/remote structured inference 失敗："
+            f"{type(exc).__name__}: {exc}"
+        ) from exc
+
+    return _normalize_message(
+        message,
+        provider="remote",
+        stage=stage,
+    )
+
+
+# ============================================================
+# Public API
+# ============================================================
+
+def chat_structured(
+    *,
+    stage: str,
+    messages: list[dict[str, Any]],
+    response_schema: dict[str, Any],
+    provider: str | None = None,
+    model: str | None = None,
+    temperature: float = DEFAULT_TEMPERATURE,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
+    num_ctx: int = DEFAULT_NUM_CTX,
+    timeout: float = DEFAULT_TIMEOUT,
+    keep_alive: int | str = DEFAULT_KEEP_ALIVE,
+    wait: bool = True,
+    owner: str | None = None,
+    api_key: str | None = None,
+) -> dict[str, Any]:
+    """
+    Shared structured inference entry point.
+
+    Examples:
+
+        # Default: Edge local LLM
+        chat_structured(
+            stage="stage1",
+            messages=messages,
+            response_schema=schema,
+        )
+
+        # Explicit remote: PC llama.cpp
+        chat_structured(
+            stage="stage1",
+            messages=messages,
+            response_schema=schema,
+            provider="remote",
+        )
+
+    There is intentionally no automatic fallback:
+        local failure  -> raise
+        remote failure -> raise
+
+    `api_key` is kept temporarily only for compatibility with older planning
+    callers. OpenAI API is no longer a supported provider. A non-empty
+    api_key is rejected so it cannot be used accidentally.
+    """
+
+    effective_provider = resolve_provider(
+        stage,
+        provider,
+    )
+
+    validated_messages = _validate_messages(
+        messages
+    )
+
+    validated_schema = _validate_response_schema(
+        response_schema
+    )
+
+    validated_model = _validate_model(
+        model
+    )
+
+    if api_key is not None:
+        if (
+            not isinstance(api_key, str)
+            or not api_key.strip()
+        ):
+            raise StructuredProviderError(
+                "api_key 必須是非空字串或 None"
+            )
+
+        raise StructuredProviderError(
+            "OpenAI API 已停用；"
+            "請使用 provider='local' 或 provider='remote'"
+        )
+
+    try:
+        temperature = float(
+            temperature
+        )
+    except (
+        TypeError,
+        ValueError,
+    ) as exc:
+        raise StructuredProviderError(
+            "temperature 必須是 number"
+        ) from exc
+
+    try:
+        max_tokens = int(
+            max_tokens
+        )
+    except (
+        TypeError,
+        ValueError,
+    ) as exc:
+        raise StructuredProviderError(
+            "max_tokens 必須是 integer"
+        ) from exc
+
+    if max_tokens <= 0:
+        raise StructuredProviderError(
+            "max_tokens 必須 > 0"
+        )
+
+    try:
+        num_ctx = int(
+            num_ctx
+        )
+    except (
+        TypeError,
+        ValueError,
+    ) as exc:
+        raise StructuredProviderError(
+            "num_ctx 必須是 integer"
+        ) from exc
+
+    if num_ctx <= 0:
+        raise StructuredProviderError(
+            "num_ctx 必須 > 0"
+        )
+
+    try:
+        timeout = float(
+            timeout
+        )
+    except (
+        TypeError,
+        ValueError,
+    ) as exc:
+        raise StructuredProviderError(
+            "timeout 必須是 number"
+        ) from exc
+
+    if timeout <= 0:
+        raise StructuredProviderError(
+            "timeout 必須 > 0"
+        )
+
+    if not isinstance(wait, bool):
+        raise StructuredProviderError(
+            "wait 必須是 bool"
+        )
+
+    if effective_provider == "local":
+        return _chat_local(
+            stage=stage,
+            messages=validated_messages,
+            response_schema=validated_schema,
+            model=validated_model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            num_ctx=num_ctx,
+            timeout=timeout,
+            keep_alive=keep_alive,
+            wait=wait,
+            owner=owner,
+        )
+
+    if effective_provider == "remote":
+        return _chat_remote(
+            stage=stage,
+            messages=validated_messages,
+            response_schema=validated_schema,
+            model=validated_model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout=timeout,
+        )
+
+    # resolve_provider() already validates this.
+    raise StructuredProviderError(
+        f"不支援 provider：{effective_provider}"
+    )

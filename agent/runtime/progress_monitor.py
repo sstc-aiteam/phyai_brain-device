@@ -1,122 +1,310 @@
+"""
+Closed-loop task progress monitoring.
+
+This module compares the world before and after one executed dispatch and
+maintains task-level goal credit.
+
+
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
 
-from .dispatch_schema import BoundDispatch, DispatchExecutionReport
-from .goal_schema import GoalCondition, GoalSet
+from .dispatch import (
+    BoundDispatch,
+    DispatchExecutionReport,
+)
+from .goals import (
+    GoalCondition,
+    GoalSet,
+)
 from .tool_model import ToolCatalog
 from .world_state import WorldState
 
 
-def _flatten_world(world: WorldState) -> dict[tuple[str, str], Any]:
-    flat: dict[tuple[str, str], Any] = {}
-    snapshot = world.snapshot().get("entities", {})
-    for entity_id, entity in snapshot.items():
-        if not isinstance(entity, dict):
+def _flatten_world(
+    world: WorldState,
+) -> dict[
+    tuple[str, str],
+    Any,
+]:
+    flat: dict[
+        tuple[str, str],
+        Any,
+    ] = {}
+
+    entities = (
+        world.snapshot()
+        .get(
+            "entities",
+            {},
+        )
+    )
+
+    for (
+        entity_id,
+        entity,
+    ) in entities.items():
+        if not isinstance(
+            entity,
+            dict,
+        ):
             continue
-        for field_name, value in entity.items():
-            flat[(str(entity_id), str(field_name))] = value
+
+        for (
+            field_name,
+            value,
+        ) in entity.items():
+            flat[
+                (
+                    str(
+                        entity_id
+                    ),
+                    str(
+                        field_name
+                    ),
+                )
+            ] = value
+
     return flat
 
 
 def _changed_facts(
     before: WorldState,
     after: WorldState,
-) -> list[dict[str, Any]]:
-    left = _flatten_world(before)
-    right = _flatten_world(after)
-    keys = sorted(set(left) | set(right))
-    rows: list[dict[str, Any]] = []
+) -> list[
+    dict[str, Any]
+]:
+    left = _flatten_world(
+        before
+    )
+
+    right = _flatten_world(
+        after
+    )
+
+    keys = sorted(
+        set(
+            left
+        )
+        | set(
+            right
+        )
+    )
+
+    rows: list[
+        dict[str, Any]
+    ] = []
+
     for key in keys:
-        old = left.get(key)
-        new = right.get(key)
+        old = left.get(
+            key
+        )
+
+        new = right.get(
+            key
+        )
+
         if old == new:
             continue
+
         rows.append({
-            "subject": key[0],
-            "field": key[1],
-            "before": old,
-            "after": new,
+            "subject":
+                key[0],
+            "field":
+                key[1],
+            "before":
+                old,
+            "after":
+                new,
         })
+
     return rows
 
 
 @dataclass
 class ProgressFeedback:
     world_changed: bool
-    changed_facts: list[dict[str, Any]] = field(default_factory=list)
-    newly_credited_goals: list[str] = field(default_factory=list)
-    regressed_goals: list[str] = field(default_factory=list)
-    out_of_order_goal_events: list[dict[str, Any]] = field(default_factory=list)
-    credited_goals: list[str] = field(default_factory=list)
-    uncredited_physically_satisfied_goals: list[str] = field(default_factory=list)
+
+    changed_facts: list[
+        dict[str, Any]
+    ] = field(
+        default_factory=list
+    )
+
+    newly_credited_goals: list[
+        str
+    ] = field(
+        default_factory=list
+    )
+
+    regressed_goals: list[
+        str
+    ] = field(
+        default_factory=list
+    )
+
+    out_of_order_goal_events: list[
+        dict[str, Any]
+    ] = field(
+        default_factory=list
+    )
+
+    credited_goals: list[
+        str
+    ] = field(
+        default_factory=list
+    )
+
+    uncredited_physically_satisfied_goals: list[
+        str
+    ] = field(
+        default_factory=list
+    )
+
     task_complete: bool = False
-    progress_class: str = "none"
+
+    progress_class: str = (
+        "none"
+    )
+
     verified_success_count: int = 0
+
     failed_action_count: int = 0
 
-    def as_dict(self) -> dict[str, Any]:
+    def as_dict(
+        self,
+    ) -> dict[
+        str,
+        Any,
+    ]:
         return {
-            "world_changed": self.world_changed,
-            "changed_facts": self.changed_facts,
-            "newly_credited_goals": self.newly_credited_goals,
-            "regressed_goals": self.regressed_goals,
-            "out_of_order_goal_events": self.out_of_order_goal_events,
-            "credited_goals": self.credited_goals,
-            "uncredited_physically_satisfied_goals": (
-                self.uncredited_physically_satisfied_goals
-            ),
-            "task_complete": self.task_complete,
-            "progress_class": self.progress_class,
-            "verified_success_count": self.verified_success_count,
-            "failed_action_count": self.failed_action_count,
+            "world_changed":
+                self.world_changed,
+
+            "changed_facts":
+                self.changed_facts,
+
+            "newly_credited_goals":
+                self.newly_credited_goals,
+
+            "regressed_goals":
+                self.regressed_goals,
+
+            "out_of_order_goal_events":
+                self.out_of_order_goal_events,
+
+            "credited_goals":
+                self.credited_goals,
+
+            "uncredited_physically_satisfied_goals":
+                self.uncredited_physically_satisfied_goals,
+
+            "task_complete":
+                self.task_complete,
+
+            "progress_class":
+                self.progress_class,
+
+            "verified_success_count":
+                self.verified_success_count,
+
+            "failed_action_count":
+                self.failed_action_count,
         }
 
 
 class TaskProgressMonitor:
-    """Observe task progress without blocking legal actions.
+    """
+    Stateful task-credit monitor.
 
-    The validator answers only: "can this action physically/safely execute now?"
-    This monitor answers a separate question after execution:
-    "did the task make progress, regress, or complete an ordered milestone?"
+    Physical goal satisfaction and task credit are intentionally different:
 
-    Goal dependencies are interpreted as temporal credit dependencies for
-    evaluation/feedback.  A goal event completed before its dependencies is
-    physically allowed, but it is not credited as ordered task progress until
-    the milestone is performed again after prerequisites are credited.
+    - physical satisfaction:
+        GoalCondition is true in CURRENT observed WorldState
+
+    - task credit:
+        the goal milestone became valid in the required dependency order
+
+    Credits are removed again if their underlying physical fact regresses, and
+    downstream credits are removed if a credited dependency is lost.
     """
 
-    def __init__(self):
-        self.credited_goal_ids: set[str] = set()
-        self._known_goals: dict[str, GoalCondition] = {}
+    def __init__(
+        self,
+    ):
+        self.credited_goal_ids: set[
+            str
+        ] = set()
+
+        self._known_goals: dict[
+            str,
+            GoalCondition,
+        ] = {}
+
         self._initialized = False
-        self.last_feedback: ProgressFeedback | None = None
 
-    def _register(self, goals: GoalSet) -> None:
+        self.last_feedback: (
+            ProgressFeedback
+            | None
+        ) = None
+
+    def _register(
+        self,
+        goals: GoalSet,
+    ) -> None:
         for goal in goals.conditions:
-            self._known_goals[goal.goal_id] = goal
+            self._known_goals[
+                goal.goal_id
+            ] = goal
 
-    def initialize(self, goals: GoalSet, world: WorldState) -> None:
-        self._register(goals)
+    def initialize(
+        self,
+        goals: GoalSet,
+        world: WorldState,
+    ) -> None:
+        """
+        Credit goals already valid at task start when their dependency chain is
+        also initially valid/credited.
+        """
+
+        self._register(
+            goals
+        )
+
         if self._initialized:
             return
 
-        # Credit facts that are already true at task start, but only when
-        # their dependency chain is also initially true/credited.
         changed = True
+
         while changed:
             changed = False
+
             for goal in goals.conditions:
-                if goal.goal_id in self.credited_goal_ids:
+                if (
+                    goal.goal_id
+                    in self.credited_goal_ids
+                ):
                     continue
-                if not goal.is_satisfied(world):
+
+                if not goal.is_satisfied(
+                    world
+                ):
                     continue
-                if not set(goal.depends_on).issubset(
+
+                if not set(
+                    goal.depends_on
+                ).issubset(
                     self.credited_goal_ids
                 ):
                     continue
-                self.credited_goal_ids.add(goal.goal_id)
+
+                self.credited_goal_ids.add(
+                    goal.goal_id
+                )
+
                 changed = True
 
         self._initialized = True
@@ -126,60 +314,179 @@ class TaskProgressMonitor:
         goals: GoalSet,
         world: WorldState,
     ) -> set[str]:
-        known_current = {g.goal_id: g for g in goals.conditions}
-        removed: set[str] = set()
+        """
+        Remove credits whose physical facts regressed, then recursively remove
+        downstream credits whose credited dependencies were lost.
+        """
 
-        # First remove credits whose physical goal fact regressed.
-        for goal_id in list(self.credited_goal_ids):
-            goal = known_current.get(goal_id) or self._known_goals.get(goal_id)
+        known_current = {
+            goal.goal_id:
+                goal
+            for goal
+            in goals.conditions
+        }
+
+        removed: set[
+            str
+        ] = set()
+
+        # ----------------------------------------------------
+        # Physical regression
+        # ----------------------------------------------------
+
+        for goal_id in list(
+            self.credited_goal_ids
+        ):
+            goal = (
+                known_current.get(
+                    goal_id
+                )
+                or self._known_goals.get(
+                    goal_id
+                )
+            )
+
             if goal is None:
                 continue
-            if not goal.is_satisfied(world):
-                self.credited_goal_ids.remove(goal_id)
-                removed.add(goal_id)
 
-        # Then remove downstream credits whose prerequisite credit was lost.
+            if goal.is_satisfied(
+                world
+            ):
+                continue
+
+            self.credited_goal_ids.remove(
+                goal_id
+            )
+
+            removed.add(
+                goal_id
+            )
+
+        # ----------------------------------------------------
+        # Dependency-credit regression
+        # ----------------------------------------------------
+
         changed = True
+
         while changed:
             changed = False
-            for goal_id in list(self.credited_goal_ids):
-                goal = known_current.get(goal_id) or self._known_goals.get(goal_id)
+
+            for goal_id in list(
+                self.credited_goal_ids
+            ):
+                goal = (
+                    known_current.get(
+                        goal_id
+                    )
+                    or self._known_goals.get(
+                        goal_id
+                    )
+                )
+
                 if goal is None:
                     continue
-                if not set(goal.depends_on).issubset(
+
+                if set(
+                    goal.depends_on
+                ).issubset(
                     self.credited_goal_ids
                 ):
-                    self.credited_goal_ids.remove(goal_id)
-                    removed.add(goal_id)
-                    changed = True
+                    continue
+
+                self.credited_goal_ids.remove(
+                    goal_id
+                )
+
+                removed.add(
+                    goal_id
+                )
+
+                changed = True
 
         return removed
 
-    def is_complete(self, goals: GoalSet, world: WorldState) -> bool:
-        self._register(goals)
-        goal_ids = {g.goal_id for g in goals.conditions}
-        return (
-            goal_ids.issubset(self.credited_goal_ids)
-            and all(g.is_satisfied(world) for g in goals.conditions)
+    def is_complete(
+        self,
+        goals: GoalSet,
+        world: WorldState,
+    ) -> bool:
+        self._register(
+            goals
         )
 
-    def brain_view(self, goals: GoalSet, world: WorldState) -> dict[str, Any]:
-        self._register(goals)
-        satisfied = goals.satisfied_ids(world)
-        goal_ids = {g.goal_id for g in goals.conditions}
+        goal_ids = {
+            goal.goal_id
+            for goal
+            in goals.conditions
+        }
+
+        return (
+            goal_ids.issubset(
+                self.credited_goal_ids
+            )
+            and all(
+                goal.is_satisfied(
+                    world
+                )
+                for goal
+                in goals.conditions
+            )
+        )
+
+    def brain_view(
+        self,
+        goals: GoalSet,
+        world: WorldState,
+    ) -> dict[
+        str,
+        Any,
+    ]:
+        """
+        Compact state exposed to RuntimeBrain.
+        """
+
+        self._register(
+            goals
+        )
+
+        satisfied = (
+            goals.satisfied_ids(
+                world
+            )
+        )
+
+        goal_ids = {
+            goal.goal_id
+            for goal
+            in goals.conditions
+        }
+
         return {
-            "credited_goals": sorted(
-                self.credited_goal_ids & goal_ids
-            ),
-            "uncredited_physically_satisfied_goals": sorted(
-                satisfied - self.credited_goal_ids
-            ),
-            "task_complete": self.is_complete(goals, world),
-            "last_execution_feedback": (
-                self.last_feedback.as_dict()
-                if self.last_feedback is not None
-                else None
-            ),
+            "credited_goals":
+                sorted(
+                    self.credited_goal_ids
+                    & goal_ids
+                ),
+
+            "uncredited_physically_satisfied_goals":
+                sorted(
+                    satisfied
+                    - self.credited_goal_ids
+                ),
+
+            "task_complete":
+                self.is_complete(
+                    goals,
+                    world,
+                ),
+
+            "last_execution_feedback":
+                (
+                    self.last_feedback.as_dict()
+                    if self.last_feedback
+                    is not None
+                    else None
+                ),
         }
 
     def observe_transition(
@@ -193,133 +500,376 @@ class TaskProgressMonitor:
         report: DispatchExecutionReport,
         tools: ToolCatalog,
     ) -> ProgressFeedback:
-        self.initialize(goals_before, world_before)
-        self._register(goals_after)
+        """
+        Evaluate one complete closed-loop transition:
 
-        credited_before = set(self.credited_goal_ids)
-        changed_facts = _changed_facts(world_before, world_after)
+            world_before
+                ↓
+            dispatch / execute
+                ↓
+            fresh observation
+                ↓
+            world_after
+                ↓
+            progress feedback
+
+        `dispatch` is part of the explicit transition contract even though
+        task credit is derived from the observed worlds and execution report.
+        """
+
+        if not isinstance(
+            world_before,
+            WorldState,
+        ):
+            raise TypeError(
+                "world_before must be WorldState"
+            )
+
+        if not isinstance(
+            world_after,
+            WorldState,
+        ):
+            raise TypeError(
+                "world_after must be WorldState"
+            )
+
+        if not isinstance(
+            goals_before,
+            GoalSet,
+        ):
+            raise TypeError(
+                "goals_before must be GoalSet"
+            )
+
+        if not isinstance(
+            goals_after,
+            GoalSet,
+        ):
+            raise TypeError(
+                "goals_after must be GoalSet"
+            )
+
+        if not isinstance(
+            dispatch,
+            BoundDispatch,
+        ):
+            raise TypeError(
+                "dispatch must be BoundDispatch"
+            )
+
+        if not isinstance(
+            report,
+            DispatchExecutionReport,
+        ):
+            raise TypeError(
+                "report must be DispatchExecutionReport"
+            )
+
+        if not isinstance(
+            tools,
+            ToolCatalog,
+        ):
+            raise TypeError(
+                "tools must be ToolCatalog"
+            )
+
+        self.initialize(
+            goals_before,
+            world_before,
+        )
+
+        self._register(
+            goals_after
+        )
+
+        credited_before = set(
+            self.credited_goal_ids
+        )
+
+        changed_facts = (
+            _changed_facts(
+                world_before,
+                world_after,
+            )
+        )
+
         changed_fact_keys = {
-            (row["subject"], row["field"])
-            for row in changed_facts
+            (
+                row[
+                    "subject"
+                ],
+                row[
+                    "field"
+                ],
+            )
+            for row
+            in changed_facts
         }
 
-        successful_write_facts: set[tuple[str, str]] = set()
+        # ----------------------------------------------------
+        # Facts semantically verified as written by this dispatch
+        # ----------------------------------------------------
+
+        successful_write_facts: set[
+            tuple[
+                str,
+                str,
+            ]
+        ] = set()
+
         for result in report.results:
             if not result.verified_success:
                 continue
+
             tool = tools.get(
-                result.bound_action.action.function_name
-            )
-            successful_write_facts |= tool.write_facts(
-                result.bound_action
+                result
+                .bound_action
+                .action
+                .function_name
             )
 
-        regressed = self._remove_invalid_credits(
-            goals_after,
-            world_after,
+            successful_write_facts |= (
+                tool.write_facts(
+                    result.bound_action
+                )
+            )
+
+        # ----------------------------------------------------
+        # Remove credits that are no longer physically valid
+        # ----------------------------------------------------
+
+        regressed = (
+            self._remove_invalid_credits(
+                goals_after,
+                world_after,
+            )
         )
 
         before_by_id = {
-            g.goal_id: g for g in goals_before.conditions
-        }
-        after_by_id = {
-            g.goal_id: g for g in goals_after.conditions
+            goal.goal_id:
+                goal
+            for goal
+            in goals_before.conditions
         }
 
-        newly_credited: set[str] = set()
-        out_of_order: list[dict[str, Any]] = []
+        newly_credited: set[
+            str
+        ] = set()
 
-        # Credit only goals that had a task-relevant event in THIS dispatch:
-        # their fact changed, their fact was written by a verified action, or
-        # they transitioned from false to true.
+        out_of_order: list[
+            dict[str, Any]
+        ] = []
+
+        # ----------------------------------------------------
+        # Credit newly valid milestones
+        # ----------------------------------------------------
+
         for goal in goals_after.conditions:
-            if goal.goal_id in self.credited_goal_ids:
-                continue
-            if not goal.is_satisfied(world_after):
+            if (
+                goal.goal_id
+                in self.credited_goal_ids
+            ):
                 continue
 
-            fact_key = (goal.subject, goal.field)
-            before_goal = before_by_id.get(goal.goal_id)
+            if not goal.is_satisfied(
+                world_after
+            ):
+                continue
+
+            fact_key = (
+                goal.subject,
+                goal.field,
+            )
+
+            before_goal = (
+                before_by_id.get(
+                    goal.goal_id
+                )
+            )
+
             was_satisfied = (
-                before_goal.is_satisfied(world_before)
-                if before_goal is not None
+                before_goal.is_satisfied(
+                    world_before
+                )
+                if before_goal
+                is not None
                 else False
             )
+
             had_event = (
-                fact_key in changed_fact_keys
-                or fact_key in successful_write_facts
+                fact_key
+                in changed_fact_keys
+                or fact_key
+                in successful_write_facts
                 or not was_satisfied
             )
+
             if not had_event:
                 continue
 
-            # Ordered dependencies must have been credited BEFORE this
-            # dispatch. Same-dispatch completion does not retroactively make
-            # an earlier/parallel milestone ordered.
-            missing = [
-                dep
-                for dep in goal.depends_on
-                if dep not in credited_before
+            # Ordered dependencies must already have been credited BEFORE
+            # this dispatch.  Parallel/same-dispatch completion does not
+            # retroactively establish temporal ordering.
+            missing_dependencies = [
+                dependency_id
+                for dependency_id
+                in goal.depends_on
+                if dependency_id
+                not in credited_before
             ]
-            if missing:
+
+            if missing_dependencies:
                 out_of_order.append({
-                    "goal_id": goal.goal_id,
-                    "missing_credited_dependencies": missing,
+                    "goal_id":
+                        goal.goal_id,
+
+                    "missing_credited_dependencies":
+                        missing_dependencies,
                 })
+
                 continue
 
-            self.credited_goal_ids.add(goal.goal_id)
-            newly_credited.add(goal.goal_id)
+            self.credited_goal_ids.add(
+                goal.goal_id
+            )
 
-        physically_satisfied_after = goals_after.satisfied_ids(
-            world_after
+            newly_credited.add(
+                goal.goal_id
+            )
+
+        # ----------------------------------------------------
+        # Current task state
+        # ----------------------------------------------------
+
+        physically_satisfied_after = (
+            goals_after.satisfied_ids(
+                world_after
+            )
         )
+
         current_goal_ids = {
-            g.goal_id for g in goals_after.conditions
+            goal.goal_id
+            for goal
+            in goals_after.conditions
         }
+
         uncredited_satisfied = (
-            physically_satisfied_after - self.credited_goal_ids
+            physically_satisfied_after
+            - self.credited_goal_ids
         )
 
-        task_complete = self.is_complete(
-            goals_after,
-            world_after,
+        task_complete = (
+            self.is_complete(
+                goals_after,
+                world_after,
+            )
         )
 
         verified_success_count = sum(
-            1 for result in report.results if result.verified_success
+            1
+            for result
+            in report.results
+            if result.verified_success
         )
-        failed_action_count = len(report.results) - verified_success_count
 
-        if verified_success_count == 0 and failed_action_count > 0 and not changed_facts:
-            progress_class = "execution_failure"
+        failed_action_count = (
+            len(
+                report.results
+            )
+            - verified_success_count
+        )
+
+        # ----------------------------------------------------
+        # Progress classification
+        # ----------------------------------------------------
+
+        if (
+            verified_success_count == 0
+            and failed_action_count > 0
+            and not changed_facts
+        ):
+            progress_class = (
+                "execution_failure"
+            )
+
         elif regressed:
-            progress_class = "regression"
+            progress_class = (
+                "regression"
+            )
+
         elif out_of_order:
-            progress_class = "out_of_order"
+            progress_class = (
+                "out_of_order"
+            )
+
         elif newly_credited:
-            progress_class = "positive"
+            progress_class = (
+                "positive"
+            )
+
         elif changed_facts:
-            progress_class = "state_changed_no_direct_goal_credit"
+            progress_class = (
+                "state_changed_no_direct_goal_credit"
+            )
+
         else:
-            progress_class = "no_world_change"
+            progress_class = (
+                "no_world_change"
+            )
 
         feedback = ProgressFeedback(
-            world_changed=bool(changed_facts),
-            changed_facts=changed_facts[:40],
-            newly_credited_goals=sorted(newly_credited),
-            regressed_goals=sorted(regressed),
-            out_of_order_goal_events=out_of_order,
-            credited_goals=sorted(
-                self.credited_goal_ids & current_goal_ids
+            world_changed=bool(
+                changed_facts
             ),
-            uncredited_physically_satisfied_goals=sorted(
-                uncredited_satisfied
-            ),
-            task_complete=task_complete,
-            progress_class=progress_class,
-            verified_success_count=verified_success_count,
-            failed_action_count=failed_action_count,
+
+            changed_facts=
+                changed_facts[:40],
+
+            newly_credited_goals=
+                sorted(
+                    newly_credited
+                ),
+
+            regressed_goals=
+                sorted(
+                    regressed
+                ),
+
+            out_of_order_goal_events=
+                out_of_order,
+
+            credited_goals=
+                sorted(
+                    self.credited_goal_ids
+                    & current_goal_ids
+                ),
+
+            uncredited_physically_satisfied_goals=
+                sorted(
+                    uncredited_satisfied
+                ),
+
+            task_complete=
+                task_complete,
+
+            progress_class=
+                progress_class,
+
+            verified_success_count=
+                verified_success_count,
+
+            failed_action_count=
+                failed_action_count,
         )
-        self.last_feedback = feedback
+
+        self.last_feedback = (
+            feedback
+        )
+
         return feedback
+
+
+__all__ = [
+    "ProgressFeedback",
+    "TaskProgressMonitor",
+]

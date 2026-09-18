@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
-from .dispatch_schema import ActionIntent, BoundAction
+from .dispatch import ActionIntent, BoundAction
 from .world_state import WorldState
 
 
@@ -317,24 +317,36 @@ class ToolSpec:
             )
 
         for arg_name, spec in self.parameters.items():
+            if arg_name not in action.arguments:
+                continue
+
             value = action.arguments[arg_name]
 
-            if spec.allowed_values and value not in spec.allowed_values:
+            if (
+                spec.allowed_values
+                and value not in spec.allowed_values
+            ):
                 raise ToolValidationError(
                     f"{self.name}.{arg_name} must be one of "
-                    f"{list(spec.allowed_values)!r}; current={value!r}"
+                    f"{list(spec.allowed_values)!r}; "
+                    f"current={value!r}"
                 )
 
             if spec.must_exist:
                 entity_id = value
+
                 if not world.has_entity(entity_id):
                     raise ToolValidationError(
-                        f"{arg_name} references unknown entity {entity_id}"
+                        f"{arg_name} references "
+                        f"unknown entity {entity_id}"
                     )
+
                 if spec.required_tags:
                     missing_tags = (
-                        set(spec.required_tags) - world.tags(entity_id)
+                        set(spec.required_tags)
+                        - world.tags(entity_id)
                     )
+
                     if missing_tags:
                         raise ToolValidationError(
                             f"{entity_id} missing tags "

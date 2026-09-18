@@ -1,3 +1,10 @@
+"""
+Semantic loop detection for the closed-loop runtime.
+
+This module is intentionally small.  It never blocks execution and never
+chooses an action.  It only summarizes recent executed transitions for Brain.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -5,7 +12,10 @@ import hashlib
 import json
 from typing import Any
 
-from .dispatch_schema import BoundDispatch, DispatchExecutionReport
+from .dispatch import (
+    BoundDispatch,
+    DispatchExecutionReport,
+)
 from .progress_monitor import ProgressFeedback
 from .world_state import WorldState
 
@@ -22,6 +32,15 @@ def _world_hash(world: WorldState) -> str:
     ).hexdigest()[:16]
 
 
+def _action_signature(bound_action) -> str:
+    return json.dumps(
+        bound_action.action.as_dict(),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
 @dataclass
 class LoopEvent:
     iteration: int
@@ -35,24 +54,25 @@ class LoopEvent:
     def as_dict(self) -> dict[str, Any]:
         return {
             "iteration": self.iteration,
-            "action_signatures": list(
-                self.action_signatures
-            ),
+            "action_signatures": list(self.action_signatures),
             "world_before_hash": self.world_before_hash,
             "world_after_hash": self.world_after_hash,
             "progress_class": self.progress_class,
-            "newly_credited_goals": list(
-                self.newly_credited_goals
-            ),
+            "newly_credited_goals": list(self.newly_credited_goals),
             "verified_success": self.verified_success,
         }
 
 
 class SemanticLoopMonitor:
-    """Remember legal-but-unproductive execution history.
+    """
+    Detect recent legal-but-unproductive semantic cycles.
 
-    This monitor NEVER blocks an action.  It only tells the brain when recent
-    successful actions revisited semantic World states without task credit.
+    It reports evidence only:
+        - repeated semantic World states
+        - no task credit
+        - no-progress streak
+
+    Validator / Coordinator decide what to do with that evidence.
     """
 
     def __init__(
@@ -60,8 +80,14 @@ class SemanticLoopMonitor:
         *,
         history_limit: int = 8,
     ):
-        self.history_limit = history_limit
+        if history_limit < 4:
+            raise ValueError(
+                "history_limit must be >= 4"
+            )
+
+        self.history_limit = int(history_limit)
         self._history: list[LoopEvent] = []
+
         self.loop_event_count = 0
         self.no_progress_streak = 0
         self._last_cycle_key: tuple[str, ...] | None = None
@@ -76,42 +102,47 @@ class SemanticLoopMonitor:
         world_before: WorldState,
         world_after: WorldState,
     ) -> dict[str, Any]:
-        signatures = [
-            str(action.action)
-            for action in dispatch.actions
-        ]
-        verified_success = report.any_success
-
         event = LoopEvent(
             iteration=iteration,
-            action_signatures=signatures,
+            action_signatures=[
+                _action_signature(bound)
+                for bound in dispatch.actions
+            ],
             world_before_hash=_world_hash(world_before),
             world_after_hash=_world_hash(world_after),
             progress_class=progress.progress_class,
             newly_credited_goals=list(
                 progress.newly_credited_goals
             ),
-            verified_success=verified_success,
+            verified_success=report.any_success,
         )
+
         self._history.append(event)
-        self._history = self._history[-self.history_limit:]
+        self._history = self._history[
+            -self.history_limit:
+        ]
 
         if (
-            verified_success
-            and not progress.newly_credited_goals
-            and progress.progress_class
-            != "execution_failure"
+            event.verified_success
+            and not event.newly_credited_goals
+            and event.progress_class != "execution_failure"
         ):
             self.no_progress_streak += 1
-        elif progress.newly_credited_goals:
+        else:
             self.no_progress_streak = 0
 
         view = self.brain_view()
-        cycle = view.get("detected_cycle")
+        cycle = view["detected_cycle"]
+
         new_loop_event = False
-        if isinstance(cycle, dict):
-            key = tuple(cycle.get("world_hash_cycle", []))
-            if key and key != self._last_cycle_key:
+
+        if cycle is not None:
+            key = (
+                str(cycle["cycle_length"]),
+                *cycle["world_hash_cycle"],
+            )
+
+            if key != self._last_cycle_key:
                 self.loop_event_count += 1
                 self._last_cycle_key = key
                 new_loop_event = True
@@ -123,55 +154,63 @@ class SemanticLoopMonitor:
             "new_loop_event": new_loop_event,
         }
 
-    def _detect_cycle(self) -> dict[str, Any] | None:
-        # Detect recent ABAB or ABCABC semantic-state cycles.
-        successful = [
-            e
-            for e in self._history
-            if e.verified_success
-            and e.progress_class != "execution_failure"
-        ]
-        if len(successful) < 4:
-            return None
+    def _detect_cycle(
+        self,
+    ) -> dict[str, Any] | None:
+        """
+        Detect contiguous ABAB or ABCABC world-state cycles.
 
-        hashes = [
-            e.world_after_hash
-            for e in successful
-        ]
+        Every event inside the cycle must:
+        - have at least one verified-success action;
+        - have no execution_failure classification;
+        - earn no task credit.
+        """
 
         for cycle_len in (2, 3):
             needed = cycle_len * 2
-            if len(hashes) < needed:
-                continue
-            tail = hashes[-needed:]
-            if tail[:cycle_len] != tail[cycle_len:]:
+
+            if len(self._history) < needed:
                 continue
 
-            events = successful[-needed:]
+            events = self._history[-needed:]
+
             if any(
-                e.newly_credited_goals
-                for e in events
+                not event.verified_success
+                or event.progress_class == "execution_failure"
+                or event.newly_credited_goals
+                for event in events
             ):
+                continue
+
+            hashes = [
+                event.world_after_hash
+                for event in events
+            ]
+
+            if hashes[:cycle_len] != hashes[cycle_len:]:
                 continue
 
             return {
                 "cycle_length": cycle_len,
-                "world_hash_cycle": tail[:cycle_len],
+                "world_hash_cycle": hashes[:cycle_len],
                 "iterations": [
-                    e.iteration
-                    for e in events
+                    event.iteration
+                    for event in events
                 ],
                 "actions": [
-                    list(e.action_signatures)
-                    for e in events
+                    list(event.action_signatures)
+                    for event in events
                 ],
                 "task_credit_during_cycle": [],
             }
 
         return None
 
-    def brain_view(self) -> dict[str, Any]:
+    def brain_view(
+        self,
+    ) -> dict[str, Any]:
         cycle = self._detect_cycle()
+
         return {
             "loop_detected": cycle is not None,
             "detected_cycle": cycle,
@@ -181,9 +220,21 @@ class SemanticLoopMonitor:
                 for event in self._history[-6:]
             ],
             "instruction": (
-                "This is execution-history feedback only. Legal actions are "
-                "not blocked. If a loop is detected, choose a materially "
-                "different strategy unless the repetition is required to "
-                "repair an explicit pending physical precondition."
+                "Execution-history evidence only. "
+                "If a loop is detected, avoid repeating the same "
+                "state/action cycle unless required by an active repair."
             ),
         }
+
+    def clear(
+        self,
+    ) -> None:
+        self._history.clear()
+        self.no_progress_streak = 0
+        self._last_cycle_key = None
+
+
+__all__ = [
+    "LoopEvent",
+    "SemanticLoopMonitor",
+]
