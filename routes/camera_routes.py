@@ -108,9 +108,9 @@ def stop_camera():
     "/get_intrinsics",
     methods=["GET"],
 )
-def get_intrinsics():
+def get_camera_intrinsics():
     return jsonify(
-        camera_service.get_intrinsics(
+        camera_service.get_camera_intrinsics(
             camera_name=
                 request.args.get(
                     "camera_name"

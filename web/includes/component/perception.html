@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robot Perception Demo</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 30px;
+            font-family: Arial, "Microsoft JhengHei", sans-serif;
+            background: #f5f6f8;
+            color: #222;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: auto;
+        }
+
+        h1 {
+            margin: 0 0 24px;
+        }
+
+        h2 {
+            margin-top: 0;
+            font-size: 20px;
+        }
+
+        .card {
+            margin-bottom: 20px;
+            padding: 20px;
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+            gap: 20px;
+        }
+
+        .row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 12px;
+        }
+
+        label {
+            font-weight: bold;
+        }
+
+        select,
+        button {
+            font-size: 16px;
+        }
+
+        select {
+            padding: 9px;
+            border: 1px solid #bbb;
+            border-radius: 6px;
+        }
+
+        button {
+            padding: 10px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            background: #333;
+            color: #fff;
+        }
+
+        button:hover {
+            opacity: 0.85;
+        }
+
+        .image-box {
+            width: 100%;
+            min-height: 280px;
+            margin-top: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            background: #111;
+            border-radius: 8px;
+        }
+
+        .image-box img {
+            display: block;
+            width: 100%;
+            height: auto;
+            object-fit: contain;
+        }
+
+        .data-display {
+            margin-top: 15px;
+            padding: 15px;
+            min-height: 80px;
+            max-height: 480px;
+            overflow-y: auto;
+            background: #f6f6f6;
+            border-radius: 8px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .detections-list {
+            margin-top: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .detection-item {
+            padding: 14px;
+            background: #f6f6f6;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+
+        .detection-title {
+            margin-bottom: 8px;
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        .detection-info {
+            margin: 0;
+            font-family: monospace;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .muted {
+            color: #777;
+        }
+
+        @media (max-width: 600px) {
+            body {
+                padding: 15px;
+            }
+
+            .card {
+                padding: 16px;
+            }
+        }
+    </style>
+    <script type="module" src="/web/includes/library/JSFile/robotjs2026.js"></script>
+
+</head>
+
+<body>
+<div class="container">
+    <h1>Robot Perception Demo</h1>
+
+    <div class="card">
+        <h2>Perception Settings</h2>
+
+        <div class="row">
+            <label for="cameraSelect">Camera</label>
+            <select id="cameraSelect">
+                <option value="">讀取中...</option>
+            </select>
+
+            <button type="button" id="stopCameraButton">
+                關閉相機
+            </button>
+
+            <span id="cameraStatus" class="muted">-</span>
+
+
+        </div>
+    </div>
+
+    <div class="grid">
+        <div class="card">
+            <h2>Camera Stream</h2>
+            <div class="image-box">
+                <img id="cameraStream" alt="Camera Stream">
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Detection Stream</h2>
+            <div class="image-box">
+                <img id="detectionStream" alt="Detection Stream">
+            </div>
+        </div>
+    </div>
+
+    <div class="grid">
+        <div class="card">
+            <h2>Camera Image</h2>
+
+            <div class="row">
+                <button type="button" id="refreshCameraImageButton">
+                    拍攝 Camera Image
+                </button>
+            </div>
+
+            <div class="image-box">
+                <img id="cameraImage" alt="Camera Image">
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Detection Image</h2>
+
+            <div class="row">
+                <button type="button" id="refreshDetectionImageButton">
+                    拍攝 Detection Image
+                </button>
+            </div>
+
+            <div class="image-box">
+                <img id="detectionImage" alt="Detection Image">
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Detections</h2>
+        <div id="detectionDisplay" class="detections-list">
+            <div class="muted">-</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>API Response</h2>
+        <div id="apiResponse" class="data-display">-</div>
+    </div>
+</div>
+
+<script type="module">
+
+    let activeCameraName = null;
+    let detectionTimer = null;
+    let detectionRequestRunning = false;
+
+    function getCameraName()
+    {
+        const cameraName = document.getElementById("cameraSelect").value;
+
+        if (!cameraName)
+        {
+            throw new Error("目前沒有選擇相機");
+        }
+
+        return cameraName;
+    }
+
+    function addCacheBust(url)
+    {
+        const separator = url.includes("?") ? "&" : "?";
+        return `${url}${separator}_=${Date.now()}`;
+    }
+
+    function showApiResponse(data)
+    {
+        document.getElementById("apiResponse").textContent = JSON.stringify(data, null, 2);
+    }
+
+    function showError(error)
+    {
+        showApiResponse({
+            status: "error",
+            message: error.message,
+        });
+    }
+
+    function clearPerceptionOutputs()
+    {
+        document.getElementById("cameraStream").removeAttribute("src");
+        document.getElementById("detectionStream").removeAttribute("src");
+        document.getElementById("cameraImage").removeAttribute("src");
+        document.getElementById("detectionImage").removeAttribute("src");
+        document.getElementById("detectionDisplay").innerHTML = '<div class="muted">-</div>';
+    }
+
+    async function loadCameras()
+    {
+        const select = document.getElementById("cameraSelect");
+
+        try
+        {
+            const result = await get_camera_status();
+            const cameras = result?.data?.cameras ?? [];
+
+            select.innerHTML = '<option value="">請選擇相機</option>';
+
+            for (const camera of cameras)
+            {
+                const option = document.createElement("option");
+                option.value = camera.camera_name;
+                option.textContent = camera.camera_name;
+                select.appendChild(option);
+            }
+
+            if (cameras.length === 0)
+            {
+                document.getElementById("cameraStatus").textContent = "沒有可用相機";
+                return;
+            }
+
+            document.getElementById("cameraStatus").textContent =
+                `正在啟動 ${cameras.length} 台相機...`;
+
+            const startResults = await Promise.allSettled(
+                cameras.map(camera => start_camera(camera.camera_name))
+            );
+
+            const startedCount = startResults.filter(
+                item => item.status === "fulfilled" && item.value?.result !== false
+            ).length;
+
+            document.getElementById("cameraStatus").textContent =
+                `${startedCount}/${cameras.length} 台相機已啟動`;
+
+            select.value = cameras[0].camera_name;
+            await onCameraChanged();
+        }
+        catch (error)
+        {
+            select.innerHTML = '<option value="">讀取相機失敗</option>';
+            document.getElementById("cameraStatus").textContent = "相機列表讀取失敗";
+            showError(error);
+        }
+    }
+
+    async function onCameraChanged()
+    {
+        const cameraName = document.getElementById("cameraSelect").value;
+
+        stopDetectionPolling();
+        clearPerceptionOutputs();
+
+        if (!cameraName)
+        {
+            activeCameraName = null;
+            document.getElementById("cameraStatus").textContent = "未選擇相機";
+            return;
+        }
+
+        try
+        {
+            await start_camera(cameraName);
+            activeCameraName = cameraName;
+
+            document.getElementById("cameraStatus").textContent = `${cameraName} 已開啟`;
+
+            showCameraStream();
+            showDetectionStream();
+
+            await loadDetections();
+            startDetectionPolling();
+        }
+        catch (error)
+        {
+            activeCameraName = null;
+            document.getElementById("cameraStatus").textContent = `${cameraName} 開啟失敗`;
+            showError(error);
+        }
+    }
+
+    async function closeCamera()
+    {
+        try
+        {
+            const cameraName = getCameraName();
+            const result = await stop_camera(cameraName);
+
+            if (activeCameraName === cameraName)
+            {
+                activeCameraName = null;
+            }
+
+            stopDetectionPolling();
+            clearPerceptionOutputs();
+
+            document.getElementById("cameraStatus").textContent = `${cameraName} 已關閉`;
+            showApiResponse(result);
+        }
+        catch (error)
+        {
+            showError(error);
+        }
+    }
+
+    function showCameraStream()
+    {
+        const url = get_camera_stream(
+            getCameraName(),
+            {
+                interval_sec: 0.03,
+                quality: 85,
+            },
+        );
+
+        document.getElementById("cameraStream").src = addCacheBust(url);
+    }
+
+    function showDetectionStream()
+    {
+        const url = get_detection_stream(
+            getCameraName(),
+            {
+                include_robot_xyz: true,
+                interval_sec: 0.10,
+                quality: 85,
+            },
+        );
+
+        document.getElementById("detectionStream").src = addCacheBust(url);
+    }
+
+    function refreshCameraImage()
+    {
+        try
+        {
+            const url = get_camera_image(
+                getCameraName(),
+                { quality: 90 },
+            );
+
+            document.getElementById("cameraImage").src = addCacheBust(url);
+        }
+        catch (error)
+        {
+            showError(error);
+        }
+    }
+
+    function refreshDetectionImage()
+    {
+        try
+        {
+            const url = get_detection_image(
+                getCameraName(),
+                {
+                    include_robot_xyz: true,
+                    quality: 90,
+                },
+            );
+
+            document.getElementById("detectionImage").src = addCacheBust(url);
+        }
+        catch (error)
+        {
+            showError(error);
+        }
+    }
+
+    function renderDetections(detections)
+    {
+        const display = document.getElementById("detectionDisplay");
+        display.innerHTML = "";
+
+        if (!Array.isArray(detections) || detections.length === 0)
+        {
+            display.innerHTML = '<div class="muted">沒有偵測到物件</div>';
+            return;
+        }
+
+        detections.forEach((detection, index) =>
+        {
+            const item = document.createElement("div");
+            item.className = "detection-item";
+
+            const className = detection.class_name ?? "-";
+            const robotXyz = Array.isArray(detection.robot_xyz)
+                ? `[${detection.robot_xyz.join(", ")}]`
+                : "-";
+            const depth = detection.distance_m ?? "-";
+
+            const info = document.createElement("pre");
+            info.className = "detection-info";
+            info.textContent =
+                `${index + 1}. class_name: ${className}\n`
+                + `robot_xyz: ${robotXyz}\n`
+                + `depth: ${depth}`;
+
+            item.appendChild(info);
+            display.appendChild(item);
+        });
+    }
+
+    async function loadDetections()
+    {
+        if (!activeCameraName || detectionRequestRunning)
+        {
+            return;
+        }
+
+        detectionRequestRunning = true;
+
+        try
+        {
+            const result = await get_detections(
+                activeCameraName,
+                {
+                    include_robot_xyz: true,
+                },
+            );
+
+            const detections = result?.data?.detections ?? [];
+
+            renderDetections(detections);
+            showApiResponse(result);
+        }
+        catch (error)
+        {
+            document.getElementById("detectionDisplay").innerHTML =
+                `<div class="muted">取得 Detection 失敗：${error.message}</div>`;
+
+            showError(error);
+        }
+        finally
+        {
+            detectionRequestRunning = false;
+        }
+    }
+
+    function startDetectionPolling()
+    {
+        stopDetectionPolling();
+        detectionTimer = window.setInterval(loadDetections, 1000);
+    }
+
+    function stopDetectionPolling()
+    {
+        if (detectionTimer !== null)
+        {
+            window.clearInterval(detectionTimer);
+            detectionTimer = null;
+        }
+    }
+
+    document
+        .getElementById("cameraSelect")
+        .addEventListener("change", onCameraChanged);
+
+    document
+        .getElementById("stopCameraButton")
+        .addEventListener("click", closeCamera);
+
+    document
+        .getElementById("refreshCameraImageButton")
+        .addEventListener("click", refreshCameraImage);
+
+    document
+        .getElementById("refreshDetectionImageButton")
+        .addEventListener("click", refreshDetectionImage);
+
+
+
+
+
+    loadCameras();
+</script>
+</body>
+</html>

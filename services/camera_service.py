@@ -1,15 +1,8 @@
 import config
-
-from control.loader import (
-    get_camera_driver,
-    get_camera_driver_name,
-)
-
+from control import loader
 from utils import response
 
-
 MODULE = "camera"
-
 
 # ============================================================
 # Camera Context
@@ -63,13 +56,13 @@ def _get_camera_context(
     )
 
     camera = (
-        get_camera_driver(
+        loader.get_camera_driver(
             camera_name
         )
     )
 
     driver = (
-        get_camera_driver_name(
+        loader.get_camera_driver_name(
             camera_name
         )
     )
@@ -1021,10 +1014,10 @@ def get_intrinsics_value(
 # JSON-friendly API
 # ============================================================
 
-def get_intrinsics(
+def get_camera_intrinsics(
     camera_name,
 ):
-    action = "get_intrinsics"
+    action = "get_camera_intrinsics"
     driver = None
 
     try:
