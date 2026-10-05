@@ -1,0 +1,1227 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>
+        Robot World Model
+    </title>
+
+
+    <style>
+
+        * {
+            box-sizing: border-box;
+        }
+
+
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+
+            font-family:
+                Arial,
+                "Noto Sans TC",
+                sans-serif;
+
+            background: #f5f5f5;
+
+            color: #222;
+        }
+
+
+        body {
+            padding: 12px;
+        }
+
+
+        .container {
+            max-width: 1100px;
+
+            margin: 0 auto;
+        }
+
+
+        .card {
+            background: white;
+
+            border:
+                1px solid #ddd;
+
+            border-radius: 8px;
+
+            padding: 14px;
+
+            margin-bottom: 12px;
+        }
+
+
+        h1 {
+            margin:
+                0
+                0
+                16px;
+
+            font-size: 24px;
+        }
+
+
+        h2 {
+            margin:
+                0
+                0
+                12px;
+
+            font-size: 18px;
+        }
+
+
+        label {
+            display: block;
+
+            margin-bottom: 5px;
+
+            font-size: 13px;
+
+            font-weight: bold;
+        }
+
+
+        input,
+        button {
+            width: 100%;
+
+            padding: 10px;
+
+            border-radius: 6px;
+
+            font-size: 15px;
+        }
+
+
+        input {
+            border:
+                1px solid #bbb;
+
+            background: white;
+        }
+
+
+        button {
+            border:
+                1px solid #aaa;
+
+            background: #eee;
+
+            cursor: pointer;
+        }
+
+
+        button:hover {
+            background: #ddd;
+        }
+
+
+        button:disabled {
+            cursor: default;
+
+            opacity: 0.6;
+        }
+
+
+        .api-button.active {
+            background: #d9f4df;
+
+            border-color: #76aa82;
+
+            font-weight: bold;
+        }
+
+
+        .grid-2 {
+            display: grid;
+
+            grid-template-columns:
+                repeat(
+                    2,
+                    1fr
+                );
+
+            gap: 10px;
+        }
+
+
+        .grid-4 {
+            display: grid;
+
+            grid-template-columns:
+                repeat(
+                    4,
+                    1fr
+                );
+
+            gap: 10px;
+        }
+
+
+        .options {
+            display: flex;
+
+            flex-wrap: wrap;
+
+            gap: 12px;
+
+            margin-top: 12px;
+        }
+
+
+        .options label {
+            display: flex;
+
+            align-items: center;
+
+            gap: 6px;
+
+            font-weight: normal;
+        }
+
+
+        .options input {
+            width: auto;
+        }
+
+
+        .output {
+            background: #111;
+
+            color: #eee;
+
+            padding: 12px;
+
+            min-height: 180px;
+            max-height: 600px;
+
+            overflow: auto;
+
+            border-radius: 6px;
+
+            white-space: pre-wrap;
+
+            font-family: monospace;
+
+            font-size: 13px;
+        }
+
+
+        .status {
+            margin-top: 8px;
+
+            font-size: 13px;
+
+            color: #666;
+        }
+
+
+        .entity-list {
+            display: grid;
+
+            grid-template-columns:
+                repeat(
+                    2,
+                    minmax(
+                        0,
+                        1fr
+                    )
+                );
+
+            gap: 10px;
+        }
+
+
+        .entity {
+            border:
+                1px solid #ddd;
+
+            border-radius: 6px;
+
+            padding: 10px;
+
+            background: #fafafa;
+        }
+
+
+        .entity-title {
+            font-weight: bold;
+
+            margin-bottom: 6px;
+        }
+
+
+        .mono {
+            white-space: pre-wrap;
+
+            font-family: monospace;
+
+            font-size: 12px;
+        }
+
+
+        @media (
+            max-width: 700px
+        ) {
+
+            .grid-4,
+            .grid-2,
+            .entity-list {
+                grid-template-columns:
+                    1fr;
+            }
+
+        }
+
+    </style>
+
+
+    <script
+        type="module"
+        src="/web/includes/library/JSFile/robotjs2026.js"
+    ></script>
+
+</head>
+
+
+<body>
+
+
+<div class="container">
+
+
+    <!-- ====================================================== -->
+    <!-- WORLD MODEL SETTINGS -->
+    <!-- ====================================================== -->
+
+    <div class="card">
+
+        <h1>
+            World Model
+        </h1>
+
+
+        <label for="cameraNames">
+            Cameras
+        </label>
+
+
+        <input
+            id="cameraNames"
+            type="text"
+            value="left,right"
+            placeholder="left,right"
+        >
+
+
+        <div class="options">
+
+            <label>
+
+                <input
+                    id="includeRobot"
+                    type="checkbox"
+                    checked
+                >
+
+                Robot
+
+            </label>
+
+
+            <label>
+
+                <input
+                    id="includeCameras"
+                    type="checkbox"
+                    checked
+                >
+
+                Cameras
+
+            </label>
+
+
+            <label>
+
+                <input
+                    id="includeDetections"
+                    type="checkbox"
+                    checked
+                >
+
+                Detections
+
+            </label>
+
+
+            <label>
+
+                <input
+                    id="includeMaterials"
+                    type="checkbox"
+                >
+
+                Materials
+
+            </label>
+
+
+            <label>
+
+                <input
+                    id="includeRelations"
+                    type="checkbox"
+                    checked
+                >
+
+                Relations
+
+            </label>
+
+
+            <label>
+
+                <input
+                    id="includeGrasp"
+                    type="checkbox"
+                    checked
+                >
+
+                Grasp
+
+            </label>
+
+        </div>
+
+    </div>
+
+
+    <!-- ====================================================== -->
+    <!-- API -->
+    <!-- ====================================================== -->
+
+    <div class="card">
+
+        <h2>
+            World Model APIs
+        </h2>
+
+
+        <div class="grid-4">
+
+            <button
+                id="worldStateButton"
+                class="api-button"
+            >
+                World State
+            </button>
+
+
+            <button
+                id="objectStateButton"
+                class="api-button"
+            >
+                Object State
+            </button>
+
+
+            <button
+                id="relationsButton"
+                class="api-button"
+            >
+                Object Relations
+            </button>
+
+
+            <button
+                id="graspButton"
+                class="api-button"
+            >
+                Object Grasp
+            </button>
+
+        </div>
+
+
+        <div
+            id="status"
+            class="status"
+        >
+            Ready
+        </div>
+
+    </div>
+
+
+    <!-- ====================================================== -->
+    <!-- OBJECTS -->
+    <!-- ====================================================== -->
+
+    <div class="card">
+
+        <h2>
+            Entities / Objects
+        </h2>
+
+
+        <div
+            id="entityList"
+            class="entity-list"
+        >
+
+            <div>
+                尚未取得 World Model
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- ====================================================== -->
+    <!-- RAW OUTPUT -->
+    <!-- ====================================================== -->
+
+    <div class="card">
+
+        <h2>
+            Raw Output
+        </h2>
+
+
+        <pre
+            id="output"
+            class="output"
+        ></pre>
+
+    </div>
+
+
+</div>
+
+
+<script>
+
+    // ============================================================
+    // Config
+    // ============================================================
+
+    const REFRESH_INTERVAL_MS =
+        1000;
+
+
+    let activePolling = null;
+
+    let pollingTimer = null;
+
+    let polling = false;
+
+
+    // ============================================================
+    // Helpers
+    // ============================================================
+
+    function getRobotAPI()
+    {
+        if (!window.RobotAPI)
+        {
+            throw new Error(
+                "RobotAPI 尚未載入"
+            );
+        }
+
+        return window.RobotAPI;
+    }
+
+
+    function getCameraNames()
+    {
+        return (
+            document
+            .getElementById(
+                "cameraNames"
+            )
+            .value
+            .split(",")
+            .map(
+                value =>
+                    value.trim()
+            )
+            .filter(Boolean)
+        );
+    }
+
+
+    function setStatus(
+        message
+    )
+    {
+        document
+        .getElementById(
+            "status"
+        )
+        .textContent =
+            message;
+    }
+
+
+    function showOutput(
+        data
+    )
+    {
+        document
+        .getElementById(
+            "output"
+        )
+        .textContent =
+            JSON.stringify(
+                data,
+                null,
+                2
+            );
+    }
+
+
+    // ============================================================
+    // Render Entities
+    // ============================================================
+
+    function renderEntities(
+        entities
+    )
+    {
+        const container =
+            document
+            .getElementById(
+                "entityList"
+            );
+
+
+        container.innerHTML = "";
+
+
+        if (
+            !entities
+            || typeof entities
+                !== "object"
+        )
+        {
+            container.innerHTML =
+                "<div>沒有 entity</div>";
+
+            return;
+        }
+
+
+        const rows =
+            Object.entries(
+                entities
+            );
+
+
+        if (
+            rows.length === 0
+        )
+        {
+            container.innerHTML =
+                "<div>沒有 entity</div>";
+
+            return;
+        }
+
+
+        for (
+            const [
+                entityId,
+                entity
+            ]
+            of rows
+        )
+        {
+            const card =
+                document
+                .createElement(
+                    "div"
+                );
+
+
+            card.className =
+                "entity";
+
+
+            const title =
+                document
+                .createElement(
+                    "div"
+                );
+
+
+            title.className =
+                "entity-title";
+
+
+            title.textContent =
+                entityId;
+
+
+            const content =
+                document
+                .createElement(
+                    "div"
+                );
+
+
+            content.className =
+                "mono";
+
+
+            content.textContent =
+                JSON.stringify(
+                    entity,
+                    null,
+                    2
+                );
+
+
+            card.appendChild(
+                title
+            );
+
+
+            card.appendChild(
+                content
+            );
+
+
+            container.appendChild(
+                card
+            );
+        }
+    }
+
+
+    // ============================================================
+    // Render Object List
+    // ============================================================
+
+    function renderObjectList(
+        objects
+    )
+    {
+        const container =
+            document
+            .getElementById(
+                "entityList"
+            );
+
+
+        container.innerHTML = "";
+
+
+        if (
+            !Array.isArray(
+                objects
+            )
+            || objects.length === 0
+        )
+        {
+            container.innerHTML =
+                "<div>沒有 object</div>";
+
+            return;
+        }
+
+
+        for (
+            const object
+            of objects
+        )
+        {
+            const card =
+                document
+                .createElement(
+                    "div"
+                );
+
+
+            card.className =
+                "entity";
+
+
+            const title =
+                document
+                .createElement(
+                    "div"
+                );
+
+
+            title.className =
+                "entity-title";
+
+
+            title.textContent =
+                object.object
+                ?? "object";
+
+
+            const content =
+                document
+                .createElement(
+                    "div"
+                );
+
+
+            content.className =
+                "mono";
+
+
+            content.textContent =
+                JSON.stringify(
+                    object,
+                    null,
+                    2
+                );
+
+
+            card.appendChild(
+                title
+            );
+
+
+            card.appendChild(
+                content
+            );
+
+
+            container.appendChild(
+                card
+            );
+        }
+    }
+
+
+    // ============================================================
+    // Polling Control
+    // ============================================================
+
+    function stopPolling()
+    {
+        polling = false;
+
+        activePolling =
+            null;
+
+
+        if (
+            pollingTimer
+            !== null
+        )
+        {
+            clearTimeout(
+                pollingTimer
+            );
+
+            pollingTimer =
+                null;
+        }
+
+
+        document
+        .querySelectorAll(
+            ".api-button"
+        )
+        .forEach(
+            button =>
+            {
+                button
+                .classList
+                .remove(
+                    "active"
+                );
+            }
+        );
+    }
+
+
+    async function startPolling(
+        name,
+        callback,
+        button
+    )
+    {
+        stopPolling();
+
+
+        activePolling =
+            name;
+
+
+        polling =
+            true;
+
+
+        button
+        .classList
+        .add(
+            "active"
+        );
+
+
+        async function run()
+        {
+            if (
+                !polling
+                || activePolling
+                    !== name
+            )
+            {
+                return;
+            }
+
+
+            try
+            {
+                await callback();
+            }
+            catch (error)
+            {
+                console.error(
+                    error
+                );
+
+
+                setStatus(
+                    `ERROR: ${error}`
+                );
+            }
+
+
+            if (
+                polling
+                && activePolling
+                    === name
+            )
+            {
+                pollingTimer =
+                    setTimeout(
+                        run,
+                        REFRESH_INTERVAL_MS
+                    );
+            }
+        }
+
+
+        await run();
+    }
+
+
+    // ============================================================
+    // World State
+    // ============================================================
+
+    async function loadWorldState()
+    {
+        setStatus(
+            "Updating World State..."
+        );
+
+
+        const result =
+            await getRobotAPI()
+            .get_world_state({
+                include_robot:
+                    document
+                    .getElementById(
+                        "includeRobot"
+                    )
+                    .checked,
+
+                include_cameras:
+                    document
+                    .getElementById(
+                        "includeCameras"
+                    )
+                    .checked,
+
+                include_detections:
+                    document
+                    .getElementById(
+                        "includeDetections"
+                    )
+                    .checked,
+
+                include_materials:
+                    document
+                    .getElementById(
+                        "includeMaterials"
+                    )
+                    .checked,
+
+                include_relations:
+                    document
+                    .getElementById(
+                        "includeRelations"
+                    )
+                    .checked,
+
+                include_grasp:
+                    document
+                    .getElementById(
+                        "includeGrasp"
+                    )
+                    .checked,
+
+                camera_names:
+                    getCameraNames(),
+            });
+
+
+        showOutput(
+            result
+        );
+
+
+        renderEntities(
+            result
+            ?.data
+            ?.entities
+        );
+
+
+        setStatus(
+            "World State · Auto refresh 1s"
+        );
+    }
+
+
+    // ============================================================
+    // Object State
+    // ============================================================
+
+    async function loadObjectState()
+    {
+        setStatus(
+            "Updating Object State..."
+        );
+
+
+        const result =
+            await getRobotAPI()
+            .get_object_state(
+                getCameraNames()
+            );
+
+
+        showOutput(
+            result
+        );
+
+
+        renderObjectList(
+            result
+            ?.data
+            ?.objects
+        );
+
+
+        setStatus(
+            "Object State · Auto refresh 1s"
+        );
+    }
+
+
+    // ============================================================
+    // Object Relations
+    // ============================================================
+
+    async function loadRelations()
+    {
+        setStatus(
+            "Updating Object Relations..."
+        );
+
+
+        const result =
+            await getRobotAPI()
+            .get_object_relations(
+                getCameraNames()
+            );
+
+
+        showOutput(
+            result
+        );
+
+
+        renderObjectList(
+            result
+            ?.data
+            ?.objects
+        );
+
+
+        setStatus(
+            "Object Relations · Auto refresh 1s"
+        );
+    }
+
+
+    // ============================================================
+    // Object Grasp
+    // ============================================================
+
+    async function loadGrasp()
+    {
+        setStatus(
+            "Updating Object Grasp..."
+        );
+
+
+        const result =
+            await getRobotAPI()
+            .get_object_grasp(
+                getCameraNames()
+            );
+
+
+        showOutput(
+            result
+        );
+
+
+        renderObjectList(
+            result
+            ?.data
+            ?.objects
+        );
+
+
+        setStatus(
+            "Object Grasp · Auto refresh 1s"
+        );
+    }
+
+
+    // ============================================================
+    // Events
+    // ============================================================
+
+    window.addEventListener(
+        "load",
+        () =>
+        {
+            const worldStateButton =
+                document
+                .getElementById(
+                    "worldStateButton"
+                );
+
+
+            const objectStateButton =
+                document
+                .getElementById(
+                    "objectStateButton"
+                );
+
+
+            const relationsButton =
+                document
+                .getElementById(
+                    "relationsButton"
+                );
+
+
+            const graspButton =
+                document
+                .getElementById(
+                    "graspButton"
+                );
+
+
+            worldStateButton
+            .addEventListener(
+                "click",
+                () =>
+                {
+                    startPolling(
+                        "world_state",
+                        loadWorldState,
+                        worldStateButton
+                    );
+                }
+            );
+
+
+            objectStateButton
+            .addEventListener(
+                "click",
+                () =>
+                {
+                    startPolling(
+                        "object_state",
+                        loadObjectState,
+                        objectStateButton
+                    );
+                }
+            );
+
+
+            relationsButton
+            .addEventListener(
+                "click",
+                () =>
+                {
+                    startPolling(
+                        "object_relations",
+                        loadRelations,
+                        relationsButton
+                    );
+                }
+            );
+
+
+            graspButton
+            .addEventListener(
+                "click",
+                () =>
+                {
+                    startPolling(
+                        "object_grasp",
+                        loadGrasp,
+                        graspButton
+                    );
+                }
+            );
+
+
+            window
+            .addEventListener(
+                "beforeunload",
+                () =>
+                {
+                    stopPolling();
+                }
+            );
+        }
+    );
+
+</script>
+
+
+</body>
+</html>

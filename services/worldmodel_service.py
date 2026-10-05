@@ -14,9 +14,9 @@ from copy import deepcopy
 from datetime import datetime, timezone
 import logging
 from typing import Any
-
+import config
 from agent.runtime.world_state import WorldState
-from agent.vlm import occultation, vlm_describe, material
+from agent.vlm import occultation, vlm_describe, material,grasp
 from services import arm_service, camera_service, perception_service
 from utils import response
 
@@ -132,6 +132,13 @@ def get_health():
                         "backend":
                             "instaorder",
                     },
+                "grasp":
+                    {
+                        "implementation":
+                            "agent.vlm.grasp",
+                        "mode":
+                            "rule_based_current_affordance",
+                    },
             },
 
             "implementations": {
@@ -140,6 +147,8 @@ def get_health():
 
                 "occlusion":
                     "agent.vlm.occultation",
+                "grasp":
+                    "agent.vlm.grasp",
             },
 
             "background_monitor":
@@ -565,6 +574,24 @@ def _canonical_object_entity(
                 "movement"
             ]
         )
+    # Preserve optional grasp-specific perception outputs.
+    for grasp_field in (
+        "grasp_point",
+        "grasp_xyz",
+        "gripper_yaw_deg",
+        "grasp_yaw_deg",
+        "gripper_width_mm",
+    ):
+        if obj.get(
+            grasp_field
+        ) is not None:
+            entity[
+                grasp_field
+            ] = deepcopy(
+                obj[
+                    grasp_field
+                ]
+            )
 
     state_tags = obj.get(
         "state_tags"
@@ -633,7 +660,7 @@ def collect_detected_entities(
         try:
             data = (
                 perception_service
-                .detect_objects_value(
+                .get_detections_value(
                     camera_name=
                         camera_name,
                     draw=False,
@@ -1095,6 +1122,147 @@ def collect_material_states(
 
     return states
 
+
+# ============================================================
+# Grasp Understanding
+# ============================================================
+
+def collect_grasp_states(
+    *,
+    entities: dict[
+        str,
+        dict[str, Any],
+    ],
+    relations: list[
+        dict[str, Any]
+    ],
+) -> dict[
+    str,
+    dict[str, Any],
+]:
+    arm_workspaces = (
+        grasp.arm_workspaces_from_config(
+            getattr(
+                config,
+                "ARMS",
+                {},
+            )
+        )
+    )
+
+    return grasp.infer_grasp_states(
+        entities=
+            entities,
+        relations=
+            relations,
+        arm_workspaces=
+            arm_workspaces,
+    )
+
+ 
+def _merge_grasp_states(
+    *,
+    entities: dict[
+        str,
+        dict[str, Any],
+    ],
+    grasp_states: dict[
+        str,
+        dict[str, Any],
+    ],
+) -> None:
+    for (
+        object_id,
+        grasp_state,
+    ) in grasp_states.items():
+
+        entity = entities.get(
+            object_id
+        )
+
+        if not isinstance(
+            entity,
+            dict,
+        ):
+            continue
+
+        state = deepcopy(
+            grasp_state
+        )
+
+        entity[
+            "grasp"
+        ] = state
+
+        entity[
+            "pickable"
+        ] = bool(
+            state.get(
+                "pickable",
+                False,
+            )
+        )
+
+        entity[
+            "pickable_by"
+        ] = list(
+            state.get(
+                "pickable_by",
+                [],
+            )
+        )
+
+        if (
+            not entity.get(
+                "reachable_by"
+            )
+            and entity[
+                "pickable_by"
+            ]
+        ):
+            entity[
+                "reachable_by"
+            ] = list(
+                entity[
+                    "pickable_by"
+                ]
+            )
+
+        tags = entity.get(
+            "tags"
+        )
+
+        if not isinstance(
+            tags,
+            list,
+        ):
+            tags = []
+
+        tags = [
+            tag
+            for tag
+            in tags
+            if (
+                isinstance(
+                    tag,
+                    str,
+                )
+                and tag
+                != "pickable"
+            )
+        ]
+
+        if entity[
+            "pickable"
+        ]:
+            tags.append(
+                "pickable"
+            )
+
+        entity[
+            "tags"
+        ] = tags
+
 # ============================================================
 # Live WorldState
 # ============================================================
@@ -1107,6 +1275,7 @@ def build_world_state(
     include_detections: bool = True,
     include_materials: bool = False,
     include_relations: bool = True,
+    include_grasp: bool = True,
     camera_names: tuple[str, ...] =
         _DETECTION_CAMERAS,
 ) -> WorldState:
@@ -1268,15 +1437,45 @@ def build_world_state(
     # the dedicated occlusion pipeline (InstaOrder).
     # ========================================================
 
-    relations = []
+    observed_relations = []
 
-    if include_relations:
-        relations = (
+    if (
+        include_relations
+        or include_grasp
+    ):
+        observed_relations = (
             collect_occlusion_relations(
                 observations=
                     detection_observations,
             )
         )
+
+    # ========================================================
+    # Grasp understanding
+    # ========================================================
+
+    if include_grasp:
+        grasp_states = (
+            collect_grasp_states(
+                entities=
+                    entities,
+                relations=
+                    observed_relations,
+            )
+        )
+
+        _merge_grasp_states(
+            entities=
+                entities,
+            grasp_states=
+                grasp_states,
+        )
+
+    relations = (
+        observed_relations
+        if include_relations
+        else []
+    )
 
     # ========================================================
     # WorldState
@@ -1329,14 +1528,9 @@ def get_object_state(
         include_robot=False,
         include_cameras=False,
         include_detections=True,
-
-        # Material is an intrinsic object state.
-        # Reuse the SAME detection observation:
-        # RGB + object_id + segmentation mask
-        # and send it to the PC MatSpectNet service.
         include_materials=True,
-
         include_relations=False,
+        include_grasp=False,
         camera_names=camera_names,
     )
 
@@ -1436,36 +1630,15 @@ def get_object_relation(
     camera_names: tuple[str, ...] =
         _DETECTION_CAMERAS,
 ):
-    """
-    Perform one fresh WorldState observation
-    and organize currently supported object relations by object.
 
-    Semantic VLM relation inference has been removed.
-    At present, relations come from the InstaOrder
-    occlusion pipeline only.
-
-    Material inference is intentionally disabled here.
-
-    Output format:
-
-        object
-        relations
-            direction
-            predicate
-            relation_object
-            camera_source
-    """
 
     world = build_world_state(
         include_robot=False,
         include_cameras=False,
         include_detections=True,
-
-        # Relation query does not need MatSpectNet.
-        # Avoid unnecessary PC material inference.
         include_materials=False,
-
         include_relations=True,
+        include_grasp=False,
         camera_names=camera_names,
     )
 
@@ -1605,6 +1778,139 @@ def get_object_relation(
                 list(
                     objects.values()
                 ),
+
+            "captured_at":
+                snapshot.get(
+                    "meta",
+                    {},
+                ).get(
+                    "captured_at"
+                ),
+        },
+    )
+# ============================================================
+# Compact Object Grasp API
+# ============================================================
+
+def get_object_grasp(
+    *,
+    camera_names: tuple[str, ...] =
+        _DETECTION_CAMERAS,
+):
+    world = build_world_state(
+        include_robot=True,
+        include_cameras=False,
+        include_detections=True,
+        include_materials=False,
+        include_relations=False,
+        include_grasp=True,
+        camera_names=camera_names,
+    )
+
+    snapshot = world.snapshot()
+
+    entities = snapshot.get(
+        "entities",
+        {},
+    )
+
+    objects = []
+
+    for (
+        entity_id,
+        entity,
+    ) in entities.items():
+
+        if (
+            not isinstance(
+                entity,
+                dict,
+            )
+            or entity.get(
+                "type"
+            )
+            != "object"
+        ):
+            continue
+
+        grasp_state = entity.get(
+            "grasp"
+        )
+
+        if not isinstance(
+            grasp_state,
+            dict,
+        ):
+            continue
+
+        objects.append({
+            "object":
+                entity_id,
+
+            "pickable":
+                bool(
+                    grasp_state.get(
+                        "pickable",
+                        False,
+                    )
+                ),
+
+            "pickable_by":
+                deepcopy(
+                    grasp_state.get(
+                        "pickable_by",
+                        [],
+                    )
+                ),
+
+            "grasp_point":
+                deepcopy(
+                    grasp_state.get(
+                        "grasp_point"
+                    )
+                ),
+
+            "gripper_yaw_deg":
+                grasp_state.get(
+                    "gripper_yaw_deg"
+                ),
+
+            "gripper_width_mm":
+                grasp_state.get(
+                    "gripper_width_mm"
+                ),
+
+            "blocked":
+                bool(
+                    grasp_state.get(
+                        "blocked",
+                        False,
+                    )
+                ),
+
+            "blocked_by":
+                deepcopy(
+                    grasp_state.get(
+                        "blocked_by",
+                        [],
+                    )
+                ),
+
+            "reasons":
+                deepcopy(
+                    grasp_state.get(
+                        "reasons",
+                        [],
+                    )
+                ),
+        })
+
+    return response.success(
+        MODULE,
+        "get_object_grasp",
+        data={
+            "objects":
+                objects,
 
             "captured_at":
                 snapshot.get(

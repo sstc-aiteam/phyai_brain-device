@@ -15,25 +15,18 @@ RECORDING_FRONTEND_DIR = os.path.join(
 def index():
     return send_from_directory(WEB_DIR, "index.html")
 
-@web_bp.route("/vision")
+@web_bp.route("/perception")
 def vision():
-    return send_from_directory(WEB_DIR, "example/ex_vision.html")
+    return send_from_directory(WEB_DIR, "includes/component/perception.html")
 
-@web_bp.route("/agent-test")
-def agent_test():
-    return send_from_directory(WEB_DIR, "agent_test.html")
+@web_bp.route("/worldmodel")
+def worldmodel():
+    return send_from_directory(WEB_DIR, "includes/component/worldmodel.html")
 
-@web_bp.route("/planning-dashboard")
-def planning_dashboard():
-    return send_from_directory(WEB_DIR, "planning_dashboard.html")
+@web_bp.route("/action")
+def action():
+    return send_from_directory(WEB_DIR, "includes/component/action.html")
 
-@web_bp.route("/record")
-def record():
-    return send_from_directory(RECORDING_FRONTEND_DIR, "index.html")
-
-@web_bp.route("/recording-training-replay/static/<path:filename>")
-def recording_training_replay_static(filename):
-    return send_from_directory(RECORDING_FRONTEND_DIR, filename)
 
 @web_bp.route("/web/<path:filename>")
 def web_static(filename):
