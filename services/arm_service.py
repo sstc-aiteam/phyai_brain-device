@@ -4,10 +4,8 @@ import config
 from control import loader
 from utils import response
 
-
 MODULE = "arm"
 logger = logging.getLogger(__name__)
-
 
 # ============================================================
 # Arm Context
@@ -993,20 +991,9 @@ def move_arm_default(
             {},
         )
 
-        intermediate = poses.get(
-            "intermediate_default_joints"
-        )
-
         default = poses.get(
             "default_joints"
         )
-
-        if intermediate is None:
-            raise ValueError(
-                "poses."
-                "intermediate_default_joints "
-                "is not configured"
-            )
 
         if default is None:
             raise ValueError(
@@ -1014,40 +1001,12 @@ def move_arm_default(
                 "is not configured"
             )
 
-        intermediate = (
-            _normalize_joints(
-                intermediate,
-                arm.ARM_DOF,
-            )
-        )
-
         default = (
             _normalize_joints(
                 default,
                 arm.ARM_DOF,
             )
         )
-
-        reached = arm.move_arm_joints(
-            joints=intermediate,
-            speed=speed,
-            acceleration=acceleration,
-            wait=wait,
-        )
-
-        if not reached:
-            return _execution_results(
-                action,
-                reached,
-                data={
-                    "arm_name":
-                        arm_name,
-
-                    "target_joints":
-                        intermediate,
-                },
-                driver=driver,
-            )
 
         reached = arm.move_arm_joints(
             joints=default,
@@ -1247,6 +1206,266 @@ def move_arm_xyz(
                 type(exc).__name__,
         )
 
+def move_gripper_xyz(
+    arm_name,
+    x,
+    y,
+    z,
+    speed=None,
+    acceleration=None,
+    wait=True,
+):
+    """
+    將實際夾爪尖端移動到指定 Robot Base XYZ。
+    """
+
+    action = "move_gripper_xyz"
+    driver = None
+
+    try:
+        (
+            arm_name,
+            arm,
+            driver,
+            arm_config,
+        ) = _get_arm_context(
+            arm_name
+        )
+
+        (
+            speed,
+            acceleration,
+        ) = _get_motion_params(
+            arm_config,
+            speed,
+            acceleration,
+        )
+
+        # ----------------------------------------------------
+        # Target gripper tip XYZ
+        # ----------------------------------------------------
+
+        target_gripper_xyz = [
+            _normalize_number(
+                "x",
+                x,
+            ),
+            _normalize_number(
+                "y",
+                y,
+            ),
+            _normalize_number(
+                "z",
+                z,
+            ),
+        ]
+
+        # ----------------------------------------------------
+        # Current TCP pose
+        # ----------------------------------------------------
+
+        current_tcp_pose = (
+            _normalize_pose(
+                arm.get_arm_pose()
+            )
+        )
+
+        rx = current_tcp_pose[3]
+        ry = current_tcp_pose[4]
+        rz = current_tcp_pose[5]
+
+        # ----------------------------------------------------
+        # Tool tip offset
+        # ----------------------------------------------------
+
+        tool = arm_config.get(
+            "tool",
+            {},
+        )
+
+        tip_offset_tcp = tool.get(
+            "tip_offset_tcp"
+        )
+
+        if tip_offset_tcp is None:
+            raise ValueError(
+                "tool.tip_offset_tcp "
+                "is not configured"
+            )
+
+        if (
+            not isinstance(
+                tip_offset_tcp,
+                (list, tuple),
+            )
+            or len(tip_offset_tcp) != 3
+        ):
+            raise ValueError(
+                "tool.tip_offset_tcp "
+                "必須包含 3 個數值："
+                "[x, y, z]"
+            )
+
+        tip_offset_tcp = [
+            _normalize_number(
+                f"tool.tip_offset_tcp[{index}]",
+                value,
+            )
+            for index, value
+            in enumerate(
+                tip_offset_tcp
+            )
+        ]
+
+        # ----------------------------------------------------
+        # UR rotation vector -> rotation matrix
+        # ----------------------------------------------------
+
+        theta = math.sqrt(
+            rx * rx
+            + ry * ry
+            + rz * rz
+        )
+
+        if theta < 1e-12:
+            rotation = [
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ]
+
+        else:
+            kx = rx / theta
+            ky = ry / theta
+            kz = rz / theta
+
+            c = math.cos(theta)
+            s = math.sin(theta)
+            v = 1.0 - c
+
+            rotation = [
+                [
+                    kx * kx * v + c,
+                    kx * ky * v - kz * s,
+                    kx * kz * v + ky * s,
+                ],
+                [
+                    ky * kx * v + kz * s,
+                    ky * ky * v + c,
+                    ky * kz * v - kx * s,
+                ],
+                [
+                    kz * kx * v - ky * s,
+                    kz * ky * v + kx * s,
+                    kz * kz * v + c,
+                ],
+            ]
+
+        # ----------------------------------------------------
+        # TCP local offset -> Robot Base offset
+        # ----------------------------------------------------
+
+        offset_base = [
+            (
+                rotation[row][0]
+                * tip_offset_tcp[0]
+                + rotation[row][1]
+                * tip_offset_tcp[1]
+                + rotation[row][2]
+                * tip_offset_tcp[2]
+            )
+            for row in range(3)
+        ]
+
+        # ----------------------------------------------------
+        # Gripper target XYZ -> TCP target pose
+        #
+        # gripper_tip =
+        #     tcp_origin + offset_base
+        #
+        # therefore:
+        #
+        # tcp_origin =
+        #     gripper_tip - offset_base
+        # ----------------------------------------------------
+
+        target_tcp_pose = [
+            target_gripper_xyz[0]
+            - offset_base[0],
+
+            target_gripper_xyz[1]
+            - offset_base[1],
+
+            target_gripper_xyz[2]
+            - offset_base[2],
+
+            rx,
+            ry,
+            rz,
+        ]
+
+        # ----------------------------------------------------
+        # Safety check
+        # ----------------------------------------------------
+
+        target_tcp_pose = (
+            _check_pose_safety(
+                target_tcp_pose,
+                arm_config,
+            )
+        )
+
+        # ----------------------------------------------------
+        # Move
+        # ----------------------------------------------------
+
+        reached = (
+            arm.move_arm_pose(
+                *target_tcp_pose,
+                speed=speed,
+                acceleration=
+                    acceleration,
+                wait=wait,
+            )
+        )
+
+        return _execution_results(
+            action,
+            reached,
+            data={
+                "arm_name":
+                    arm_name,
+
+                "target_pose":
+                    target_tcp_pose,
+                    
+                "target_gripper_xyz":
+                    target_gripper_xyz,
+
+                "tip_offset_tcp":
+                    tip_offset_tcp,
+
+                "offset_base":
+                    offset_base,
+
+                "current_tcp_pose":
+                    current_tcp_pose,
+
+                "target_tcp_pose":
+                    target_tcp_pose,
+            },
+            driver=driver,
+        )
+
+    except Exception as exc:
+        return response.error(
+            MODULE,
+            action,
+            error=exc,
+            driver=driver,
+            error_type=
+                type(exc).__name__,
+        )
 
 # ============================================================
 # MOVE JOINTS

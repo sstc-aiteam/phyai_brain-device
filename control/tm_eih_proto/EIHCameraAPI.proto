@@ -1,0 +1,115 @@
+syntax = "proto3";
+option csharp_namespace = "TmVisionProtos";
+import "google/protobuf/empty.proto";
+import "EIHCamera.proto";
+package TmEIHCamera;
+
+service EIHCameraApi
+{
+  rpc isCameraConnected(google.protobuf.Empty) returns (isCameraConnectedResponse);
+  rpc getIntrinsics(google.protobuf.Empty) returns (getIntrinsicsResponse);
+  rpc getHandEyeParameters(google.protobuf.Empty) returns (Camera.HandEyeParameters);
+  rpc getImageData(google.protobuf.Empty) returns (Camera.Image.Data);
+  rpc getImageConfiguration(google.protobuf.Empty) returns (Camera.Image.Configuration);
+
+  // Terminate or Resume TRI RobotCamera Connection
+  rpc terminateCameraConnection(google.protobuf.Empty) returns (google.protobuf.Empty);
+  rpc resumeCameraConnection(google.protobuf.Empty) returns (google.protobuf.Empty);
+
+  // Get or Set all parameters of CapturingSettings 
+  rpc getCapturingSettings(google.protobuf.Empty) returns (Camera.CapturingSettings);
+  rpc setCapturingSettings(setCapturingSettingsRequest) returns (google.protobuf.Empty);
+
+  // Get or Set the specific parameter of CapturingSettings 
+  rpc getShutterTime(google.protobuf.Empty) returns (getShutterTimeResponse);
+  rpc setShutterTime(setShutterTimeRequest) returns (google.protobuf.Empty);
+
+  rpc getGain(google.protobuf.Empty) returns (getGainResponse);
+  rpc setGain(setGainRequest) returns (google.protobuf.Empty);
+
+  rpc getWhiteBalance(google.protobuf.Empty) returns (getWhiteBalanceResponse);
+  rpc setWhiteBalance(setWhiteBalanceRequest) returns (google.protobuf.Empty);
+
+  rpc getFocus(google.protobuf.Empty) returns (getFocusResponse); 
+  rpc setFocus(setFocusRequest) returns (google.protobuf.Empty);
+
+  rpc getImageSize(google.protobuf.Empty) returns (getImageSizeResponse);   //Only two size:  1M = 1280*960,  5M = 2592*1944
+  rpc setImageSize(setImageSizeRequest) returns (google.protobuf.Empty);   //Only two size:  1M = 1280*960,  5M = 2592*1944
+
+}
+
+
+// request and response message
+message SerialNumberRequest
+{
+  string SerialNumber = 1;
+}
+
+message isCameraConnectedResponse
+{
+  bool isCameraConnected = 1;
+  string connection_message = 2;
+}
+
+message setCapturingSettingsRequest
+{
+  int64 ShutterTime = 1;
+  int64 Gain = 2;
+  int64 wb_redratio = 3;
+  int64 wb_greenratio = 4;
+  int64 wb_blueratio = 5;
+  int64 Focus = 6;
+  string ImageSize = 7;	// 1M = 1280*960,  5M = 2592*1944
+}
+
+message getShutterTimeResponse
+{
+  CaptureSetting_value shuttertime = 1;
+}
+message setShutterTimeRequest
+{
+  int64 shuttertime = 1;
+}
+
+message getGainResponse
+{
+  CaptureSetting_value gain = 1;
+}
+message setGainRequest
+{
+  int64 gain = 1;
+}
+
+message getWhiteBalanceResponse
+{
+  WhiteBalance whitebalance = 1;
+}
+message setWhiteBalanceRequest
+{
+  int64 wb_redratio = 1;
+  int64 wb_greenratio = 2;
+  int64 wb_blueratio = 3;
+}
+
+message getFocusResponse
+{
+  CaptureSetting_value focus = 1;
+}
+message setFocusRequest
+{
+  int64 focus = 1;
+}
+
+message getImageSizeResponse
+{
+  string imagesize = 1;		  // 1M:1280_960, 5M:2592_1944
+}
+message setImageSizeRequest
+{
+  string imagesize = 1;		  // 1M:1280_960, 5M:2592_1944
+}
+
+message getIntrinsicsResponse
+{
+  repeated Camera.Intrinsics cam_intrinsics = 1;
+}

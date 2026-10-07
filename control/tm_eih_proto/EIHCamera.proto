@@ -1,0 +1,97 @@
+syntax = "proto3";
+option csharp_namespace = "TmVisionProtos";
+package TmEIHCamera;
+
+message CameraMatrix
+{
+  float matrix_00 = 1;
+  float matrix_01 = 2;
+  float matrix_02 = 3;
+  float matrix_10 = 4;
+  float matrix_11 = 5;
+  float matrix_12 = 6;
+  float matrix_20 = 7;
+  float matrix_21 = 8;
+  float matrix_22 = 9;
+}
+message DistortionCoefficients
+{
+  float coefficient_00 = 1;
+  float coefficient_10 = 2;
+  float coefficient_20 = 3;
+  float coefficient_30 = 4;
+  float coefficient_40 = 5;
+}
+message HandEyeArray
+{
+  float handeye_x = 1;
+  float handeye_y = 2;
+  float handeye_z = 3;
+  float handeye_rx = 4;
+  float handeye_ry = 5;
+  float handeye_rz = 6;
+}
+message WhiteBalance
+{
+  CaptureSetting_value red_ratio = 1;
+  CaptureSetting_value green_ratio = 2;
+  CaptureSetting_value blue_ratio = 3;
+}
+message CaptureSetting_value
+{
+	int64 CurrentValue = 1;
+	int64 MinValue = 2;
+	int64 MaxValue = 3;
+}
+
+
+message Camera 
+{
+  message Information
+  {
+    string SerialNumber = 1;
+  }
+  message Intrinsics
+  {
+    float FocusValue = 1;
+    int32 ImageWidth = 2;
+    int32 ImageHeight = 3;
+    CameraMatrix CameraMatrix = 4;
+    DistortionCoefficients DistortionCoefficients = 5;
+  }
+
+  message HandEyeParameters
+  {
+    HandEyeArray HandEyeArray = 1;
+  }
+
+  message Image
+  {
+    message Data
+	{
+	  bytes EncodeString = 1;
+	}
+    message Configuration
+	{
+	  string ImageType = 1;  //Only support'png'
+	  string ImageSize = 2;  // 1M:1280*960, 5M:2592*1944
+	  int32 ImageWidth = 3;
+	  int32 ImageHeight = 4;
+	  string PixelFormat = 5;  // MONO, RGB
+	}
+  }
+
+  message CapturingSettings  //RW
+  {
+    CaptureSetting_value ShutterTime = 1;
+    CaptureSetting_value Gain = 2;
+    WhiteBalance WhiteBalance = 3;
+    CaptureSetting_value Focus = 4;
+	string ImageSize = 5;  // 1M:1280*960, 5M:2592*1944
+  }
+
+  repeated Intrinsics intrinsics = 1;
+  HandEyeParameters handeyeParameters = 2;
+  CapturingSettings capturingSettings = 3;
+  Image image = 4;
+}

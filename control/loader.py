@@ -11,9 +11,15 @@ ARM_DRIVERS = {
         "module": "control.ur5",
         "class": "UR5Driver",
     },
+
     "ur7e": {
         "module": "control.ur7e",
         "class": "UR7eDriver",
+    },
+
+    "tm12": {
+        "module": "control.tm12",
+        "class": "tm12Driver",
     },
 }
 
@@ -83,6 +89,11 @@ CAMERA_DRIVERS = {
     "logitech": {
         "module": "control.logitech",
         "class": "LogitechDriver",
+    },
+
+    "tm_eih": {
+        "module": "control.tm_eih",
+        "class": "TMEIHDriver",
     },
 }
 
