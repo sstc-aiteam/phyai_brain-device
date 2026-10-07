@@ -1,0 +1,3075 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0, user-scalable=no"
+    >
+
+    <title>Robot Action</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+
+            font-family:
+                Arial,
+                "Noto Sans TC",
+                sans-serif;
+
+            background: #f5f5f5;
+            color: #222;
+        }
+
+        body {
+            padding: 12px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .card {
+            background: white;
+
+            border:
+                1px solid #ddd;
+
+            border-radius: 8px;
+
+            padding: 14px;
+
+            margin-bottom: 12px;
+        }
+
+        h1 {
+            font-size: 22px;
+            margin:
+                0
+                0
+                12px;
+        }
+
+        h2 {
+            font-size: 18px;
+            margin:
+                0
+                0
+                12px;
+        }
+
+        h3 {
+            font-size: 15px;
+
+            margin:
+                16px
+                0
+                8px;
+        }
+
+        label {
+            display: block;
+
+            font-size: 13px;
+
+            margin-bottom: 5px;
+
+            font-weight: bold;
+        }
+
+        select,
+        input,
+        textarea,
+        button {
+            width: 100%;
+
+            font-size: 16px;
+
+            border-radius: 6px;
+        }
+
+        select,
+        input,
+        textarea {
+            border:
+                1px solid #bbb;
+
+            padding: 10px;
+
+            background: white;
+        }
+
+        textarea {
+            min-height: 130px;
+
+            resize: vertical;
+
+            font-family: monospace;
+        }
+
+        button {
+            border:
+                1px solid #aaa;
+
+            background: #eee;
+
+            padding:
+                11px
+                8px;
+
+            cursor: pointer;
+
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+
+            touch-action: manipulation;
+        }
+
+        button:active {
+            background: #d7d7d7;
+        }
+
+        .danger {
+            background: #ffe4e4;
+
+            border-color: #d88;
+        }
+
+        .active {
+            background: #d9f4df;
+
+            border-color: #76aa82;
+        }
+
+        .grid-2 {
+            display: grid;
+
+            grid-template-columns:
+                repeat(
+                    2,
+                    1fr
+                );
+
+            gap: 8px;
+        }
+
+        .grid-3 {
+            display: grid;
+
+            grid-template-columns:
+                repeat(
+                    3,
+                    1fr
+                );
+
+            gap: 8px;
+        }
+
+        .status-grid {
+            display: grid;
+
+            grid-template-columns:
+                150px
+                1fr;
+
+            gap:
+                7px
+                10px;
+
+            font-size: 14px;
+        }
+
+        .status-key {
+            font-weight: bold;
+
+            color: #555;
+        }
+
+        .mono {
+            font-family: monospace;
+
+            word-break: break-all;
+        }
+
+        .connected {
+            color: green;
+
+            font-weight: bold;
+        }
+
+        .disconnected {
+            color: #c00;
+
+            font-weight: bold;
+        }
+
+        .log {
+            background: #111;
+
+            color: #eee;
+
+            min-height: 100px;
+            max-height: 250px;
+
+            overflow: auto;
+
+            white-space: pre-wrap;
+
+            padding: 10px;
+
+            border-radius: 6px;
+
+            font-family: monospace;
+
+            font-size: 13px;
+        }
+
+        .small {
+            font-size: 12px;
+
+            color: #666;
+
+            margin-top: 6px;
+        }
+
+        .section {
+            border-top:
+                1px solid #eee;
+
+            margin-top: 16px;
+
+            padding-top: 14px;
+        }
+
+        @media (
+            max-width: 650px
+        ) {
+            body {
+                padding: 8px;
+            }
+
+            .status-grid {
+                grid-template-columns:
+                    110px
+                    1fr;
+            }
+
+            button {
+                min-height: 48px;
+            }
+        }
+    </style>
+
+    <script
+        type="module"
+        src="/web/includes/library/JSFile/robotjs2026.js"
+    ></script>
+</head>
+
+<body>
+
+<div class="container">
+
+    <!-- ====================================================== -->
+    <!-- ARM STATUS -->
+    <!-- ====================================================== -->
+
+    <div class="card">
+
+        <h1>
+            Robot Action
+        </h1>
+
+        <label for="armSelect">
+            Arm
+        </label>
+
+        <select id="armSelect">
+            <option value="">
+                讀取中...
+            </option>
+        </select>
+
+
+        <div class="section">
+
+            <div class="status-grid">
+
+                <div class="status-key">
+                    Driver
+                </div>
+
+                <div id="armDriver">
+                    -
+                </div>
+
+
+                <div class="status-key">
+                    Connected
+                </div>
+
+                <div id="armConnected">
+                    -
+                </div>
+
+
+                <div class="status-key">
+                    Ready
+                </div>
+
+                <div id="armReady">
+                    -
+                </div>
+
+
+                <div class="status-key">
+                    Moving
+                </div>
+
+                <div id="armMoving">
+                    -
+                </div>
+
+
+                <div class="status-key">
+                    Arm Mode
+                </div>
+
+                <div id="armMode">
+                    -
+                </div>
+
+
+                <div class="status-key">
+                    Safety Mode
+                </div>
+
+                <div id="armSafetyMode">
+                    -
+                </div>
+
+
+                <div class="status-key">
+                    Program Running
+                </div>
+
+                <div id="armProgramRunning">
+                    -
+                </div>
+
+
+                <div class="status-key">
+                    Protective Stop
+                </div>
+
+                <div id="armProtectiveStop">
+                    -
+                </div>
+
+
+                <div class="status-key">
+                    Emergency Stop
+                </div>
+
+                <div id="armEmergencyStop">
+                    -
+                </div>
+
+
+                <div class="status-key">
+                    Fault
+                </div>
+
+                <div id="armFault">
+                    -
+                </div>
+
+
+                <div class="status-key">
+                    Pose
+                </div>
+
+                <div
+                    id="armPose"
+                    class="mono"
+                >
+                    -
+                </div>
+
+
+                <div class="status-key">
+                    Joints
+                </div>
+
+                <div
+                    id="armJoints"
+                    class="mono"
+                >
+                    -
+                </div>
+
+            </div>
+
+
+            <details
+                style="margin-top:12px;"
+            >
+
+                <summary>
+                    Raw arm status
+                </summary>
+
+                <pre
+                    id="rawArmStatus"
+                    class="mono"
+                ></pre>
+
+            </details>
+
+        </div>
+
+    </div>
+
+
+    <!-- ====================================================== -->
+    <!-- ARM CONTROL -->
+    <!-- ====================================================== -->
+
+    <div class="card">
+
+        <h2>
+            Arm Control
+        </h2>
+
+
+        <div class="grid-2">
+
+            <button
+                id="reconnectArmButton"
+            >
+                Reconnect
+            </button>
+
+            <button
+                id="stopArmButton"
+                class="danger"
+            >
+                STOP ARM
+            </button>
+
+        </div>
+
+
+        <!-- Freedrive -->
+
+        <div class="section">
+
+            <h3>
+                Freedrive
+            </h3>
+
+            <div class="grid-2">
+
+                <button
+                    id="startFreedriveButton"
+                >
+                    Freedrive ON
+                </button>
+
+                <button
+                    id="stopFreedriveButton"
+                >
+                    Freedrive OFF
+                </button>
+
+            </div>
+
+        </div>
+
+
+        <!-- JOG -->
+
+        <div class="section">
+
+            <h3>
+                JOG - Translation
+            </h3>
+
+            <div class="grid-3">
+
+                <button
+                    class="jog-btn"
+                    data-direction="x-"
+                >
+                    X−
+                </button>
+
+                <button
+                    class="jog-btn"
+                    data-direction="x+"
+                >
+                    X+
+                </button>
+
+                <button
+                    class="jog-btn"
+                    data-direction="y-"
+                >
+                    Y−
+                </button>
+
+                <button
+                    class="jog-btn"
+                    data-direction="y+"
+                >
+                    Y+
+                </button>
+
+                <button
+                    class="jog-btn"
+                    data-direction="z-"
+                >
+                    Z−
+                </button>
+
+                <button
+                    class="jog-btn"
+                    data-direction="z+"
+                >
+                    Z+
+                </button>
+
+            </div>
+
+
+            <h3>
+                JOG - Rotation
+            </h3>
+
+            <div class="grid-3">
+
+                <button
+                    class="jog-btn"
+                    data-direction="rx-"
+                >
+                    RX−
+                </button>
+
+                <button
+                    class="jog-btn"
+                    data-direction="rx+"
+                >
+                    RX+
+                </button>
+
+                <button
+                    class="jog-btn"
+                    data-direction="ry-"
+                >
+                    RY−
+                </button>
+
+                <button
+                    class="jog-btn"
+                    data-direction="ry+"
+                >
+                    RY+
+                </button>
+
+                <button
+                    class="jog-btn"
+                    data-direction="rz-"
+                >
+                    RZ−
+                </button>
+
+                <button
+                    class="jog-btn"
+                    data-direction="rz+"
+                >
+                    RZ+
+                </button>
+
+            </div>
+
+
+            <div class="small">
+                長按開始 JOG；
+                放開、pointer cancel、
+                視窗失焦或切換頁面時停止。
+                按住期間每 100 ms
+                重新送出 start_arm_jog。
+            </div>
+
+        </div>
+
+
+        <!-- Move Default -->
+
+        <div class="section">
+
+            <h3>
+                Move Default
+            </h3>
+
+            <button
+                id="moveDefaultButton"
+            >
+                Move Default
+            </button>
+
+        </div>
+
+
+        <!-- Move Pose -->
+
+        <div class="section">
+
+            <h3>
+                Move Pose
+            </h3>
+
+            <input
+                id="poseInput"
+                type="text"
+                placeholder="[0.30, -0.20, 0.40, 3.14, 0.0, 0.0]"
+            >
+
+            <button
+                id="movePoseButton"
+                style="margin-top:8px;"
+            >
+                Move Pose
+            </button>
+
+        </div>
+
+
+        <!-- Move XYZ -->
+
+        <div class="section">
+
+            <h3>
+                Move XYZ
+            </h3>
+
+            <div class="grid-3">
+
+                <input
+                    id="xInput"
+                    type="number"
+                    step="0.001"
+                    placeholder="X"
+                >
+
+                <input
+                    id="yInput"
+                    type="number"
+                    step="0.001"
+                    placeholder="Y"
+                >
+
+                <input
+                    id="zInput"
+                    type="number"
+                    step="0.001"
+                    placeholder="Z"
+                >
+
+            </div>
+
+            <button
+                id="moveXyzButton"
+                style="margin-top:8px;"
+            >
+                Move XYZ
+            </button>
+
+        </div>
+
+
+        <!-- Move Joints -->
+
+        <div class="section">
+
+            <h3>
+                Move Joints
+            </h3>
+
+            <input
+                id="jointsInput"
+                type="text"
+                placeholder="[-1.57, -1.20, -1.80, -1.50, 1.57, 0.0]"
+            >
+
+            <button
+                id="moveJointsButton"
+                style="margin-top:8px;"
+            >
+                Move Joints
+            </button>
+
+        </div>
+
+
+        <!-- Move Step -->
+
+        <div class="section">
+
+            <h3>
+                Move Step
+            </h3>
+
+            <div class="grid-3">
+
+                <button
+                    class="step-btn"
+                    data-direction="x-"
+                >
+                    X−
+                </button>
+
+                <button
+                    class="step-btn"
+                    data-direction="x+"
+                >
+                    X+
+                </button>
+
+                <button
+                    class="step-btn"
+                    data-direction="y-"
+                >
+                    Y−
+                </button>
+
+                <button
+                    class="step-btn"
+                    data-direction="y+"
+                >
+                    Y+
+                </button>
+
+                <button
+                    class="step-btn"
+                    data-direction="z-"
+                >
+                    Z−
+                </button>
+
+                <button
+                    class="step-btn"
+                    data-direction="z+"
+                >
+                    Z+
+                </button>
+
+            </div>
+
+        </div>
+
+
+        <!-- Move Rotate -->
+
+        <div class="section">
+
+            <h3>
+                Move Rotate
+            </h3>
+
+            <div class="grid-3">
+
+                <button
+                    class="rotate-btn"
+                    data-direction="rx-"
+                >
+                    RX−
+                </button>
+
+                <button
+                    class="rotate-btn"
+                    data-direction="rx+"
+                >
+                    RX+
+                </button>
+
+                <button
+                    class="rotate-btn"
+                    data-direction="ry-"
+                >
+                    RY−
+                </button>
+
+                <button
+                    class="rotate-btn"
+                    data-direction="ry+"
+                >
+                    RY+
+                </button>
+
+                <button
+                    class="rotate-btn"
+                    data-direction="rz-"
+                >
+                    RZ−
+                </button>
+
+                <button
+                    class="rotate-btn"
+                    data-direction="rz+"
+                >
+                    RZ+
+                </button>
+
+            </div>
+
+        </div>
+
+
+        <!-- Pose Trajectory -->
+
+        <div class="section">
+
+            <h3>
+                Pose Trajectory
+            </h3>
+
+            <textarea
+                id="poseTrajectoryInput"
+                placeholder='[
+    [0.30, -0.20, 0.40, 3.14, 0.0, 0.0],
+    [0.32, -0.20, 0.40, 3.14, 0.0, 0.0],
+    [0.34, -0.20, 0.40, 3.14, 0.0, 0.0]
+]'
+            ></textarea>
+
+            <button
+                id="poseTrajectoryButton"
+                style="margin-top:8px;"
+            >
+                Run Pose Trajectory
+            </button>
+
+        </div>
+
+
+        <!-- Joint Trajectory -->
+
+        <div class="section">
+
+            <h3>
+                Joint Trajectory
+            </h3>
+
+            <textarea
+                id="jointTrajectoryInput"
+                placeholder='[
+    [-1.57, -1.20, -1.80, -1.50, 1.57, 0.0],
+    [-1.50, -1.10, -1.75, -1.45, 1.57, 0.10],
+    [-1.40, -1.00, -1.70, -1.40, 1.57, 0.20]
+]'
+            ></textarea>
+
+            <button
+                id="jointTrajectoryButton"
+                style="margin-top:8px;"
+            >
+                Run Joint Trajectory
+            </button>
+
+        </div>
+
+    </div>
+
+
+    <!-- ====================================================== -->
+    <!-- GRIPPER -->
+    <!-- ====================================================== -->
+
+    <div class="card">
+
+        <h2>
+            Gripper
+        </h2>
+
+        <label for="gripperSelect">
+            Gripper
+        </label>
+
+        <select id="gripperSelect">
+
+            <option value="">
+                讀取中...
+            </option>
+
+        </select>
+
+
+        <div class="section">
+
+            <div class="status-grid">
+
+                <div class="status-key">
+                    Driver
+                </div>
+
+                <div id="gripperDriver">
+                    -
+                </div>
+
+
+                <div class="status-key">
+                    Connected
+                </div>
+
+                <div id="gripperConnected">
+                    -
+                </div>
+
+
+                <div class="status-key">
+                    Ready
+                </div>
+
+                <div id="gripperReady">
+                    -
+                </div>
+
+
+                <div class="status-key">
+                    Moving
+                </div>
+
+                <div id="gripperMoving">
+                    -
+                </div>
+
+
+                <div class="status-key">
+                    Position
+                </div>
+
+                <div
+                    id="gripperPosition"
+                    class="mono"
+                >
+                    -
+                </div>
+
+
+                <div class="status-key">
+                    Object Detected
+                </div>
+
+                <div id="gripperObjectDetected">
+                    -
+                </div>
+
+
+                <div class="status-key">
+                    Fault
+                </div>
+
+                <div id="gripperFault">
+                    -
+                </div>
+
+            </div>
+
+
+            <details
+                style="margin-top:12px;"
+            >
+
+                <summary>
+                    Raw gripper status
+                </summary>
+
+                <pre
+                    id="rawGripperStatus"
+                    class="mono"
+                ></pre>
+
+            </details>
+
+        </div>
+
+
+        <div class="section">
+
+            <h3>
+                Gripper Parameters
+            </h3>
+
+
+            <label for="gripperSpeed">
+                Speed
+            </label>
+
+            <input
+                id="gripperSpeed"
+                type="number"
+                min="0"
+                max="1"
+                step="0.05"
+                value="1.0"
+            >
+
+
+            <label
+                for="gripperForce"
+                style="margin-top:10px;"
+            >
+                Force
+            </label>
+
+            <input
+                id="gripperForce"
+                type="number"
+                min="0"
+                max="1"
+                step="0.05"
+                value="0.6"
+            >
+
+
+            <label
+                for="gripperPositionInput"
+                style="margin-top:10px;"
+            >
+                Position
+            </label>
+
+            <input
+                id="gripperPositionInput"
+                type="number"
+                min="0"
+                max="1"
+                step="0.05"
+                value="0.5"
+            >
+
+
+            <div
+                class="grid-3"
+                style="margin-top:10px;"
+            >
+
+                <button
+                    id="openGripperButton"
+                >
+                    Open
+                </button>
+
+                <button
+                    id="closeGripperButton"
+                >
+                    Close
+                </button>
+
+                <button
+                    id="moveGripperButton"
+                >
+                    Move Position
+                </button>
+
+            </div>
+
+
+            <div
+                class="grid-2"
+                style="margin-top:8px;"
+            >
+
+                <button
+                    id="stopGripperButton"
+                    class="danger"
+                >
+                    STOP GRIPPER
+                </button>
+
+                <button
+                    id="refreshGripperButton"
+                >
+                    Refresh Status
+                </button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- ====================================================== -->
+    <!-- LOG -->
+    <!-- ====================================================== -->
+
+    <div class="card">
+
+        <h2>
+            API Log
+        </h2>
+
+        <div
+            id="log"
+            class="log"
+        ></div>
+
+    </div>
+
+</div>
+
+
+<script>
+    const STATUS_INTERVAL_MS =
+        3000;
+
+    const JOG_HEARTBEAT_MS =
+        100;
+
+
+    let statusTimer = null;
+
+    let jogTimer = null;
+
+    let jogging = false;
+
+
+    // ============================================================
+    // Helpers
+    // ============================================================
+
+    function getRobotAPI()
+    {
+        if (!window.RobotAPI)
+        {
+            throw new Error(
+                "RobotAPI 尚未載入"
+            );
+        }
+
+        return window.RobotAPI;
+    }
+
+
+    function selectedArm()
+    {
+        const armName =
+            document
+            .getElementById(
+                "armSelect"
+            )
+            .value;
+
+        if (!armName)
+        {
+            throw new Error(
+                "目前沒有選擇 Arm"
+            );
+        }
+
+        return armName;
+    }
+
+
+    function selectedGripper()
+    {
+        const gripperName =
+            document
+            .getElementById(
+                "gripperSelect"
+            )
+            .value;
+
+        if (!gripperName)
+        {
+            throw new Error(
+                "目前沒有選擇 Gripper"
+            );
+        }
+
+        return gripperName;
+    }
+
+
+    function log(
+        message,
+        data = null
+    )
+    {
+        const element =
+            document
+            .getElementById(
+                "log"
+            );
+
+        const now =
+            new Date()
+            .toLocaleTimeString();
+
+        let text =
+            `[${now}] ${message}`;
+
+        if (data !== null)
+        {
+            text +=
+                "\n"
+                + JSON.stringify(
+                    data,
+                    null,
+                    2
+                );
+        }
+
+        element.textContent =
+            text
+            + "\n\n"
+            + element.textContent;
+    }
+
+
+    function valueOrDash(value)
+    {
+        if (
+            value === undefined
+            || value === null
+            || value === ""
+        )
+        {
+            return "-";
+        }
+
+        if (Array.isArray(value))
+        {
+            return JSON.stringify(
+                value.map(
+                    item =>
+                    {
+                        if (
+                            typeof item
+                            === "number"
+                        )
+                        {
+                            return Number(
+                                item.toFixed(6)
+                            );
+                        }
+
+                        return item;
+                    }
+                )
+            );
+        }
+
+        if (
+            typeof value
+            === "object"
+        )
+        {
+            return JSON.stringify(
+                value
+            );
+        }
+
+        return String(value);
+    }
+
+
+    function setConnectionClass(
+        element,
+        connected
+    )
+    {
+        element.className = "";
+
+        if (connected === true)
+        {
+            element.classList.add(
+                "connected"
+            );
+        }
+        else if (
+            connected === false
+        )
+        {
+            element.classList.add(
+                "disconnected"
+            );
+        }
+    }
+
+
+    function parseArrayInput(
+        id,
+        expectedLength = null
+    )
+    {
+        const raw =
+            document
+            .getElementById(id)
+            .value
+            .trim();
+
+        if (!raw)
+        {
+            throw new Error(
+                "輸入不能為空"
+            );
+        }
+
+        const value =
+            JSON.parse(raw);
+
+        if (!Array.isArray(value))
+        {
+            throw new Error(
+                "輸入必須是 JSON array"
+            );
+        }
+
+        if (
+            expectedLength !== null
+            && value.length
+                !== expectedLength
+        )
+        {
+            throw new Error(
+                `需要 ${expectedLength} 個數值`
+            );
+        }
+
+        return value;
+    }
+
+
+    function parseNumberInput(id)
+    {
+        const value =
+            Number(
+                document
+                .getElementById(id)
+                .value
+            );
+
+        if (!Number.isFinite(value))
+        {
+            throw new Error(
+                `${id} 必須是數值`
+            );
+        }
+
+        return value;
+    }
+
+
+    function validateTrajectory(
+        trajectory
+    )
+    {
+        if (
+            !Array.isArray(
+                trajectory
+            )
+            || trajectory.length === 0
+        )
+        {
+            throw new Error(
+                "Trajectory 不可為空"
+            );
+        }
+
+        for (
+            let index = 0;
+            index
+                < trajectory.length;
+            index++
+        )
+        {
+            if (
+                !Array.isArray(
+                    trajectory[index]
+                )
+                || trajectory[index]
+                    .length !== 6
+            )
+            {
+                throw new Error(
+                    `第 ${index + 1} 組必須包含 6 個數值`
+                );
+            }
+        }
+    }
+
+
+    // ============================================================
+    // Load Arm List
+    // ============================================================
+
+    async function loadArms()
+    {
+        const select =
+            document
+            .getElementById(
+                "armSelect"
+            );
+
+        try
+        {
+            const result =
+                await getRobotAPI()
+                .get_arm_status();
+
+            const arms =
+                result?.data?.arms
+                ?? [];
+
+            select.innerHTML = "";
+
+            if (
+                !Array.isArray(arms)
+                || arms.length === 0
+            )
+            {
+                select.innerHTML =
+                    '<option value="">沒有 Arm</option>';
+
+                clearArmStatus();
+
+                return;
+            }
+
+            for (const arm of arms)
+            {
+                const option =
+                    document.createElement(
+                        "option"
+                    );
+
+                option.value =
+                    arm.arm_name;
+
+                const driver =
+                    arm.driver
+                    ? ` - ${arm.driver}`
+                    : "";
+
+                const connected =
+                    arm?.status?.connected
+                    === true;
+
+                option.textContent =
+                    `${arm.arm_name}${driver} [${connected ? "ON" : "OFF"}]`;
+
+                select.appendChild(
+                    option
+                );
+            }
+
+            await refreshArmStatus();
+        }
+        catch (error)
+        {
+            select.innerHTML =
+                '<option value="">Arm 讀取失敗</option>';
+
+            clearArmStatus();
+
+            log(
+                "get_arm_status ERROR",
+                String(error)
+            );
+        }
+    }
+
+
+    // ============================================================
+    // Arm Status
+    // ============================================================
+
+    function clearArmStatus()
+    {
+        const ids = [
+            "armDriver",
+            "armConnected",
+            "armReady",
+            "armMoving",
+            "armMode",
+            "armSafetyMode",
+            "armProgramRunning",
+            "armProtectiveStop",
+            "armEmergencyStop",
+            "armFault",
+            "armPose",
+            "armJoints",
+        ];
+
+        for (const id of ids)
+        {
+            document
+            .getElementById(id)
+            .textContent = "-";
+        }
+
+        document
+        .getElementById(
+            "rawArmStatus"
+        )
+        .textContent = "";
+    }
+
+
+    async function refreshArmStatus()
+    {
+        let armName;
+
+        try
+        {
+            armName =
+                selectedArm();
+        }
+        catch
+        {
+            clearArmStatus();
+
+            return;
+        }
+
+        try
+        {
+            const result =
+                await getRobotAPI()
+                .get_arm_status(
+                    armName
+                );
+
+            const arms =
+                result?.data?.arms
+                ?? [];
+
+            const arm =
+                arms.find(
+                    item =>
+                        item.arm_name
+                        === armName
+                )
+                ?? arms[0]
+                ?? null;
+
+            const status =
+                arm?.status
+                ?? {};
+
+            document
+            .getElementById(
+                "rawArmStatus"
+            )
+            .textContent =
+                JSON.stringify(
+                    result,
+                    null,
+                    2
+                );
+
+            document
+            .getElementById(
+                "armDriver"
+            )
+            .textContent =
+                valueOrDash(
+                    arm?.driver
+                );
+
+
+            const connectedElement =
+                document
+                .getElementById(
+                    "armConnected"
+                );
+
+            connectedElement.textContent =
+                valueOrDash(
+                    status.connected
+                );
+
+            setConnectionClass(
+                connectedElement,
+                status.connected
+            );
+
+
+            document
+            .getElementById(
+                "armReady"
+            )
+            .textContent =
+                valueOrDash(
+                    status.ready
+                );
+
+
+            document
+            .getElementById(
+                "armMoving"
+            )
+            .textContent =
+                valueOrDash(
+                    status.moving
+                );
+
+
+            document
+            .getElementById(
+                "armMode"
+            )
+            .textContent =
+                valueOrDash(
+                    status.arm_mode
+                );
+
+
+            document
+            .getElementById(
+                "armSafetyMode"
+            )
+            .textContent =
+                valueOrDash(
+                    status.safety_mode
+                );
+
+
+            document
+            .getElementById(
+                "armProgramRunning"
+            )
+            .textContent =
+                valueOrDash(
+                    status.program_running
+                );
+
+
+            document
+            .getElementById(
+                "armProtectiveStop"
+            )
+            .textContent =
+                valueOrDash(
+                    status.protective_stop
+                );
+
+
+            document
+            .getElementById(
+                "armEmergencyStop"
+            )
+            .textContent =
+                valueOrDash(
+                    status.emergency_stop
+                );
+
+
+            document
+            .getElementById(
+                "armFault"
+            )
+            .textContent =
+                valueOrDash(
+                    status.fault
+                );
+
+
+            document
+            .getElementById(
+                "armPose"
+            )
+            .textContent =
+                valueOrDash(
+                    status.pose
+                );
+
+
+            document
+            .getElementById(
+                "armJoints"
+            )
+            .textContent =
+                valueOrDash(
+                    status.joints
+                );
+        }
+        catch (error)
+        {
+            const connectedElement =
+                document
+                .getElementById(
+                    "armConnected"
+                );
+
+            connectedElement.textContent =
+                "API ERROR";
+
+            connectedElement.className =
+                "disconnected";
+
+            log(
+                "get_arm_status ERROR",
+                String(error)
+            );
+        }
+    }
+
+
+    // ============================================================
+    // Arm Control
+    // ============================================================
+
+    async function reconnectArm()
+    {
+        try
+        {
+            const armName =
+                selectedArm();
+
+            const result =
+                await getRobotAPI()
+                .reconnect_arm(
+                    armName
+                );
+
+            log(
+                `reconnect_arm (${armName})`,
+                result
+            );
+
+            await refreshArmStatus();
+        }
+        catch (error)
+        {
+            log(
+                "reconnect_arm ERROR",
+                String(error)
+            );
+        }
+    }
+
+
+    async function stopArm()
+    {
+        try
+        {
+            await stopJog();
+
+            const armName =
+                selectedArm();
+
+            const result =
+                await getRobotAPI()
+                .stop_arm(
+                    armName
+                );
+
+            log(
+                `stop_arm (${armName})`,
+                result
+            );
+
+            await refreshArmStatus();
+        }
+        catch (error)
+        {
+            log(
+                "stop_arm ERROR",
+                String(error)
+            );
+        }
+    }
+
+
+    async function startFreedrive()
+    {
+        try
+        {
+            const armName =
+                selectedArm();
+
+            const result =
+                await getRobotAPI()
+                .start_arm_freedrive(
+                    armName
+                );
+
+            document
+            .getElementById(
+                "startFreedriveButton"
+            )
+            .classList.add(
+                "active"
+            );
+
+            log(
+                `start_arm_freedrive (${armName})`,
+                result
+            );
+        }
+        catch (error)
+        {
+            log(
+                "start_arm_freedrive ERROR",
+                String(error)
+            );
+        }
+    }
+
+
+    async function stopFreedrive()
+    {
+        try
+        {
+            const armName =
+                selectedArm();
+
+            const result =
+                await getRobotAPI()
+                .stop_arm_freedrive(
+                    armName
+                );
+
+            document
+            .getElementById(
+                "startFreedriveButton"
+            )
+            .classList.remove(
+                "active"
+            );
+
+            log(
+                `stop_arm_freedrive (${armName})`,
+                result
+            );
+        }
+        catch (error)
+        {
+            log(
+                "stop_arm_freedrive ERROR",
+                String(error)
+            );
+        }
+    }
+
+
+    async function moveDefault()
+    {
+        try
+        {
+            const armName =
+                selectedArm();
+
+            const result =
+                await getRobotAPI()
+                .move_arm_default(
+                    armName
+                );
+
+            log(
+                `move_arm_default (${armName})`,
+                result
+            );
+        }
+        catch (error)
+        {
+            log(
+                "move_arm_default ERROR",
+                String(error)
+            );
+        }
+    }
+
+
+    async function movePose()
+    {
+        try
+        {
+            const armName =
+                selectedArm();
+
+            const pose =
+                parseArrayInput(
+                    "poseInput",
+                    6
+                );
+
+            const result =
+                await getRobotAPI()
+                .move_arm_pose(
+                    armName,
+                    pose
+                );
+
+            log(
+                `move_arm_pose (${armName})`,
+                result
+            );
+        }
+        catch (error)
+        {
+            log(
+                "move_arm_pose ERROR",
+                String(error)
+            );
+        }
+    }
+
+
+    async function moveXyz()
+    {
+        try
+        {
+            const armName =
+                selectedArm();
+
+            const x =
+                parseNumberInput(
+                    "xInput"
+                );
+
+            const y =
+                parseNumberInput(
+                    "yInput"
+                );
+
+            const z =
+                parseNumberInput(
+                    "zInput"
+                );
+
+            const result =
+                await getRobotAPI()
+                .move_arm_xyz(
+                    armName,
+                    x,
+                    y,
+                    z
+                );
+
+            log(
+                `move_arm_xyz (${armName})`,
+                result
+            );
+        }
+        catch (error)
+        {
+            log(
+                "move_arm_xyz ERROR",
+                String(error)
+            );
+        }
+    }
+
+
+    async function moveJoints()
+    {
+        try
+        {
+            const armName =
+                selectedArm();
+
+            const joints =
+                parseArrayInput(
+                    "jointsInput"
+                );
+
+            const result =
+                await getRobotAPI()
+                .move_arm_joints(
+                    armName,
+                    joints
+                );
+
+            log(
+                `move_arm_joints (${armName})`,
+                result
+            );
+        }
+        catch (error)
+        {
+            log(
+                "move_arm_joints ERROR",
+                String(error)
+            );
+        }
+    }
+
+
+    async function moveStep(
+        direction
+    )
+    {
+        try
+        {
+            const armName =
+                selectedArm();
+
+            const result =
+                await getRobotAPI()
+                .move_arm_step(
+                    armName,
+                    direction
+                );
+
+            log(
+                `move_arm_step ${direction} (${armName})`,
+                result
+            );
+        }
+        catch (error)
+        {
+            log(
+                "move_arm_step ERROR",
+                String(error)
+            );
+        }
+    }
+
+
+    async function moveRotate(
+        direction
+    )
+    {
+        try
+        {
+            const armName =
+                selectedArm();
+
+            const result =
+                await getRobotAPI()
+                .move_arm_rotate(
+                    armName,
+                    direction
+                );
+
+            log(
+                `move_arm_rotate ${direction} (${armName})`,
+                result
+            );
+        }
+        catch (error)
+        {
+            log(
+                "move_arm_rotate ERROR",
+                String(error)
+            );
+        }
+    }
+
+
+    async function movePoseTrajectory()
+    {
+        try
+        {
+            const armName =
+                selectedArm();
+
+            const trajectory =
+                parseArrayInput(
+                    "poseTrajectoryInput"
+                );
+
+            validateTrajectory(
+                trajectory
+            );
+
+            const result =
+                await getRobotAPI()
+                .move_arm_pose_trajectory(
+                    armName,
+                    trajectory
+                );
+
+            log(
+                `move_arm_pose_trajectory (${armName})`,
+                result
+            );
+        }
+        catch (error)
+        {
+            log(
+                "move_arm_pose_trajectory ERROR",
+                String(error)
+            );
+        }
+    }
+
+
+    async function moveJointTrajectory()
+    {
+        try
+        {
+            const armName =
+                selectedArm();
+
+            const trajectory =
+                parseArrayInput(
+                    "jointTrajectoryInput"
+                );
+
+            validateTrajectory(
+                trajectory
+            );
+
+            const result =
+                await getRobotAPI()
+                .move_arm_joint_trajectory(
+                    armName,
+                    trajectory
+                );
+
+            log(
+                `move_arm_joint_trajectory (${armName})`,
+                result
+            );
+        }
+        catch (error)
+        {
+            log(
+                "move_arm_joint_trajectory ERROR",
+                String(error)
+            );
+        }
+    }
+
+
+    // ============================================================
+    // JOG
+    // ============================================================
+
+    async function sendJog(
+        direction
+    )
+    {
+        const armName =
+            selectedArm();
+
+        try
+        {
+            return await getRobotAPI()
+                .start_arm_jog(
+                    armName,
+                    direction
+                );
+        }
+        catch (error)
+        {
+            log(
+                `start_arm_jog ${direction} ERROR`,
+                String(error)
+            );
+
+            await stopJog();
+
+            throw error;
+        }
+    }
+
+
+    async function startJog(
+        direction,
+        button
+    )
+    {
+        if (jogging)
+        {
+            return;
+        }
+
+        jogging = true;
+
+        button
+        .classList
+        .add(
+            "active"
+        );
+
+
+        sendJog(
+            direction
+        );
+
+
+        jogTimer =
+            window.setInterval(
+                () =>
+                {
+                    if (jogging)
+                    {
+                        sendJog(
+                            direction
+                        );
+                    }
+                },
+                JOG_HEARTBEAT_MS
+            );
+    }
+
+
+    async function stopJog()
+    {
+        if (
+            jogTimer !== null
+        )
+        {
+            window.clearInterval(
+                jogTimer
+            );
+
+            jogTimer = null;
+        }
+
+
+        const wasJogging =
+            jogging;
+
+
+        jogging = false;
+
+
+        document
+        .querySelectorAll(
+            ".jog-btn"
+        )
+        .forEach(
+            button =>
+            {
+                button
+                .classList
+                .remove(
+                    "active"
+                );
+            }
+        );
+
+
+        if (!wasJogging)
+        {
+            return;
+        }
+
+
+        try
+        {
+            const armName =
+                selectedArm();
+
+            const result =
+                await getRobotAPI()
+                .stop_arm_jog(
+                    armName
+                );
+
+            log(
+                `stop_arm_jog (${armName})`,
+                result
+            );
+        }
+        catch (error)
+        {
+            log(
+                "stop_arm_jog ERROR",
+                String(error)
+            );
+        }
+    }
+
+
+    function setupJogButtons()
+    {
+        document
+        .querySelectorAll(
+            ".jog-btn"
+        )
+        .forEach(
+            button =>
+            {
+                const direction =
+                    button.dataset.direction;
+
+
+                button.addEventListener(
+                    "pointerdown",
+                    event =>
+                    {
+                        event.preventDefault();
+
+                        try
+                        {
+                            button
+                            .setPointerCapture(
+                                event.pointerId
+                            );
+                        }
+                        catch (_) {}
+
+                        startJog(
+                            direction,
+                            button
+                        );
+                    }
+                );
+
+
+                button.addEventListener(
+                    "pointerup",
+                    event =>
+                    {
+                        event.preventDefault();
+
+                        stopJog();
+                    }
+                );
+
+
+                button.addEventListener(
+                    "pointercancel",
+                    event =>
+                    {
+                        event.preventDefault();
+
+                        stopJog();
+                    }
+                );
+
+
+                button.addEventListener(
+                    "lostpointercapture",
+                    () =>
+                    {
+                        stopJog();
+                    }
+                );
+
+
+                button.addEventListener(
+                    "contextmenu",
+                    event =>
+                    {
+                        event.preventDefault();
+                    }
+                );
+            }
+        );
+    }
+
+
+    // ============================================================
+    // Gripper List
+    // ============================================================
+
+    async function loadGrippers()
+    {
+        const select =
+            document
+            .getElementById(
+                "gripperSelect"
+            );
+
+        try
+        {
+            const result =
+                await getRobotAPI()
+                .get_gripper_status();
+
+            const grippers =
+                result?.data?.grippers
+                ?? [];
+
+            select.innerHTML = "";
+
+            if (
+                !Array.isArray(
+                    grippers
+                )
+                || grippers.length === 0
+            )
+            {
+                select.innerHTML =
+                    '<option value="">沒有 Gripper</option>';
+
+                clearGripperStatus();
+
+                return;
+            }
+
+            for (
+                const gripper
+                of grippers
+            )
+            {
+                const option =
+                    document
+                    .createElement(
+                        "option"
+                    );
+
+                option.value =
+                    gripper.gripper_name;
+
+                const driver =
+                    gripper.driver
+                    ? ` - ${gripper.driver}`
+                    : "";
+
+                const connected =
+                    gripper
+                    ?.status
+                    ?.connected
+                    === true;
+
+                option.textContent =
+                    `${gripper.gripper_name}${driver} [${connected ? "ON" : "OFF"}]`;
+
+                select.appendChild(
+                    option
+                );
+            }
+
+            await refreshGripperStatus();
+        }
+        catch (error)
+        {
+            select.innerHTML =
+                '<option value="">Gripper 讀取失敗</option>';
+
+            clearGripperStatus();
+
+            log(
+                "get_gripper_status ERROR",
+                String(error)
+            );
+        }
+    }
+
+
+    // ============================================================
+    // Gripper Status
+    // ============================================================
+
+    function clearGripperStatus()
+    {
+        const ids = [
+            "gripperDriver",
+            "gripperConnected",
+            "gripperReady",
+            "gripperMoving",
+            "gripperPosition",
+            "gripperObjectDetected",
+            "gripperFault",
+        ];
+
+        for (const id of ids)
+        {
+            document
+            .getElementById(id)
+            .textContent = "-";
+        }
+
+        document
+        .getElementById(
+            "rawGripperStatus"
+        )
+        .textContent = "";
+    }
+
+
+    async function refreshGripperStatus()
+    {
+        let gripperName;
+
+        try
+        {
+            gripperName =
+                selectedGripper();
+        }
+        catch
+        {
+            clearGripperStatus();
+
+            return;
+        }
+
+        try
+        {
+            const result =
+                await getRobotAPI()
+                .get_gripper_status(
+                    gripperName
+                );
+
+            const grippers =
+                result?.data?.grippers
+                ?? [];
+
+            const gripper =
+                grippers.find(
+                    item =>
+                        item.gripper_name
+                        === gripperName
+                )
+                ?? grippers[0]
+                ?? null;
+
+            const status =
+                gripper?.status
+                ?? {};
+
+
+            document
+            .getElementById(
+                "rawGripperStatus"
+            )
+            .textContent =
+                JSON.stringify(
+                    result,
+                    null,
+                    2
+                );
+
+
+            document
+            .getElementById(
+                "gripperDriver"
+            )
+            .textContent =
+                valueOrDash(
+                    gripper?.driver
+                );
+
+
+            const connectedElement =
+                document
+                .getElementById(
+                    "gripperConnected"
+                );
+
+            connectedElement.textContent =
+                valueOrDash(
+                    status.connected
+                );
+
+            setConnectionClass(
+                connectedElement,
+                status.connected
+            );
+
+
+            document
+            .getElementById(
+                "gripperReady"
+            )
+            .textContent =
+                valueOrDash(
+                    status.ready
+                );
+
+
+            document
+            .getElementById(
+                "gripperMoving"
+            )
+            .textContent =
+                valueOrDash(
+                    status.moving
+                );
+
+
+            document
+            .getElementById(
+                "gripperPosition"
+            )
+            .textContent =
+                valueOrDash(
+                    status.position
+                );
+
+
+            document
+            .getElementById(
+                "gripperObjectDetected"
+            )
+            .textContent =
+                valueOrDash(
+                    status.object_detected
+                );
+
+
+            document
+            .getElementById(
+                "gripperFault"
+            )
+            .textContent =
+                valueOrDash(
+                    status.fault
+                );
+        }
+        catch (error)
+        {
+            const connectedElement =
+                document
+                .getElementById(
+                    "gripperConnected"
+                );
+
+            connectedElement.textContent =
+                "API ERROR";
+
+            connectedElement.className =
+                "disconnected";
+
+            log(
+                "get_gripper_status ERROR",
+                String(error)
+            );
+        }
+    }
+
+
+    // ============================================================
+    // Gripper Control
+    // ============================================================
+
+    function getGripperOptions()
+    {
+        return {
+            speed:
+                parseNumberInput(
+                    "gripperSpeed"
+                ),
+
+            force:
+                parseNumberInput(
+                    "gripperForce"
+                ),
+
+            wait: true,
+        };
+    }
+
+
+    async function openGripper()
+    {
+        try
+        {
+            const gripperName =
+                selectedGripper();
+
+            const result =
+                await getRobotAPI()
+                .open_gripper(
+                    gripperName,
+                    getGripperOptions()
+                );
+
+            log(
+                `open_gripper (${gripperName})`,
+                result
+            );
+
+            await refreshGripperStatus();
+        }
+        catch (error)
+        {
+            log(
+                "open_gripper ERROR",
+                String(error)
+            );
+        }
+    }
+
+
+    async function closeGripper()
+    {
+        try
+        {
+            const gripperName =
+                selectedGripper();
+
+            const result =
+                await getRobotAPI()
+                .close_gripper(
+                    gripperName,
+                    getGripperOptions()
+                );
+
+            log(
+                `close_gripper (${gripperName})`,
+                result
+            );
+
+            await refreshGripperStatus();
+        }
+        catch (error)
+        {
+            log(
+                "close_gripper ERROR",
+                String(error)
+            );
+        }
+    }
+
+
+    async function moveGripper()
+    {
+        try
+        {
+            const gripperName =
+                selectedGripper();
+
+            const position =
+                parseNumberInput(
+                    "gripperPositionInput"
+                );
+
+            const result =
+                await getRobotAPI()
+                .move_gripper(
+                    gripperName,
+                    position,
+                    getGripperOptions()
+                );
+
+            log(
+                `move_gripper (${gripperName})`,
+                result
+            );
+
+            await refreshGripperStatus();
+        }
+        catch (error)
+        {
+            log(
+                "move_gripper ERROR",
+                String(error)
+            );
+        }
+    }
+
+
+    async function stopGripper()
+    {
+        try
+        {
+            const gripperName =
+                selectedGripper();
+
+            const result =
+                await getRobotAPI()
+                .stop_gripper(
+                    gripperName
+                );
+
+            log(
+                `stop_gripper (${gripperName})`,
+                result
+            );
+
+            await refreshGripperStatus();
+        }
+        catch (error)
+        {
+            log(
+                "stop_gripper ERROR",
+                String(error)
+            );
+        }
+    }
+
+
+    // ============================================================
+    // Events
+    // ============================================================
+
+    function setupEvents()
+    {
+        document
+        .getElementById(
+            "armSelect"
+        )
+        .addEventListener(
+            "change",
+            async () =>
+            {
+                await stopJog();
+
+                await refreshArmStatus();
+            }
+        );
+
+
+        document
+        .getElementById(
+            "gripperSelect"
+        )
+        .addEventListener(
+            "change",
+            refreshGripperStatus
+        );
+
+
+        document
+        .getElementById(
+            "reconnectArmButton"
+        )
+        .addEventListener(
+            "click",
+            reconnectArm
+        );
+
+
+        document
+        .getElementById(
+            "stopArmButton"
+        )
+        .addEventListener(
+            "click",
+            stopArm
+        );
+
+
+        document
+        .getElementById(
+            "startFreedriveButton"
+        )
+        .addEventListener(
+            "click",
+            startFreedrive
+        );
+
+
+        document
+        .getElementById(
+            "stopFreedriveButton"
+        )
+        .addEventListener(
+            "click",
+            stopFreedrive
+        );
+
+
+        document
+        .getElementById(
+            "moveDefaultButton"
+        )
+        .addEventListener(
+            "click",
+            moveDefault
+        );
+
+
+        document
+        .getElementById(
+            "movePoseButton"
+        )
+        .addEventListener(
+            "click",
+            movePose
+        );
+
+
+        document
+        .getElementById(
+            "moveXyzButton"
+        )
+        .addEventListener(
+            "click",
+            moveXyz
+        );
+
+
+        document
+        .getElementById(
+            "moveJointsButton"
+        )
+        .addEventListener(
+            "click",
+            moveJoints
+        );
+
+
+        document
+        .getElementById(
+            "poseTrajectoryButton"
+        )
+        .addEventListener(
+            "click",
+            movePoseTrajectory
+        );
+
+
+        document
+        .getElementById(
+            "jointTrajectoryButton"
+        )
+        .addEventListener(
+            "click",
+            moveJointTrajectory
+        );
+
+
+        document
+        .querySelectorAll(
+            ".step-btn"
+        )
+        .forEach(
+            button =>
+            {
+                button.addEventListener(
+                    "click",
+                    () =>
+                    {
+                        moveStep(
+                            button.dataset.direction
+                        );
+                    }
+                );
+            }
+        );
+
+
+        document
+        .querySelectorAll(
+            ".rotate-btn"
+        )
+        .forEach(
+            button =>
+            {
+                button.addEventListener(
+                    "click",
+                    () =>
+                    {
+                        moveRotate(
+                            button.dataset.direction
+                        );
+                    }
+                );
+            }
+        );
+
+
+        document
+        .getElementById(
+            "openGripperButton"
+        )
+        .addEventListener(
+            "click",
+            openGripper
+        );
+
+
+        document
+        .getElementById(
+            "closeGripperButton"
+        )
+        .addEventListener(
+            "click",
+            closeGripper
+        );
+
+
+        document
+        .getElementById(
+            "moveGripperButton"
+        )
+        .addEventListener(
+            "click",
+            moveGripper
+        );
+
+
+        document
+        .getElementById(
+            "stopGripperButton"
+        )
+        .addEventListener(
+            "click",
+            stopGripper
+        );
+
+
+        document
+        .getElementById(
+            "refreshGripperButton"
+        )
+        .addEventListener(
+            "click",
+            refreshGripperStatus
+        );
+
+
+        window.addEventListener(
+            "blur",
+            () =>
+            {
+                stopJog();
+            }
+        );
+
+
+        document.addEventListener(
+            "visibilitychange",
+            () =>
+            {
+                if (document.hidden)
+                {
+                    stopJog();
+                }
+            }
+        );
+    }
+
+
+    // ============================================================
+    // Init
+    // ============================================================
+
+    async function initPage()
+    {
+        setupJogButtons();
+
+        setupEvents();
+
+        await Promise.allSettled([
+            loadArms(),
+            loadGrippers(),
+        ]);
+
+
+        statusTimer =
+            window.setInterval(
+                () =>
+                {
+                    refreshArmStatus();
+
+                    refreshGripperStatus();
+                },
+                STATUS_INTERVAL_MS
+            );
+    }
+
+
+    window.addEventListener(
+        "load",
+        initPage
+    );
+
+</script>
+
+</body>
+</html>

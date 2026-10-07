@@ -75,7 +75,7 @@ MAX_TRAJECTORY_POINTS = 1_000_000
 # Feedback / reached detection
 # ============================================================
 
-ARM_POSE_TOLERANCE = 0.005          # m
+ARM_POSE_TOLERANCE = 0.015          # m
 ARM_ROTATION_TOLERANCE = 0.03       # rad
 ARM_JOINT_TOLERANCE = 0.01          # rad
 ARM_WAIT_TIMEOUT = 15.0             # s

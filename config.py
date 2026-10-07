@@ -50,7 +50,7 @@ ARMS = {
             "stop_acceleration": 0.1,
         },
         "poses": {
-            "default_joints": [1.526703,-1.681309,-1.502209,-1.004609,1.483402,-1.694708],
+            "default_joints": [4.304577, -1.631726, 1.257545, -1.204645, -1.496834, -1.710897],
         },
         "safety": {
             "x_range": (-3.0, 3.0),
@@ -241,29 +241,7 @@ CAMERAS = {
         },
     },
 
-    "tm": {
-        "driver": "tm_eih",
 
-        "kwargs": {
-            "ip": "192.168.50.77",
-            "port": 15567,
-        },
-
-        "stream": {
-            "width": 2592,
-            "height": 1944,
-            "fps": None,
-            "enable_color": True,
-            "enable_depth": False,
-            "align_to": None,
-            "frame_timeout_ms": 3000,
-        },
-
-        "mount": {
-            "mode": "wrist",
-            "arm_name": "tm",
-        },
-    },
 }
 
 

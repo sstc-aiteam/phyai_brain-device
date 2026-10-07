@@ -27,6 +27,14 @@ def worldmodel():
 def action():
     return send_from_directory(WEB_DIR, "includes/component/action.html")
 
+@web_bp.route("/plan")
+def plan():
+    return send_from_directory(WEB_DIR,"includes/component/plan.html",)
+
+@web_bp.route("/demo")
+def demo():
+    return send_from_directory(WEB_DIR,"includes/component/demo.html",)
+
 
 @web_bp.route("/web/<path:filename>")
 def web_static(filename):

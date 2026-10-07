@@ -1,0 +1,1147 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Robot Pick Demo</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 30px;
+
+            font-family:
+                Arial,
+                "Microsoft JhengHei",
+                sans-serif;
+
+            background: #f5f6f8;
+            color: #222;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: auto;
+        }
+
+        h1 {
+            margin: 0 0 24px;
+        }
+
+        h2 {
+            margin-top: 0;
+            font-size: 20px;
+        }
+
+        .card {
+            margin-bottom: 20px;
+            padding: 20px;
+
+            background: #fff;
+
+            border: 1px solid #ddd;
+            border-radius: 10px;
+        }
+
+        .row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 12px;
+        }
+
+        label {
+            font-weight: bold;
+        }
+
+        select,
+        button {
+            font-size: 16px;
+        }
+
+        select {
+            padding: 9px;
+
+            border: 1px solid #bbb;
+            border-radius: 6px;
+        }
+
+        button {
+            padding: 9px 16px;
+
+            border: none;
+            border-radius: 6px;
+
+            cursor: pointer;
+
+            background: #333;
+            color: white;
+        }
+
+        button:hover {
+            opacity: 0.85;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .image-box {
+            width: 100%;
+            min-height: 420px;
+
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            overflow: hidden;
+
+            background: #111;
+
+            border-radius: 8px;
+        }
+
+        .image-box img {
+            display: block;
+
+            width: 100%;
+            height: auto;
+
+            object-fit: contain;
+        }
+
+        .detections-list {
+            display: flex;
+            flex-direction: column;
+
+            gap: 12px;
+        }
+
+        .detection-item {
+            display: flex;
+
+            justify-content: space-between;
+            align-items: center;
+
+            gap: 20px;
+
+            padding: 16px;
+
+            background: #f7f7f7;
+
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+
+        .object-info {
+            flex: 1;
+        }
+
+        .object-name {
+            margin-bottom: 8px;
+
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .object-position {
+            font-family: monospace;
+            font-size: 15px;
+        }
+
+        .take-button {
+            min-width: 100px;
+
+            background: #222;
+        }
+
+        .muted {
+            color: #777;
+        }
+
+        .status-success {
+            color: green;
+        }
+
+        .status-error {
+            color: red;
+        }
+
+        #actionStatus {
+            margin-top: 15px;
+
+            font-family: monospace;
+
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        @media (max-width: 600px) {
+
+            body {
+                padding: 15px;
+            }
+
+            .detection-item {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .take-button {
+                width: 100%;
+            }
+        }
+    </style>
+
+    <script
+        type="module"
+        src="/web/includes/library/JSFile/robotjs2026.js"
+    ></script>
+</head>
+
+
+<body>
+
+<div class="container">
+
+    <h1>Robot Pick Demo</h1>
+
+
+    <!-- ===================================================== -->
+    <!-- Camera -->
+    <!-- ===================================================== -->
+
+    <div class="card">
+
+        <h2>選擇相機</h2>
+
+        <div class="row">
+
+            <label for="cameraSelect">
+                Camera
+            </label>
+
+            <select id="cameraSelect">
+                <option value="">
+                    讀取中...
+                </option>
+            </select>
+
+            <span
+                id="cameraStatus"
+                class="muted"
+            >
+                -
+            </span>
+
+        </div>
+
+    </div>
+
+
+    <!-- ===================================================== -->
+    <!-- Detection Stream -->
+    <!-- ===================================================== -->
+
+    <div class="card">
+
+        <h2>Detection Stream</h2>
+
+        <div class="image-box">
+
+            <img
+                id="detectionStream"
+                alt="Detection Stream"
+            >
+
+        </div>
+
+    </div>
+
+
+    <!-- ===================================================== -->
+    <!-- Detection Objects -->
+    <!-- ===================================================== -->
+
+    <div class="card">
+
+        <h2>偵測物件</h2>
+
+        <div
+            id="detectionDisplay"
+            class="detections-list"
+        >
+
+            <div class="muted">
+                尚未選擇相機
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- ===================================================== -->
+    <!-- Action Status -->
+    <!-- ===================================================== -->
+
+    <div class="card">
+
+        <h2>Action Status</h2>
+
+        <div
+            id="actionStatus"
+            class="muted"
+        >
+            -
+        </div>
+
+    </div>
+
+</div>
+
+
+<script type="module">
+
+    // ============================================================
+    // Config
+    // ============================================================
+
+    const ARM_NAME = "right";
+    const GRIPPER_NAME = "right";
+
+
+    // ============================================================
+    // State
+    // ============================================================
+
+    let activeCameraName = null;
+
+    let detectionTimer = null;
+
+    let detectionRequestRunning = false;
+
+    let actionRunning = false;
+
+
+    // ============================================================
+    // Utility
+    // ============================================================
+
+    function addCacheBust(url)
+    {
+        const separator =
+            url.includes("?")
+                ? "&"
+                : "?";
+
+        return `${url}${separator}_=${Date.now()}`;
+    }
+
+
+    function setCameraStatus(
+        text,
+        className = "muted"
+    )
+    {
+        const element =
+            document.getElementById(
+                "cameraStatus"
+            );
+
+        element.textContent = text;
+        element.className = className;
+    }
+
+
+    function setActionStatus(
+        data,
+        className = "muted"
+    )
+    {
+        const element =
+            document.getElementById(
+                "actionStatus"
+            );
+
+        if (
+            typeof data === "object"
+            && data !== null
+        )
+        {
+            element.textContent =
+                JSON.stringify(
+                    data,
+                    null,
+                    2
+                );
+        }
+        else
+        {
+            element.textContent =
+                String(data);
+        }
+
+        element.className =
+            className;
+    }
+
+
+    // ============================================================
+    // Camera
+    // ============================================================
+
+    async function loadCameras()
+    {
+        const select =
+            document.getElementById(
+                "cameraSelect"
+            );
+
+        try
+        {
+            const result =
+                await get_camera_status();
+
+            const cameras =
+                result?.data?.cameras
+                ?? [];
+
+            select.innerHTML =
+                '<option value="">請選擇相機</option>';
+
+
+            for (
+                const camera
+                of cameras
+            )
+            {
+                const option =
+                    document.createElement(
+                        "option"
+                    );
+
+                option.value =
+                    camera.camera_name;
+
+                option.textContent =
+                    camera.camera_name;
+
+                select.appendChild(
+                    option
+                );
+            }
+
+
+            if (
+                cameras.length === 0
+            )
+            {
+                setCameraStatus(
+                    "沒有可用相機",
+                    "status-error"
+                );
+
+                return;
+            }
+
+
+            setCameraStatus(
+                `找到 ${cameras.length} 台相機`
+            );
+        }
+        catch (error)
+        {
+            select.innerHTML =
+                '<option value="">讀取相機失敗</option>';
+
+            setCameraStatus(
+                error.message,
+                "status-error"
+            );
+        }
+    }
+
+
+    async function onCameraChanged()
+    {
+        const cameraName =
+            document
+                .getElementById(
+                    "cameraSelect"
+                )
+                .value;
+
+
+        stopDetectionPolling();
+
+
+        document
+            .getElementById(
+                "detectionStream"
+            )
+            .removeAttribute(
+                "src"
+            );
+
+
+        document
+            .getElementById(
+                "detectionDisplay"
+            )
+            .innerHTML =
+                '<div class="muted">-</div>';
+
+
+        activeCameraName = null;
+
+
+        if (!cameraName)
+        {
+            setCameraStatus(
+                "未選擇相機"
+            );
+
+            return;
+        }
+
+
+        try
+        {
+            setCameraStatus(
+                `${cameraName} 啟動中...`
+            );
+
+
+            await start_camera(
+                cameraName
+            );
+
+
+            activeCameraName =
+                cameraName;
+
+
+            setCameraStatus(
+                `${cameraName} 已開啟`,
+                "status-success"
+            );
+
+
+            showDetectionStream();
+
+
+            await loadDetections();
+
+
+            startDetectionPolling();
+        }
+        catch (error)
+        {
+            activeCameraName = null;
+
+            setCameraStatus(
+                `${cameraName} 開啟失敗：${error.message}`,
+                "status-error"
+            );
+        }
+    }
+
+
+    // ============================================================
+    // Detection Stream
+    // ============================================================
+
+    function showDetectionStream()
+    {
+        if (!activeCameraName)
+        {
+            return;
+        }
+
+
+        const url =
+            get_detection_stream(
+                activeCameraName,
+                {
+                    include_robot_xyz: true,
+                    interval_sec: 0.10,
+                    quality: 85,
+                }
+            );
+
+
+        document.getElementById(
+            "detectionStream"
+        ).src =
+            addCacheBust(
+                url
+            );
+    }
+
+
+    // ============================================================
+    // Detection List
+    // ============================================================
+
+    function renderDetections(
+        detections
+    )
+    {
+        const display =
+            document.getElementById(
+                "detectionDisplay"
+            );
+
+
+        display.innerHTML = "";
+
+
+        if (
+            !Array.isArray(
+                detections
+            )
+            ||
+            detections.length === 0
+        )
+        {
+            display.innerHTML =
+                '<div class="muted">沒有偵測到物件</div>';
+
+            return;
+        }
+
+
+        detections.forEach(
+            (
+                detection,
+                index
+            ) =>
+            {
+                const item =
+                    document.createElement(
+                        "div"
+                    );
+
+                item.className =
+                    "detection-item";
+
+
+                // ================================================
+                // Object Data
+                // ================================================
+
+                const className =
+                    detection.class_name
+                    ?? "-";
+
+
+                const robotXyz =
+                    Array.isArray(
+                        detection.robot_xyz
+                    )
+                    ? detection.robot_xyz
+                    : null;
+
+
+                // ================================================
+                // Info
+                // ================================================
+
+                const info =
+                    document.createElement(
+                        "div"
+                    );
+
+                info.className =
+                    "object-info";
+
+
+                const name =
+                    document.createElement(
+                        "div"
+                    );
+
+                name.className =
+                    "object-name";
+
+                name.textContent =
+                    `${index + 1}. ${className}`;
+
+
+                const position =
+                    document.createElement(
+                        "div"
+                    );
+
+                position.className =
+                    "object-position";
+
+
+                if (robotXyz)
+                {
+                    position.textContent =
+                        `robot_xyz = [`
+                        +
+                        robotXyz.join(", ")
+                        +
+                        `]`;
+                }
+                else
+                {
+                    position.textContent =
+                        "robot_xyz = 無";
+                }
+
+
+                info.appendChild(
+                    name
+                );
+
+                info.appendChild(
+                    position
+                );
+
+
+                // ================================================
+                // Take Button
+                // ================================================
+
+                const button =
+                    document.createElement(
+                        "button"
+                    );
+
+                button.className =
+                    "take-button";
+
+                button.textContent =
+                    "夾取物件";
+
+
+                if (
+                    !robotXyz
+                    ||
+                    robotXyz.length < 3
+                )
+                {
+                    button.disabled = true;
+
+                    button.textContent =
+                        "無座標";
+                }
+                else
+                {
+                    button.addEventListener(
+                        "click",
+                        () =>
+                        {
+                            takeObject(
+                                className,
+                                robotXyz,
+                                button
+                            );
+                        }
+                    );
+                }
+
+
+                item.appendChild(
+                    info
+                );
+
+                item.appendChild(
+                    button
+                );
+
+
+                display.appendChild(
+                    item
+                );
+            }
+        );
+    }
+
+
+    // ============================================================
+    // Get Detections
+    // ============================================================
+
+    async function loadDetections()
+    {
+        if (
+            !activeCameraName
+            ||
+            detectionRequestRunning
+        )
+        {
+            return;
+        }
+
+
+        detectionRequestRunning =
+            true;
+
+
+        try
+        {
+            const result =
+                await get_detections(
+                    activeCameraName,
+                    {
+                        include_robot_xyz:
+                            true,
+                    }
+                );
+
+
+            const detections =
+                result
+                    ?.data
+                    ?.detections
+                ?? [];
+
+
+            renderDetections(
+                detections
+            );
+        }
+        catch (error)
+        {
+            document.getElementById(
+                "detectionDisplay"
+            ).innerHTML =
+                `<div class="status-error">
+                    Detection 取得失敗：
+                    ${error.message}
+                </div>`;
+        }
+        finally
+        {
+            detectionRequestRunning =
+                false;
+        }
+    }
+
+
+    // ============================================================
+    // Detection Polling
+    // ============================================================
+
+    function startDetectionPolling()
+    {
+        stopDetectionPolling();
+
+
+        detectionTimer =
+            window.setInterval(
+                loadDetections,
+                1000
+            );
+    }
+
+
+    function stopDetectionPolling()
+    {
+        if (
+            detectionTimer !== null
+        )
+        {
+            window.clearInterval(
+                detectionTimer
+            );
+
+            detectionTimer = null;
+        }
+    }
+
+    // ============================================================
+    // Take Object
+    // ============================================================
+
+    async function takeObject(
+        className,
+        robotXyz,
+        button
+    )
+    {
+        if (actionRunning)
+        {
+            return;
+        }
+
+
+        if (
+            !Array.isArray(robotXyz)
+            ||
+            robotXyz.length < 3
+        )
+        {
+            setActionStatus(
+                "robot_xyz 無效",
+                "status-error"
+            );
+
+            return;
+        }
+
+
+        const [
+            x,
+            y,
+            z
+        ] = robotXyz;
+
+
+        actionRunning = true;
+
+        stopDetectionPolling();
+
+
+        const originalText =
+            button.textContent;
+
+
+        button.disabled = true;
+
+
+        let attempt = 0;
+
+
+        try
+        {
+            while (true)
+            {
+                attempt += 1;
+
+
+                // ====================================================
+                // Take Object
+                // ====================================================
+
+                button.textContent =
+                    `夾取中 (${attempt})...`;
+
+
+                setActionStatus(
+                    {
+                        action:
+                            "take_object",
+
+                        object:
+                            className,
+
+                        arm_name:
+                            ARM_NAME,
+
+                        gripper_name:
+                            GRIPPER_NAME,
+
+                        robot_xyz:
+                            [
+                                x,
+                                y,
+                                z
+                            ],
+
+                        attempt:
+                            attempt,
+
+                        status:
+                            "taking",
+                    }
+                );
+
+
+                const result =
+                    await take_object(
+                        ARM_NAME,
+                        GRIPPER_NAME,
+                        x,
+                        y,
+                        z
+                    );
+
+
+                // ====================================================
+                // Success
+                // ====================================================
+
+                if (
+                    result?.object_detected
+                    === true
+                )
+                {
+                    setActionStatus(
+                        {
+                            action:
+                                "take_object",
+
+                            object:
+                                className,
+
+                            attempt:
+                                attempt,
+
+                            object_detected:
+                                true,
+
+                            status:
+                                "success",
+
+                            message:
+                                "夾取成功，手臂回到預設位置",
+                        },
+                        "status-success"
+                    );
+
+
+                    button.textContent =
+                        "回到預設位置...";
+
+
+                    await move_arm_default(
+                        ARM_NAME
+                    );
+
+
+                    setActionStatus(
+                        {
+                            action:
+                                "take_object",
+
+                            object:
+                                className,
+
+                            attempt:
+                                attempt,
+
+                            object_detected:
+                                true,
+
+                            status:
+                                "completed",
+
+                            message:
+                                "夾取成功，已回到預設位置",
+                        },
+                        "status-success"
+                    );
+
+
+                    break;
+                }
+
+
+                // ====================================================
+                // Failed
+                // ====================================================
+
+                setActionStatus(
+                    {
+                        action:
+                            "take_object",
+
+                        object:
+                            className,
+
+                        attempt:
+                            attempt,
+
+                        object_detected:
+                            false,
+
+                        status:
+                            "retry",
+
+                        message:
+                            "沒有夾到物件，回到預設位置後重新夾取",
+                    }
+                );
+
+
+                button.textContent =
+                    "重新定位...";
+
+
+                await move_arm_default(
+                    ARM_NAME
+                );
+
+
+                // 稍微停一下再進行下一次夾取
+                await sleep(500);
+            }
+        }
+        catch (error)
+        {
+            setActionStatus(
+                {
+                    status:
+                        "error",
+
+                    attempt:
+                        attempt,
+
+                    message:
+                        error.message,
+                },
+                "status-error"
+            );
+        }
+        finally
+        {
+            actionRunning =
+                false;
+
+
+            button.disabled =
+                false;
+
+
+            button.textContent =
+                originalText;
+
+
+            if (activeCameraName)
+            {
+                startDetectionPolling();
+            }
+        }
+    }
+
+    // ============================================================
+    // Events
+    // ============================================================
+
+    document
+        .getElementById(
+            "cameraSelect"
+        )
+        .addEventListener(
+            "change",
+            onCameraChanged
+        );
+
+
+    // ============================================================
+    // Init
+    // ============================================================
+
+    loadCameras();
+
+</script>
+
+</body>
+</html>
