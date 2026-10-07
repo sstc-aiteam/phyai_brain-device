@@ -151,6 +151,13 @@ class SemanticLoopMonitor:
 
         return {
             **view,
+            # Keep detailed history in trace/debug output, but do not duplicate
+            # it in the Brain payload. ExecutionMemory is the canonical
+            # Brain-facing execution history.
+            "recent_executions": [
+                event.as_dict()
+                for event in self._history[-6:]
+            ],
             "new_loop_event": new_loop_event,
         }
 
@@ -215,10 +222,6 @@ class SemanticLoopMonitor:
             "loop_detected": cycle is not None,
             "detected_cycle": cycle,
             "no_progress_streak": self.no_progress_streak,
-            "recent_executions": [
-                event.as_dict()
-                for event in self._history[-6:]
-            ],
             "instruction": (
                 "Execution-history evidence only. "
                 "If a loop is detected, avoid repeating the same "

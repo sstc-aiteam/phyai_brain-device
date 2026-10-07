@@ -7,9 +7,7 @@ Responsibilities:
 - canonical live WorldState collection
 - compact object-relation API payload
 """
-
 from __future__ import annotations
-
 from copy import deepcopy
 from datetime import datetime, timezone
 import logging
@@ -19,53 +17,40 @@ from agent.runtime.world_state import WorldState
 from agent.vlm import occultation, vlm_describe, material,grasp
 from services import arm_service, camera_service, perception_service
 from utils import response
-
-
 MODULE = "vlm"
-
 _DETECTION_CAMERAS = (
     "left",
     "right",
 )
-
 _INSTAORDER_PC_URL = (
     "http://192.168.50.37:8021"
 )
 _MATERIAL_PC_URL = (
     "http://192.168.50.37:8022"
 )
-
 _INSTAORDER_RELATION_DISTANCE_PX = 30
 _INSTAORDER_CONFIDENCE_THRESHOLD = 0.55
-
 _INSTAORDER_EXCLUDED_CLASSES = (
     "chair_surface",
 )
-
 logger = logging.getLogger(__name__)
-
-
 def assign_object_ids(objects):
     """Assign one consistent set of IDs to a collected object batch."""
     if not isinstance(objects, list):
         raise TypeError("objects 必須是 list")
-
     assigned = []
     used_ids = set()
     class_counts = {}
-
     for obj in objects:
         if not isinstance(obj, dict):
             assigned.append(obj)
             continue
-
         object_id = None
         for key in ("object_id", "track_id", "id", "instance_id"):
             value = obj.get(key)
             if value is not None and str(value).strip():
                 object_id = str(value).strip()
                 break
-
         if object_id is None or object_id in used_ids:
             class_name = str(obj.get("class_name") or "object").strip().lower()
             base_name = "".join(
@@ -78,12 +63,9 @@ def assign_object_ids(objects):
                 suffix += 1
                 object_id = f"{base_name}_{suffix}"
             class_counts[base_name] = suffix
-
         used_ids.add(object_id)
         assigned.append({**obj, "object_id": object_id})
-
     return assigned
-
 
 # ============================================================
 # Common helpers
@@ -93,7 +75,6 @@ def _utc_now_iso() -> str:
     return datetime.now(
         timezone.utc
     ).isoformat()
-
 
 # ============================================================
 # Scene Description
@@ -120,11 +101,9 @@ def get_health():
         data={
             "mode":
                 "facade",
-
             "capabilities": {
                 "describe_scene":
                     vlm_describe.get_health(),
-
                 "occlusion":
                     {
                         "implementation":
@@ -140,32 +119,25 @@ def get_health():
                             "rule_based_current_affordance",
                     },
             },
-
             "implementations": {
                 "describe_scene":
                     "agent.vlm.vlm_describe",
-
                 "occlusion":
                     "agent.vlm.occultation",
                 "grasp":
                     "agent.vlm.grasp",
             },
-
             "background_monitor":
                 False,
         },
     )
-
-
 # ============================================================
 # Robot entities
 # ============================================================
-
 def collect_robot_entities() -> list[
     dict[str, Any]
 ]:
     response = arm_service.get_arm_status()
-
     if (
         not isinstance(
             response,
@@ -177,57 +149,46 @@ def collect_robot_entities() -> list[
         is not True
     ):
         return []
-
     data = response.get(
         "data"
     )
-
     if not isinstance(
         data,
         dict,
     ):
         return []
-
     raw_arms = data.get(
         "arms"
     )
-
     if not isinstance(
         raw_arms,
         list,
     ):
         return []
-
     observed_at = _utc_now_iso()
     entities = []
-
     for row in raw_arms:
         if not isinstance(
             row,
             dict,
         ):
             continue
-
         arm_name = str(
             row.get(
                 "arm_name"
             )
             or ""
         ).strip()
-
         if not arm_name:
             continue
-
         status = row.get(
             "status"
         )
-
         if not isinstance(
             status,
             dict,
         ):
             status = {}
-
         entity = {
             "entity_id": (
                 f"{arm_name}_arm"
@@ -270,7 +231,6 @@ def collect_robot_entities() -> list[
             "observed_at":
                 observed_at,
         }
-
         for field in (
             "holding",
             "controlling",
@@ -284,18 +244,13 @@ def collect_robot_entities() -> list[
                 entity[field] = deepcopy(
                     row[field]
                 )
-
         entities.append(
             entity
         )
-
     return entities
-
-
 # ============================================================
 # Camera entities
 # ============================================================
-
 def collect_camera_entities() -> list[
     dict[str, Any]
 ]:
@@ -303,7 +258,6 @@ def collect_camera_entities() -> list[
         camera_service
         .get_camera_status()
     )
-
     if (
         not isinstance(
             response,
@@ -315,57 +269,46 @@ def collect_camera_entities() -> list[
         is not True
     ):
         return []
-
     data = response.get(
         "data"
     )
-
     if not isinstance(
         data,
         dict,
     ):
         return []
-
     raw_cameras = data.get(
         "cameras"
     )
-
     if not isinstance(
         raw_cameras,
         list,
     ):
         return []
-
     observed_at = _utc_now_iso()
     entities = []
-
     for row in raw_cameras:
         if not isinstance(
             row,
             dict,
         ):
             continue
-
         camera_name = str(
             row.get(
                 "camera_name"
             )
             or ""
         ).strip()
-
         if not camera_name:
             continue
-
         status = row.get(
             "status"
         )
-
         if not isinstance(
             status,
             dict,
         ):
             status = {}
-
         entities.append({
             "entity_id":
                 f"{camera_name}_camera",
@@ -422,14 +365,10 @@ def collect_camera_entities() -> list[
             "observed_at":
                 observed_at,
         })
-
     return entities
-
-
 # ============================================================
 # Detection helpers
 # ============================================================
-
 def _canonical_object_entity(
     obj: dict[str, Any],
     *,
@@ -441,17 +380,14 @@ def _canonical_object_entity(
         )
         or ""
     ).strip()
-
     if not object_id:
         return None
-
     class_name = str(
         obj.get(
             "class_name"
         )
         or "object"
     ).strip()
-
     entity = {
         "entity_id":
             object_id,
@@ -492,7 +428,6 @@ def _canonical_object_entity(
         "observed_at":
             observed_at,
     }
-
     bbox = (
         obj.get(
             "bbox"
@@ -501,16 +436,13 @@ def _canonical_object_entity(
             "box"
         )
     )
-
     if bbox is not None:
         entity["bbox"] = deepcopy(
             bbox
         )
-
     xyz = obj.get(
         "robot_xyz"
     )
-
     if (
         isinstance(
             xyz,
@@ -530,7 +462,6 @@ def _canonical_object_entity(
             )
             for value in xyz
         ]
-
     if isinstance(
         obj.get(
             "reachable"
@@ -542,11 +473,9 @@ def _canonical_object_entity(
                 "reachable"
             ]
         )
-
     reachable_by = obj.get(
         "reachable_by"
     )
-
     if isinstance(
         reachable_by,
         list,
@@ -565,7 +494,6 @@ def _canonical_object_entity(
                 and value
             )
         ]
-
     if obj.get(
         "movement"
     ) is not None:
@@ -592,11 +520,9 @@ def _canonical_object_entity(
                     grasp_field
                 ]
             )
-
     state_tags = obj.get(
         "state_tags"
     )
-
     if isinstance(
         state_tags,
         dict,
@@ -615,7 +541,6 @@ def _canonical_object_entity(
                 entity[field] = deepcopy(
                     value
                 )
-
     if obj.get(
         "open_state"
     ) in {
@@ -627,10 +552,7 @@ def _canonical_object_entity(
                 "open_state"
             ]
         )
-
     return entity
-
-
 def collect_detected_entities(
     *,
     camera_names: tuple[str, ...] =
@@ -646,16 +568,13 @@ def collect_detected_entities(
 ):
     """
     Run one fresh structured observation per camera.
-
     The same observation provides:
     - RGB for InstaOrder
     - YOLO masks/detections
     - canonical object entities
     """
-
     raw_objects = []
     observations = []
-
     for camera_name in camera_names:
         try:
             data = (
@@ -668,7 +587,6 @@ def collect_detected_entities(
                         include_robot_xyz,
                 )
             )
-
         except Exception as exc:
             logger.warning(
                 "detection unavailable: "
@@ -678,7 +596,6 @@ def collect_detected_entities(
                 exc,
             )
             continue
-
         if not isinstance(
             data,
             dict,
@@ -690,11 +607,9 @@ def collect_detected_entities(
                 data,
             )
             continue
-
         detections = data.get(
             "detections"
         )
-
         if not isinstance(
             detections,
             list,
@@ -706,7 +621,6 @@ def collect_detected_entities(
                 detections,
             )
             continue
-
         observation = {
             "camera_name":
                 camera_name,
@@ -721,18 +635,15 @@ def collect_detected_entities(
             "objects":
                 [],
         }
-
         observations.append(
             observation
         )
-
         for detection in detections:
             if not isinstance(
                 detection,
                 dict,
             ):
                 continue
-
             raw_objects.append({
                 **deepcopy(
                     detection
@@ -740,11 +651,9 @@ def collect_detected_entities(
                 "camera_source":
                     camera_name,
             })
-
     # IDs are assigned once and then reused by both
     # canonical entities and relation producers.
     raw_objects = assign_object_ids(raw_objects)
-
     observation_by_camera = {
         row["camera_name"]:
             row
@@ -753,7 +662,6 @@ def collect_detected_entities(
             "camera_name"
         )
     }
-
     for obj in raw_objects:
         observation = (
             observation_by_camera.get(
@@ -762,30 +670,24 @@ def collect_detected_entities(
                 )
             )
         )
-
         if observation is not None:
             observation[
                 "objects"
             ].append(
                 obj
             )
-
     observed_at = _utc_now_iso()
-
     for observation in observations:
         observation[
             "observed_at"
         ] = observed_at
-
     entities = []
-
     for obj in raw_objects:
         if not isinstance(
             obj,
             dict,
         ):
             continue
-
         entity = (
             _canonical_object_entity(
                 obj,
@@ -793,25 +695,19 @@ def collect_detected_entities(
                     observed_at,
             )
         )
-
         if entity is not None:
             entities.append(
                 entity
             )
-
     if return_observations:
         return (
             entities,
             observations,
         )
-
     return entities
-
-
 # ============================================================
 # Occlusion Relations
 # ============================================================
-
 def collect_occlusion_relations(
     *,
     observations: list[
@@ -819,22 +715,18 @@ def collect_occlusion_relations(
     ],
 ) -> list[dict[str, Any]]:
     relations = []
-
     for observation in observations:
         if not isinstance(
             observation,
             dict,
         ):
             continue
-
         camera_rgb = observation.get(
             "camera_rgb"
         )
-
         objects = observation.get(
             "objects"
         )
-
         if (
             camera_rgb is None
             or not isinstance(
@@ -847,11 +739,9 @@ def collect_occlusion_relations(
             < 2
         ):
             continue
-
         camera_name = observation.get(
             "camera_name"
         )
-
         try:
             response = (
                 occultation
@@ -882,7 +772,6 @@ def collect_occlusion_relations(
                         False,
                 )
             )
-
         except Exception as exc:
             logger.warning(
                 "occlusion inference unavailable: "
@@ -892,7 +781,6 @@ def collect_occlusion_relations(
                 exc,
             )
             continue
-
         if (
             not isinstance(
                 response,
@@ -910,14 +798,12 @@ def collect_occlusion_relations(
                 response,
             )
             continue
-
         rows = (
             occultation
             .relations_from_response(
                 response
             )
         )
-
         for relation in rows:
             if (
                 not isinstance(
@@ -930,11 +816,9 @@ def collect_occlusion_relations(
                 != "occludes"
             ):
                 continue
-
             row = deepcopy(
                 relation
             )
-
             # Normalize relation metadata at the
             # WorldState aggregation boundary.
             row["source"] = (
@@ -948,18 +832,13 @@ def collect_occlusion_relations(
                     "observed_at"
                 )
             )
-
             relations.append(
                 row
             )
-
     return relations
-
-
 # ============================================================
 # Material States
 # ============================================================
-
 def collect_material_states(
     *,
     observations: list[
@@ -972,9 +851,7 @@ def collect_material_states(
     """
     Infer object materials from the SAME
     detection observations.
-
     Returns:
-
         {
             "object_id": {
                 "plastic": 51.63,
@@ -983,24 +860,19 @@ def collect_material_states(
             }
         }
     """
-
     states = {}
-
     for observation in observations:
         if not isinstance(
             observation,
             dict,
         ):
             continue
-
         camera_rgb = observation.get(
             "camera_rgb"
         )
-
         objects = observation.get(
             "objects"
         )
-
         if (
             camera_rgb is None
             or not isinstance(
@@ -1012,40 +884,31 @@ def collect_material_states(
             ) < 1
         ):
             continue
-
         camera_name = observation.get(
             "camera_name"
         )
-
         try:
             pc_response = (
                 material
                 .infer_material_on_pc(
                     camera_rgb=
                         camera_rgb,
-
                     objects=
                         objects,
-
                     camera_name=
                         camera_name,
-
                     timestamp=
                         observation.get(
                             "observed_at"
                         ),
-
                     base_url=
                         _MATERIAL_PC_URL,
-
                     timeout_s=
                         20.0,
-
                     raise_on_error=
                         False,
                 )
             )
-
         except Exception as exc:
             logger.warning(
                 "material inference unavailable: "
@@ -1055,7 +918,6 @@ def collect_material_states(
                 exc,
             )
             continue
-
         if (
             not isinstance(
                 pc_response,
@@ -1073,60 +935,48 @@ def collect_material_states(
                 pc_response,
             )
             continue
-
         rows = (
             material
             .material_from_response(
                 pc_response
             )
         )
-
         if not isinstance(
             rows,
             list,
         ):
             continue
-
         for row in rows:
             if not isinstance(
                 row,
                 dict,
             ):
                 continue
-
             object_id = str(
                 row.get(
                     "object_id"
                 )
                 or ""
             ).strip()
-
             if not object_id:
                 continue
-
             material_state = row.get(
                 "material"
             )
-
             if not isinstance(
                 material_state,
                 dict,
             ):
                 continue
-
             states[
                 object_id
             ] = deepcopy(
                 material_state
             )
-
     return states
-
-
 # ============================================================
 # Grasp Understanding
 # ============================================================
-
 def collect_grasp_states(
     *,
     entities: dict[
@@ -1149,7 +999,6 @@ def collect_grasp_states(
             )
         )
     )
-
     return grasp.infer_grasp_states(
         entities=
             entities,
@@ -1158,8 +1007,6 @@ def collect_grasp_states(
         arm_workspaces=
             arm_workspaces,
     )
-
- 
 def _merge_grasp_states(
     *,
     entities: dict[
@@ -1175,25 +1022,20 @@ def _merge_grasp_states(
         object_id,
         grasp_state,
     ) in grasp_states.items():
-
         entity = entities.get(
             object_id
         )
-
         if not isinstance(
             entity,
             dict,
         ):
             continue
-
         state = deepcopy(
             grasp_state
         )
-
         entity[
             "grasp"
         ] = state
-
         entity[
             "pickable"
         ] = bool(
@@ -1202,7 +1044,6 @@ def _merge_grasp_states(
                 False,
             )
         )
-
         entity[
             "pickable_by"
         ] = list(
@@ -1211,7 +1052,6 @@ def _merge_grasp_states(
                 [],
             )
         )
-
         if (
             not entity.get(
                 "reachable_by"
@@ -1227,17 +1067,14 @@ def _merge_grasp_states(
                     "pickable_by"
                 ]
             )
-
         tags = entity.get(
             "tags"
         )
-
         if not isinstance(
             tags,
             list,
         ):
             tags = []
-
         tags = [
             tag
             for tag
@@ -1251,25 +1088,100 @@ def _merge_grasp_states(
                 != "pickable"
             )
         ]
-
         if entity[
             "pickable"
         ]:
             tags.append(
                 "pickable"
             )
-
         entity[
             "tags"
         ] = tags
-
+def _merge_string_list(
+    old_value,
+    new_value,
+) -> list[str]:
+    result = []
+    for values in (
+        old_value,
+        new_value,
+    ):
+        if not isinstance(
+            values,
+            (
+                list,
+                tuple,
+                set,
+            ),
+        ):
+            continue
+        for value in values:
+            if (
+                isinstance(
+                    value,
+                    str,
+                )
+                and value
+                and value not in result
+            ):
+                result.append(
+                    value
+                )
+    return result
+def _merge_context_semantics(
+    *,
+    previous: dict[str, Any] | None,
+    observed: dict[str, Any],
+) -> dict[str, Any]:
+    result = deepcopy(
+        observed
+    )
+    if not isinstance(
+        previous,
+        dict,
+    ):
+        return result
+    if (
+        "region_id" not in result
+        and "region_id" in previous
+    ):
+        result[
+            "region_id"
+        ] = deepcopy(
+            previous[
+                "region_id"
+            ]
+        )
+    result[
+        "tags"
+    ] = _merge_string_list(
+        previous.get(
+            "tags"
+        ),
+        result.get(
+            "tags"
+        ),
+    )
+    affordances = _merge_string_list(
+        previous.get(
+            "affordances"
+        ),
+        result.get(
+            "affordances"
+        ),
+    )
+    if affordances:
+        result[
+            "affordances"
+        ] = affordances
+    return result
 # ============================================================
 # Live WorldState
 # ============================================================
-
 def build_world_state(
     *,
     context: dict[str, Any] | None = None,
+    active_region_id: str | None = None,
     include_robot: bool = True,
     include_cameras: bool = True,
     include_detections: bool = True,
@@ -1281,7 +1193,6 @@ def build_world_state(
 ) -> WorldState:
     if context is None:
         context = {}
-
     if not isinstance(
         context,
         dict,
@@ -1289,16 +1200,27 @@ def build_world_state(
         raise ValueError(
             "context 必須是 dict"
         )
-
+    if active_region_id is not None:
+        if (
+            not isinstance(
+                active_region_id,
+                str,
+            )
+            or not active_region_id.strip()
+        ):
+            raise ValueError(
+                "active_region_id must be a non-empty string or None"
+            )
+        active_region_id = (
+            active_region_id.strip()
+        )
     entities: dict[
         str,
         dict[str, Any],
     ] = {}
-
     context_entities = context.get(
         "entities"
     )
-
     if isinstance(
         context_entities,
         dict,
@@ -1323,32 +1245,25 @@ def build_world_state(
                 ] = deepcopy(
                     values
                 )
-
     entity_groups = []
     detection_observations = []
-
     # ========================================================
     # Robot
     # ========================================================
-
     if include_robot:
         entity_groups.append(
             collect_robot_entities()
         )
-
     # ========================================================
     # Cameras
     # ========================================================
-
     if include_cameras:
         entity_groups.append(
             collect_camera_entities()
         )
-
     # ========================================================
     # Object detections
     # ========================================================
-
     if include_detections:
         (
             detected_entities,
@@ -1359,15 +1274,21 @@ def build_world_state(
             return_observations=
                 True,
         )
-
+        if active_region_id is not None:
+            for entity in detected_entities:
+                if isinstance(
+                    entity,
+                    dict,
+                ):
+                    entity[
+                        "region_id"
+                    ] = active_region_id
         entity_groups.append(
             detected_entities
         )
-
     # ========================================================
     # Merge entities
     # ========================================================
-
     for rows in entity_groups:
         for entity in rows:
             entity_id = str(
@@ -1376,27 +1297,27 @@ def build_world_state(
                 )
                 or ""
             ).strip()
-
             if not entity_id:
                 continue
-
             values = deepcopy(
                 entity
             )
-
             values.pop(
                 "entity_id",
                 None,
             )
-
+            previous = entities.get(
+                entity_id
+            )
             entities[
                 entity_id
-            ] = values
-
+            ] = _merge_context_semantics(
+                previous=previous,
+                observed=values,
+            )
     # ========================================================
     # Material states
     # ========================================================
-
     if (
         include_materials
         and detection_observations
@@ -1407,28 +1328,23 @@ def build_world_state(
                     detection_observations,
             )
         )
-
         for (
             object_id,
             material_state,
         ) in material_states.items():
-
             entity = entities.get(
                 object_id
             )
-
             if not isinstance(
                 entity,
                 dict,
             ):
                 continue
-
             entity[
                 "material"
             ] = deepcopy(
                 material_state
             )
-
     # ========================================================
     # Relations
     #
@@ -1436,9 +1352,7 @@ def build_world_state(
     # WorldState relations currently come only from
     # the dedicated occlusion pipeline (InstaOrder).
     # ========================================================
-
     observed_relations = []
-
     if (
         include_relations
         or include_grasp
@@ -1449,11 +1363,9 @@ def build_world_state(
                     detection_observations,
             )
         )
-
     # ========================================================
     # Grasp understanding
     # ========================================================
-
     if include_grasp:
         grasp_states = (
             collect_grasp_states(
@@ -1463,35 +1375,28 @@ def build_world_state(
                     observed_relations,
             )
         )
-
         _merge_grasp_states(
             entities=
                 entities,
             grasp_states=
                 grasp_states,
         )
-
     relations = (
         observed_relations
         if include_relations
         else []
     )
-
     # ========================================================
     # WorldState
     # ========================================================
-
     return WorldState({
         "entities":
             entities,
-
         "relations":
             relations,
-
         "meta": {
             "captured_at":
                 _utc_now_iso(),
-
             "source":
                 "services.vlm_narrator_service",
         },
@@ -1507,7 +1412,6 @@ def get_object_state(
     """
     Perform one fresh object observation and return
     compact intrinsic object states.
-
     Output order:
     - object
     - position
@@ -1515,7 +1419,6 @@ def get_object_state(
     - orientation
     - confidence
     - material
-
     This API does NOT include:
     - relations
     - handling
@@ -1523,7 +1426,6 @@ def get_object_state(
     - obstacle state
     - task state
     """
-
     world = build_world_state(
         include_robot=False,
         include_cameras=False,
@@ -1533,21 +1435,16 @@ def get_object_state(
         include_grasp=False,
         camera_names=camera_names,
     )
-
     snapshot = world.snapshot()
-
     entities = snapshot.get(
         "entities",
         {},
     )
-
     objects = []
-
     for (
         entity_id,
         entity,
     ) in entities.items():
-
         if (
             not isinstance(
                 entity,
@@ -1559,15 +1456,12 @@ def get_object_state(
             != "object"
         ):
             continue
-
         objects.append({
             "object":
                 entity_id,
-
             "position": {
                 "frame":
                     "robot",
-
                 "xyz":
                     deepcopy(
                         entity.get(
@@ -1575,26 +1469,22 @@ def get_object_state(
                         )
                     ),
             },
-
             "bbox":
                 deepcopy(
                     entity.get(
                         "bbox"
                     )
                 ),
-
             "orientation": {
                 "yaw_deg":
                     entity.get(
                         "yaw_deg"
                     ),
             },
-
             "confidence":
                 entity.get(
                     "confidence"
                 ),
-
             "material":
                 deepcopy(
                     entity.get(
@@ -1602,14 +1492,12 @@ def get_object_state(
                     )
                 ),
         })
-
     return response.success(
         MODULE,
         "get_object_state",
         data={
             "objects":
                 objects,
-
             "captured_at":
                 snapshot.get(
                     "meta",
@@ -1619,19 +1507,14 @@ def get_object_state(
                 ),
         },
     )
-
-
 # ============================================================
 # Compact Object Relation API
 # ============================================================
-
 def get_object_relation(
     *,
     camera_names: tuple[str, ...] =
         _DETECTION_CAMERAS,
 ):
-
-
     world = build_world_state(
         include_robot=False,
         include_cameras=False,
@@ -1641,25 +1524,19 @@ def get_object_relation(
         include_grasp=False,
         camera_names=camera_names,
     )
-
     snapshot = world.snapshot()
-
     entities = snapshot.get(
         "entities",
         {},
     )
-
     relations = snapshot.get(
         "relations",
         [],
     )
-
     objects = {}
-
     # ========================================================
     # Create object buckets
     # ========================================================
-
     for entity_id, entity in entities.items():
         if (
             not isinstance(
@@ -1672,62 +1549,51 @@ def get_object_relation(
             != "object"
         ):
             continue
-
         objects[entity_id] = {
             "object":
                 entity_id,
-
             "relations":
                 [],
         }
-
     # ========================================================
     # Organize relations by object
     # ========================================================
-
     for relation in relations:
         if not isinstance(
             relation,
             dict,
         ):
             continue
-
         subject = str(
             relation.get(
                 "subject"
             )
             or ""
         ).strip()
-
         predicate = str(
             relation.get(
                 "predicate"
             )
             or ""
         ).strip()
-
         relation_object = str(
             relation.get(
                 "object"
             )
             or ""
         ).strip()
-
         camera_source = relation.get(
             "camera_source"
         )
-
         if not (
             subject
             and predicate
             and relation_object
         ):
             continue
-
         # ----------------------------------------------------
         # A --predicate--> B
         # ----------------------------------------------------
-
         if subject in objects:
             objects[
                 subject
@@ -1736,21 +1602,16 @@ def get_object_relation(
             ].append({
                 "direction":
                     "to",
-
                 "predicate":
                     predicate,
-
                 "relation_object":
                     relation_object,
-
                 "camera_source":
                     camera_source,
             })
-
         # ----------------------------------------------------
         # B <--predicate-- A
         # ----------------------------------------------------
-
         if relation_object in objects:
             objects[
                 relation_object
@@ -1759,17 +1620,13 @@ def get_object_relation(
             ].append({
                 "direction":
                     "from",
-
                 "predicate":
                     predicate,
-
                 "relation_object":
                     subject,
-
                 "camera_source":
                     camera_source,
             })
-
     return response.success(
         MODULE,
         "get_object_relation",
@@ -1778,7 +1635,6 @@ def get_object_relation(
                 list(
                     objects.values()
                 ),
-
             "captured_at":
                 snapshot.get(
                     "meta",
@@ -1791,7 +1647,6 @@ def get_object_relation(
 # ============================================================
 # Compact Object Grasp API
 # ============================================================
-
 def get_object_grasp(
     *,
     camera_names: tuple[str, ...] =
@@ -1806,21 +1661,16 @@ def get_object_grasp(
         include_grasp=True,
         camera_names=camera_names,
     )
-
     snapshot = world.snapshot()
-
     entities = snapshot.get(
         "entities",
         {},
     )
-
     objects = []
-
     for (
         entity_id,
         entity,
     ) in entities.items():
-
         if (
             not isinstance(
                 entity,
@@ -1832,21 +1682,17 @@ def get_object_grasp(
             != "object"
         ):
             continue
-
         grasp_state = entity.get(
             "grasp"
         )
-
         if not isinstance(
             grasp_state,
             dict,
         ):
             continue
-
         objects.append({
             "object":
                 entity_id,
-
             "pickable":
                 bool(
                     grasp_state.get(
@@ -1854,7 +1700,6 @@ def get_object_grasp(
                         False,
                     )
                 ),
-
             "pickable_by":
                 deepcopy(
                     grasp_state.get(
@@ -1862,24 +1707,20 @@ def get_object_grasp(
                         [],
                     )
                 ),
-
             "grasp_point":
                 deepcopy(
                     grasp_state.get(
                         "grasp_point"
                     )
                 ),
-
             "gripper_yaw_deg":
                 grasp_state.get(
                     "gripper_yaw_deg"
                 ),
-
             "gripper_width_mm":
                 grasp_state.get(
                     "gripper_width_mm"
                 ),
-
             "blocked":
                 bool(
                     grasp_state.get(
@@ -1887,7 +1728,6 @@ def get_object_grasp(
                         False,
                     )
                 ),
-
             "blocked_by":
                 deepcopy(
                     grasp_state.get(
@@ -1895,7 +1735,6 @@ def get_object_grasp(
                         [],
                     )
                 ),
-
             "reasons":
                 deepcopy(
                     grasp_state.get(
@@ -1904,14 +1743,12 @@ def get_object_grasp(
                     )
                 ),
         })
-
     return response.success(
         MODULE,
         "get_object_grasp",
         data={
             "objects":
                 objects,
-
             "captured_at":
                 snapshot.get(
                     "meta",

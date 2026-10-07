@@ -27,6 +27,8 @@ from typing import Any
 from .coordination import CoordinationSpec
 from .critical_state import build_critical_state
 from .dispatch import (
+    ACTION_DECISION_PURPOSES,
+    ActionDecisionContext,
     ActionIntent,
     DispatchDecision,
 )
@@ -152,6 +154,199 @@ def _action_schema(
     }
 
 
+
+
+def _action_context_schema() -> dict[str, Any]:
+    target_fact_schema = {
+        "anyOf": [
+            {
+                "type": "object",
+                "properties": {
+                    "subject": {"type": "string"},
+                    "field": {"type": "string"},
+                    "operator": {
+                        "type": "string",
+                        "enum": ["eq", "ne", "in"],
+                    },
+                    "value": {},
+                },
+                "required": [
+                    "subject",
+                    "field",
+                    "operator",
+                    "value",
+                ],
+                "additionalProperties": False,
+            },
+            {
+                "type": "null",
+            },
+        ],
+    }
+
+    return {
+        "type": "object",
+        "properties": {
+            "purpose": {
+                "type": "string",
+                "enum": list(
+                    ACTION_DECISION_PURPOSES
+                ),
+            },
+            "related_goal_ids": {
+                "type": "array",
+                "items": {
+                    "type": "string",
+                },
+            },
+            "target_fact":
+                target_fact_schema,
+            "reason_summary": {
+                "type": "string",
+            },
+        },
+        "required": [
+            "purpose",
+            "related_goal_ids",
+            "target_fact",
+            "reason_summary",
+        ],
+        "additionalProperties": False,
+    }
+
+
+def _parse_action_context(
+    raw: dict[str, Any],
+    *,
+    goals: GoalSet,
+    world: WorldState,
+) -> ActionDecisionContext:
+    if not isinstance(raw, dict):
+        raise RuntimeError(
+            "Each action_context must be object"
+        )
+
+    purpose = str(
+        raw.get("purpose") or ""
+    ).strip()
+
+    if purpose not in ACTION_DECISION_PURPOSES:
+        raise RuntimeError(
+            "action_context.purpose is invalid: "
+            f"{purpose!r}"
+        )
+
+    related_goal_ids_raw = raw.get(
+        "related_goal_ids"
+    )
+
+    if not isinstance(
+        related_goal_ids_raw,
+        list,
+    ):
+        raise RuntimeError(
+            "action_context.related_goal_ids must be array"
+        )
+
+    related_goal_ids = tuple(
+        str(value).strip()
+        for value in related_goal_ids_raw
+        if str(value).strip()
+    )
+
+    known_goal_ids = {
+        goal.goal_id
+        for goal in goals.conditions
+    }
+
+    unknown_goal_ids = sorted(
+        set(related_goal_ids)
+        - known_goal_ids
+    )
+
+    if unknown_goal_ids:
+        raise RuntimeError(
+            "action_context references unknown goal IDs: "
+            f"{unknown_goal_ids}"
+        )
+
+    target_fact = raw.get(
+        "target_fact"
+    )
+
+    if target_fact is not None:
+        if not isinstance(target_fact, dict):
+            raise RuntimeError(
+                "action_context.target_fact must be object or null"
+            )
+
+        subject = str(
+            target_fact.get("subject") or ""
+        ).strip()
+        field_name = str(
+            target_fact.get("field") or ""
+        ).strip()
+        operator = str(
+            target_fact.get("operator") or ""
+        ).strip()
+
+        if not subject or not field_name:
+            raise RuntimeError(
+                "action_context.target_fact requires subject and field"
+            )
+
+        if (
+            subject != "$device"
+            and not world.has_entity(subject)
+        ):
+            raise RuntimeError(
+                "action_context.target_fact references unknown subject: "
+                f"{subject!r}"
+            )
+
+        if operator not in {
+            "eq",
+            "ne",
+            "in",
+        }:
+            raise RuntimeError(
+                "action_context.target_fact.operator is invalid: "
+                f"{operator!r}"
+            )
+
+        target_fact = {
+            "subject": subject,
+            "field": field_name,
+            "operator": operator,
+            "value": deepcopy(
+                target_fact.get("value")
+            ),
+        }
+
+    reason_summary = str(
+        raw.get("reason_summary") or ""
+    ).strip()
+
+    if not reason_summary:
+        raise RuntimeError(
+            "action_context.reason_summary must be non-empty"
+        )
+
+    # Keep persisted/prompt memory compact and single-line.
+    reason_summary = " ".join(
+        reason_summary.split()
+    )[:240]
+
+    return ActionDecisionContext(
+        purpose=purpose,
+        related_goal_ids=related_goal_ids,
+        target_fact=deepcopy(
+            target_fact
+        ),
+        reason_summary=reason_summary,
+    )
+
+
 def _dispatch_schema(
     tools: ToolCatalog,
     *,
@@ -249,6 +444,14 @@ def _dispatch_schema(
                         action_schemas,
                 },
             },
+            "action_contexts": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems":
+                    max_parallel_actions,
+                "items":
+                    _action_context_schema(),
+            },
         },
         # Keep these fields explicit for strict structured output.
         # When no repair intent is involved, both are simply null.
@@ -256,6 +459,7 @@ def _dispatch_schema(
             "pending_intent_resolution",
             "pending_intent_abandon_reason",
             "actions",
+            "action_contexts",
         ],
         "additionalProperties": False,
     }
@@ -364,6 +568,7 @@ class RuntimeBrain:
         *,
         provider: str | None = None,
         model: str | None = None,
+        api_key: str | None = None,
         temperature: float = 0.15,
         max_tokens: int = 1024,
         timeout: float = 120.0,
@@ -371,6 +576,7 @@ class RuntimeBrain:
     ):
         self.provider = provider
         self.model = model
+        self.api_key = api_key
         self.temperature = float(
             temperature
         )
@@ -394,6 +600,10 @@ class RuntimeBrain:
         device_context: Any = None,
         rejected_dispatches: list[
             dict[str, Any]
+        ] | None = None,
+        task_state: dict[
+            str,
+            Any,
         ] | None = None,
         task_progress_state: dict[
             str,
@@ -457,6 +667,26 @@ class RuntimeBrain:
                 "max_parallel_actions 必須是 >= 1 的整數"
             )
 
+        world_snapshot = world.snapshot()
+        temporary_placement_targets = [
+            entity_id
+            for entity_id, entity
+            in world_snapshot.get(
+                "entities",
+                {},
+            ).items()
+            if isinstance(entity, dict)
+            and (
+                "temporary_placement"
+                in (entity.get("tags") or [])
+                or "temporary_placement"
+                in (
+                    entity.get("affordances")
+                    or []
+                )
+            )
+        ]
+
         payload = {
             "critical_state":
                 build_critical_state(
@@ -465,8 +695,22 @@ class RuntimeBrain:
                     coordination,
                 ),
 
+            # Internal short-term task execution memory.
+            #
+            # This summarizes current task progress / blockers / regressions
+            # for the Brain, but CURRENT WorldState remains authoritative for
+            # physical reality.
+            "task_state":
+                deepcopy(
+                    task_state
+                    or {}
+                ),
+
             "world_state":
-                world.snapshot(),
+                world_snapshot,
+
+            "temporary_placement_targets":
+                temporary_placement_targets,
 
             "goal_state":
                 goals.summary(
@@ -576,6 +820,13 @@ class RuntimeBrain:
             keep_alive=-1,
             wait=True,
             owner="runtime_brain",
+            api_key=(
+                self.api_key
+                if str(
+                    self.provider or ""
+                ).strip().lower() == "openai"
+                else None
+            ),
         )
 
         if not isinstance(
@@ -658,6 +909,32 @@ class RuntimeBrain:
             for raw in raw_actions
         )
 
+        raw_action_contexts = parsed.get(
+            "action_contexts"
+        )
+
+        if not isinstance(
+            raw_action_contexts,
+            list,
+        ):
+            raise RuntimeError(
+                "Runtime brain missing action_contexts array"
+            )
+
+        if len(raw_action_contexts) != len(actions):
+            raise RuntimeError(
+                "action_contexts must align one-to-one with actions"
+            )
+
+        action_contexts = tuple(
+            _parse_action_context(
+                raw,
+                goals=goals,
+                world=world,
+            )
+            for raw in raw_action_contexts
+        )
+
         resolution = parsed.get(
             "pending_intent_resolution"
         )
@@ -702,6 +979,7 @@ class RuntimeBrain:
 
         return DispatchDecision(
             actions=actions,
+            action_contexts=action_contexts,
             pending_intent_resolution=
                 resolution,
             pending_intent_abandon_reason=
@@ -736,6 +1014,7 @@ class RuntimeBrain:
                 device_context,
             rejected_dispatches=
                 rejected_dispatches,
+            task_state=None,
             task_progress_state=None,
             repair_context=None,
             loop_context=None,

@@ -296,6 +296,32 @@ def infer_required_device(
                     preferred,
                 )
 
+    # --------------------------------------------------------
+    # Camera-side soft preference
+    # --------------------------------------------------------
+
+    if (
+        preferred is None
+        and isinstance(
+            entity_id,
+            str,
+        )
+        and entity_id
+        and world.has_entity(
+            entity_id
+        )
+    ):
+        camera_source = world.get(
+            entity_id,
+            "camera_source",
+        )
+
+        if camera_source == "left":
+            preferred = "left_arm"
+
+        elif camera_source == "right":
+            preferred = "right_arm"
+
     return (
         None,
         preferred,

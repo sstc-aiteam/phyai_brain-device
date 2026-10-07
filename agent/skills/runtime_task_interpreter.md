@@ -71,10 +71,15 @@ close_drawer
 
 ```text
 stage
+
 user_text
+
 world_state
+
 grounded_targets
+
 goals
+
 motion_request
 ```
 
@@ -134,7 +139,9 @@ stage = "coordination"
 
 ```text
 summary
+
 goals
+
 motion_request (optional)
 ```
 
@@ -209,6 +216,7 @@ the drawer
 ```text
 location
 open_state
+held_by
 holding
 controlling
 reported
@@ -217,6 +225,12 @@ reported
 只使用 Runtime / WorldState 已存在或明確支援的 semantic field。
 
 不要自行創造沒有系統意義的新 field。
+
+注意：
+
+- `held_by` 是物件 entity 的欄位。
+- `holding` 是 robot arm entity 的欄位。
+- 不可把 `holding = true/false` 放在物件 entity 上。
 
 ---
 
@@ -294,6 +308,116 @@ value 不是 action，也不是 tool 名稱。
 
 ```json
 "depends_on": []
+```
+
+---
+
+## 4.3 Canonical WorldState field rules
+
+Goals 必須遵守 canonical `WorldState` 的欄位語意。
+
+### Object grasp / holding
+
+對物件 entity：
+
+```text
+<object_id>.held_by
+```
+
+表示目前由哪個 robot arm 持有。
+
+例如：
+
+```text
+bottle_alcohol_spray_1.held_by == left_arm
+```
+
+如果沒有被任何手持有：
+
+```text
+bottle_alcohol_spray_1.held_by == null
+```
+
+對 robot arm entity：
+
+```text
+<arm_id>.holding
+```
+
+表示該手目前持有哪個物件。
+
+例如：
+
+```text
+left_arm.holding == bottle_alcohol_spray_1
+```
+
+因此禁止把物件表示成：
+
+```text
+bottle_alcohol_spray_1.holding == true
+```
+
+或：
+
+```text
+bottle_alcohol_spray_1.holding == false
+```
+
+`holding` 不屬於物件 entity。
+
+### 使用者要求「拿起 / 拿住 / pick up」物件
+
+如果使用者要求拿起某物件，但沒有指定哪支手，goal 必須描述：
+
+```text
+<object_id>.held_by != null
+```
+
+JSON：
+
+```json
+{
+  "goal_id": "G001",
+  "subject": "bottle_alcohol_spray_1",
+  "field": "held_by",
+  "operator": "ne",
+  "value": null,
+  "depends_on": []
+}
+```
+
+不要因為目前 `WorldState` 顯示：
+
+```text
+pickable_by = ["left_arm"]
+reachable_by = ["left_arm"]
+```
+
+就把 goal 寫成：
+
+```text
+bottle_alcohol_spray_1.held_by == left_arm
+```
+
+因為一般 device allocation 屬於 Runtime Binder 的責任。
+
+只有使用者明確指定：
+
+```text
+用左手拿起酒精噴瓶
+```
+
+才可以在 coordination stage 建立對應的 `device_rule`。
+
+一般情況下：
+
+```text
+Task Interpreter
+    → 描述「物件被某支手持有」
+
+Runtime Binder
+    → 決定實際使用 left_arm 或 right_arm
 ```
 
 ---
@@ -443,6 +567,7 @@ z-
 
 ```text
 maintain_until
+
 device_rules
 ```
 
@@ -479,6 +604,7 @@ device_rules
 
 ```text
 drawer_1.open_state == open
+
 until G003
 ```
 
@@ -510,6 +636,8 @@ until G003
 
 - 物件在左邊
 - 左手比較近
+- `pickable_by` 只有左手
+- `reachable_by` 只有左手
 - 你推測左手比較方便
 
 就建立 device rule。
@@ -518,6 +646,7 @@ until G003
 
 ```text
 reachable_by
+pickable_by
 holding
 controlling
 tool requirements
@@ -545,9 +674,11 @@ Task Interpreter 不可輸出：
 
 ---
 
-# 11. Example
+# 11. Examples
 
-## Input
+## 11.1 Placement task
+
+### Input
 
 ```text
 把 saline_1 和 towel_1 都安全放進 drawer_1，最後把 drawer_1 關起來。
@@ -563,7 +694,7 @@ left_arm
 right_arm
 ```
 
-## goals stage
+### goals stage
 
 合理輸出概念：
 
@@ -612,6 +743,54 @@ pick towel
 place towel
 close_drawer
 ```
+
+---
+
+## 11.2 Pick-up task
+
+### Input
+
+```text
+拿起酒精噴瓶
+```
+
+假設 `grounded_targets` 或 `world_state` 已對應到：
+
+```text
+bottle_alcohol_spray_1
+```
+
+合理 goal：
+
+```json
+{
+  "summary": "拿起 bottle_alcohol_spray_1。",
+  "goals": [
+    {
+      "goal_id": "G001",
+      "subject": "bottle_alcohol_spray_1",
+      "field": "held_by",
+      "operator": "ne",
+      "value": null,
+      "depends_on": []
+    }
+  ]
+}
+```
+
+即使目前 `WorldState` 顯示：
+
+```text
+bottle_alcohol_spray_1.pickable_by == ["left_arm"]
+```
+
+也不可因此把 goal 改成：
+
+```text
+bottle_alcohol_spray_1.held_by == left_arm
+```
+
+除非使用者明確要求左手。
 
 ---
 

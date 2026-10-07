@@ -22,6 +22,65 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
+ACTION_DECISION_PURPOSES = (
+    "complete_goal",
+    "satisfy_prerequisite",
+    "repair_precondition",
+    "remove_blocker",
+    "maintain_commitment",
+    "recovery",
+)
+
+
+@dataclass(frozen=True)
+class ActionDecisionContext:
+    """Compact Brain-declared purpose for one ActionIntent.
+
+    This is executive/task context only.  It is deliberately kept outside
+    ActionIntent so action identity/signatures remain stable for binding,
+    repair tracking, loop detection, and validation.
+    """
+
+    purpose: str
+    related_goal_ids: tuple[str, ...] = ()
+    target_fact: dict[str, Any] | None = None
+    reason_summary: str = ""
+
+    def __post_init__(self) -> None:
+        if self.purpose not in ACTION_DECISION_PURPOSES:
+            raise ValueError(
+                "unsupported action decision purpose: "
+                f"{self.purpose!r}"
+            )
+
+        if self.target_fact is not None and not isinstance(
+            self.target_fact,
+            dict,
+        ):
+            raise TypeError(
+                "target_fact must be object or None"
+            )
+
+        if not str(self.reason_summary).strip():
+            raise ValueError(
+                "reason_summary must be non-empty"
+            )
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "purpose": self.purpose,
+            "related_goal_ids": list(
+                self.related_goal_ids
+            ),
+            "target_fact": (
+                dict(self.target_fact)
+                if self.target_fact is not None
+                else None
+            ),
+            "reason_summary": self.reason_summary,
+        }
+
+
 @dataclass(frozen=True)
 class ActionIntent:
     """
@@ -61,13 +120,28 @@ class DispatchDecision:
 
     actions: tuple[ActionIntent, ...]
 
+    # Keep the legacy pending-intent fields in their original positional
+    # order for backward compatibility with external/custom callers.
     pending_intent_resolution: str | None = None
     pending_intent_abandon_reason: str | None = None
+
+    # Optional for backward compatibility with custom/tests that construct
+    # DispatchDecision directly. RuntimeBrain always supplies one context per
+    # action.
+    action_contexts: tuple[ActionDecisionContext, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.actions:
             raise ValueError(
                 "DispatchDecision must contain at least one action"
+            )
+
+        if (
+            self.action_contexts
+            and len(self.action_contexts) != len(self.actions)
+        ):
+            raise ValueError(
+                "action_contexts must align one-to-one with actions"
             )
 
         if self.pending_intent_resolution not in {
@@ -98,6 +172,12 @@ class DispatchDecision:
                 for action in self.actions
             ],
         }
+
+        if self.action_contexts:
+            result["action_contexts"] = [
+                context.as_dict()
+                for context in self.action_contexts
+            ]
 
         if self.pending_intent_resolution is not None:
             result["pending_intent_resolution"] = (
@@ -223,6 +303,8 @@ class DispatchExecutionReport:
 
 
 __all__ = [
+    "ACTION_DECISION_PURPOSES",
+    "ActionDecisionContext",
     "ActionIntent",
     "DispatchDecision",
     "BoundAction",

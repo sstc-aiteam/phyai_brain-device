@@ -26,7 +26,7 @@ from typing import Any
 from PIL import Image
 
 from config import OLLAMA_VLM_MODEL
-from services import llm_service
+from services import model_service
 from utils.response import error, success
 
 
@@ -1181,7 +1181,7 @@ def observe_world_image(
         )
 
         message = (
-            llm_service
+            model_service.qwen
             .chat_structured(
                 messages=[
                     {

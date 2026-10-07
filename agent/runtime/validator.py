@@ -294,6 +294,241 @@ def _validate_maintain_constraints(
             )
 
 
+
+_NUDGE_RECOVERY_REASONS = {
+    "missing_grasp_point",
+    "unreachable",
+    "out_of_workspace",
+    "no_reachable_arm",
+    "grasp_unavailable",
+    "perception_uncertain",
+    "low_confidence",
+}
+
+
+def _validate_nudge_relevance(
+    bound: BoundAction,
+    *,
+    world: WorldState,
+    goals: GoalSet,
+) -> None:
+    """
+    Keep nudge_arm available, but only as a recovery primitive.
+
+    A nudge is accepted when an UNSATISFIED goal has concrete evidence that
+    a small arm adjustment may help, for example:
+      - the goal directly concerns the bound arm's pose/location
+      - the pending target has a grasp/reachability recovery reason
+      - the pending target is occluded, but there is no known pickable blocker
+
+    If a target is occluded by a known pickable object, moving that blocker is
+    a more direct semantic recovery than nudging the arm, so nudge_arm is not
+    accepted for that condition.
+
+    This gate intentionally does not choose the replacement action. It only
+    rejects an irrelevant escape action so RuntimeBrain must decide again.
+    """
+
+    action = bound.action
+
+    if action.function_name != "nudge_arm":
+        return
+
+    pending_goals = [
+        goal
+        for goal in goals.conditions
+        if not goal.is_satisfied(
+            world
+        )
+    ]
+
+    pending_goal_ids = [
+        goal.goal_id
+        for goal in pending_goals
+    ]
+
+    recovery_evidence: list[
+        dict[str, Any]
+    ] = []
+
+    direct_blockers: list[
+        dict[str, Any]
+    ] = []
+
+    for goal in pending_goals:
+        # A task that directly targets arm pose/location may legitimately use
+        # a Cartesian nudge.
+        if (
+            goal.subject
+            == bound.device_id
+            and goal.field
+            in {
+                "pose",
+                "location",
+            }
+        ):
+            recovery_evidence.append({
+                "goal_id":
+                    goal.goal_id,
+                "subject":
+                    goal.subject,
+                "reason":
+                    "arm_motion_goal",
+            })
+            continue
+
+        if not world.has_entity(
+            goal.subject
+        ):
+            continue
+
+        entity = world.entity(
+            goal.subject
+        )
+
+        if not isinstance(
+            entity,
+            dict,
+        ):
+            continue
+
+        grasp = entity.get(
+            "grasp"
+        )
+
+        if not isinstance(
+            grasp,
+            dict,
+        ):
+            grasp = {}
+
+        reasons = {
+            str(
+                value
+            )
+            for value
+            in (
+                grasp.get(
+                    "reasons"
+                )
+                or []
+            )
+        }
+
+        matched_reasons = sorted(
+            reasons
+            & _NUDGE_RECOVERY_REASONS
+        )
+
+        if matched_reasons:
+            recovery_evidence.append({
+                "goal_id":
+                    goal.goal_id,
+                "subject":
+                    goal.subject,
+                "reason":
+                    "grasp_or_reachability_recovery",
+                "details":
+                    matched_reasons,
+            })
+
+        blocked = bool(
+            grasp.get(
+                "blocked",
+                entity.get(
+                    "blocked",
+                    False,
+                ),
+            )
+        )
+
+        blocked_by = (
+            grasp.get(
+                "blocked_by"
+            )
+            or entity.get(
+                "blocked_by"
+            )
+            or []
+        )
+
+        blocked_by = [
+            blocker_id
+            for blocker_id in blocked_by
+            if isinstance(
+                blocker_id,
+                str,
+            )
+            and blocker_id
+        ]
+
+        if not blocked:
+            continue
+
+        pickable_blockers = [
+            blocker_id
+            for blocker_id in blocked_by
+            if (
+                world.has_entity(
+                    blocker_id
+                )
+                and world.get(
+                    blocker_id,
+                    "pickable",
+                    False,
+                )
+                is True
+            )
+        ]
+
+        if pickable_blockers:
+            direct_blockers.append({
+                "goal_id":
+                    goal.goal_id,
+                "subject":
+                    goal.subject,
+                "pickable_blockers":
+                    pickable_blockers,
+            })
+            continue
+
+        # Occlusion exists but there is no known directly-manipulable blocker.
+        # A small viewpoint/reachability adjustment can be a legitimate
+        # recovery attempt.
+        recovery_evidence.append({
+            "goal_id":
+                goal.goal_id,
+            "subject":
+                goal.subject,
+            "reason":
+                "occluded_without_pickable_blocker",
+            "blocked_by":
+                blocked_by,
+        })
+
+    if recovery_evidence:
+        return
+
+    _reject(
+        "nudge_arm is recovery-only and no pending goal currently "
+        "provides a valid recovery reason",
+        rejection_type=
+            "ACTION_NOT_RELEVANT",
+        attempted_action=
+            action.as_dict(),
+        device_id=
+            bound.device_id,
+        pending_goal_ids=
+            pending_goal_ids,
+        direct_pickable_blockers=
+            direct_blockers,
+        guidance=(
+            "Choose an action that directly advances a pending goal, "
+            "satisfies a prerequisite, or removes a known blocker."
+        ),
+    )
+
+
 def _validate_one_action(
     bound: BoundAction,
     *,
@@ -356,6 +591,12 @@ def _validate_one_action(
             feedback=
                 feedback,
         ) from exc
+
+    _validate_nudge_relevance(
+        bound,
+        world=world,
+        goals=goals,
+    )
 
     _validate_required_device_rules(
         bound,

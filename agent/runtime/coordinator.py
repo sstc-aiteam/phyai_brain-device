@@ -13,7 +13,8 @@ Per cycle:
         ↓
     Validator performs final deterministic checks
         ↓
-    Executor executes callbacks and returns FRESH observed WorldState
+    Executor may PRE-COMMIT observe/revalidate, then executes callbacks
+        and returns FRESH observed WorldState
         ↓
     Progress Monitor evaluates task progress
         ↓
@@ -31,6 +32,7 @@ The coordinator never:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import inspect
 from typing import Any
 
 from .coordination import CoordinationSpec
@@ -39,6 +41,7 @@ from .dispatch import (
     BoundDispatch,
     DispatchDecision,
 )
+from .execution_memory import ExecutionMemory
 from .goals import GoalSet
 from .loop_monitor import SemanticLoopMonitor
 from .progress_monitor import TaskProgressMonitor
@@ -106,6 +109,7 @@ class RuntimeCoordinator:
         binder: DeviceBinder,
         executor,
         tools: ToolCatalog,
+        execution_memory: ExecutionMemory | None = None,
         max_parallel_actions: int = 2,
         max_decision_attempts: int = 5,
         parallel_fallback_after_rejections: int = 2,
@@ -135,6 +139,7 @@ class RuntimeCoordinator:
         self.binder = binder
         self.executor = executor
         self.tools = tools
+        self.execution_memory = execution_memory
 
         self.max_parallel_actions = int(
             max_parallel_actions
@@ -180,6 +185,9 @@ class RuntimeCoordinator:
         """
 
         self._reset_monitors()
+
+        if self.execution_memory is not None:
+            self.execution_memory.clear()
 
     def _parallel_limit(
         self,
@@ -273,6 +281,11 @@ class RuntimeCoordinator:
                             ),
                         rejected_dispatches=
                             rejected,
+                        task_state=(
+                            self.execution_memory.brain_view()
+                            if self.execution_memory is not None
+                            else {}
+                        ),
                         task_progress_state=
                             self.progress_monitor.brain_view(
                                 goals,
@@ -443,6 +456,79 @@ class RuntimeCoordinator:
             f"rejected={rejected!r}"
         )
 
+    def _execute_bound_dispatch(
+        self,
+        bound: BoundDispatch,
+        *,
+        world: WorldState,
+        goals: GoalSet,
+        coordination: CoordinationSpec,
+    ):
+        """
+        Execute one already-bound dispatch.
+
+        New production CallbackExecutor accepts task semantic context so it can
+        re-run RuntimeValidator after a fresh PRE-COMMIT observation.
+
+        Older/custom executors remain supported: GoalSet/CoordinationSpec are
+        passed only when their execute() signature accepts them.
+        """
+
+        execute = self.executor.execute
+
+        kwargs: dict[str, Any] = {
+            "world":
+                world,
+
+            "tools":
+                self.tools,
+        }
+
+        try:
+            signature = inspect.signature(
+                execute
+            )
+
+            parameters = (
+                signature.parameters
+            )
+
+            accepts_kwargs = any(
+                parameter.kind
+                == inspect.Parameter.VAR_KEYWORD
+                for parameter
+                in parameters.values()
+            )
+
+        except (
+            TypeError,
+            ValueError,
+        ):
+            parameters = {}
+            accepts_kwargs = False
+
+        if (
+            accepts_kwargs
+            or "goals" in parameters
+        ):
+            kwargs[
+                "goals"
+            ] = goals
+
+        if (
+            accepts_kwargs
+            or "coordination"
+            in parameters
+        ):
+            kwargs[
+                "coordination"
+            ] = coordination
+
+        return execute(
+            bound,
+            **kwargs,
+        )
+
     def run_cycle(
         self,
         *,
@@ -457,8 +543,9 @@ class RuntimeCoordinator:
         """
         Execute exactly one closed-loop runtime cycle.
 
-        The executor must return a FRESH observed WorldState.  Production
-        CallbackExecutor already enforces re-observation after callbacks.
+        The executor must return a FRESH observed WorldState. Production
+        CallbackExecutor can additionally perform action-coupled
+        PRE-COMMIT observation and deterministic revalidation.
         """
 
         if iteration < 1:
@@ -547,10 +634,11 @@ class RuntimeCoordinator:
         # ----------------------------------------------------
 
         updated, report = (
-            self.executor.execute(
+            self._execute_bound_dispatch(
                 bound,
                 world=world,
-                tools=self.tools,
+                goals=goals,
+                coordination=coordination,
             )
         )
 
@@ -599,6 +687,17 @@ class RuntimeCoordinator:
                 world_after=updated,
             )
         )
+
+        if self.execution_memory is not None:
+            self.execution_memory.record_execution(
+                iteration=iteration,
+                decision=dispatch,
+                dispatch=bound,
+                report=report,
+                progress=feedback,
+                goals=goals,
+                tools=self.tools,
+            )
 
         # ----------------------------------------------------
         # Trace

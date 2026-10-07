@@ -183,7 +183,7 @@ def runtime_tools() -> ToolCatalog:
 
     open_container = _arm(
         "open_container",
-        "Open a container and keep controlling it.",
+        "Open a container.",
         {
             "container_id": P(
                 "Openable container.",
@@ -214,16 +214,15 @@ def runtime_tools() -> ToolCatalog:
             ),
             E(
                 F(DEVICE, "controlling"),
-                A("container_id"),
+                None,
             ),
         ),
         primary_arg="container_id",
         exclusive=("container_id",),
     )
-
     close_container = _arm(
         "close_container",
-        "Close the controlled container and release it.",
+        "Close a container.",
         {
             "container_id": P(
                 "Openable container.",
@@ -237,9 +236,14 @@ def runtime_tools() -> ToolCatalog:
                 "open",
             ),
             C(
+                F(DEVICE, "holding"),
+                "if_present_eq",
+                None,
+            ),
+            C(
                 F(DEVICE, "controlling"),
-                "eq",
-                A("container_id"),
+                "if_present_eq",
+                None,
             ),
         ),
         effects=(
@@ -310,7 +314,13 @@ def runtime_tools() -> ToolCatalog:
 
     nudge_arm = _arm(
         "nudge_arm",
-        "Small Cartesian semantic adjustment.",
+        (
+            "Recovery-only small Cartesian semantic adjustment. "
+            "Use it only when a pending goal has a concrete grasp, "
+            "reachability, or view-recovery need. Do not use it as an idle "
+            "action, generic progress action, or substitute for moving a "
+            "known pickable blocker."
+        ),
         {
             "direction": P(
                 "Direction.",

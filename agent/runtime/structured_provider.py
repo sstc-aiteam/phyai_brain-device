@@ -2,17 +2,22 @@
 Structured LLM provider used by planning modules.
 
 Supported providers:
+
 - local:
-    Use services.llm_service on the Edge machine.
+    Use services.model_service on the Edge machine.
+
 - remote:
     Use agent.vlm.remote_vlm to call the remote OpenAI-compatible
     llama.cpp server.
 
+- openai:
+    Use the official OpenAI Responses API.
+
 Rules:
+
 - Default provider is always "local".
-- "remote" is used only when explicitly requested.
-- There is NO automatic fallback between local and remote.
-- OpenAI API is intentionally not used here.
+- "remote" and "openai" are used only when explicitly requested.
+- There is NO automatic fallback between providers.
 
 The returned message shape is normalized to:
 
@@ -26,10 +31,11 @@ so callers can share the same parser regardless of backend.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from agent.vlm import remote_vlm
-from services import llm_service
+from services import model_service
 
 
 DEFAULT_PROVIDER = "local"
@@ -37,6 +43,7 @@ DEFAULT_PROVIDER = "local"
 SUPPORTED_PROVIDERS = {
     "local",
     "remote",
+    "openai",
 }
 
 DEFAULT_TEMPERATURE = 0.0
@@ -67,6 +74,7 @@ def resolve_provider(
     Explicit:
         local
         remote
+        openai
 
     No environment-based or automatic fallback is performed here.
     """
@@ -92,7 +100,7 @@ def resolve_provider(
     if normalized not in SUPPORTED_PROVIDERS:
         raise StructuredProviderError(
             f"{stage} 不支援 provider={normalized!r}；"
-            "只支援 local/remote"
+            "只支援 local/remote/openai"
         )
 
     return normalized
@@ -221,7 +229,7 @@ def _chat_local(
     )
 
     try:
-        message = llm_service.chat_structured(
+        message = model_service.qwen.chat_structured(
             messages=messages,
             response_schema=response_schema,
             model=model,
@@ -295,6 +303,134 @@ def _chat_remote(
 
 
 # ============================================================
+# OpenAI backend
+# ============================================================
+
+def _chat_openai(
+    *,
+    stage: str,
+    messages: list[dict[str, Any]],
+    response_schema: dict[str, Any],
+    model: str | None,
+    max_tokens: int,
+    timeout: float,
+    api_key: str | None,
+) -> dict[str, Any]:
+    """
+    Run structured inference through the official OpenAI Responses API.
+
+    This backend is explicit-only:
+        provider="openai"
+
+    API key resolution:
+        1. api_key argument
+        2. OPENAI_API_KEY environment variable
+
+    Model resolution:
+        1. model argument
+        2. OPENAI_MODEL environment variable
+
+    No provider fallback is performed.
+    """
+
+    try:
+        from openai import OpenAI
+    except ImportError as exc:
+        raise StructuredProviderError(
+            "OpenAI provider 需要 openai Python package；"
+            "請執行：pip install -U openai"
+        ) from exc
+
+    effective_api_key = (
+        api_key.strip()
+        if isinstance(api_key, str) and api_key.strip()
+        else os.environ.get(
+            "OPENAI_API_KEY",
+            "",
+        ).strip()
+    )
+
+    if not effective_api_key:
+        raise StructuredProviderError(
+            "provider='openai' 需要 api_key "
+            "或環境變數 OPENAI_API_KEY"
+        )
+
+    effective_model = (
+        model.strip()
+        if isinstance(model, str) and model.strip()
+        else os.environ.get(
+            "OPENAI_MODEL",
+            "",
+        ).strip()
+    )
+
+    if not effective_model:
+        raise StructuredProviderError(
+            "provider='openai' 需要 model "
+            "或環境變數 OPENAI_MODEL"
+        )
+
+    try:
+        client = OpenAI(
+            api_key=effective_api_key,
+            timeout=timeout,
+        )
+
+        response = client.responses.create(
+            model=effective_model,
+            input=messages,
+            max_output_tokens=max_tokens,
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": "structured_runtime_output",
+                    "schema": response_schema,
+
+                    # Existing runtime schemas were written for the current
+                    # local/llama.cpp structured provider and may not satisfy
+                    # every restriction of OpenAI strict JSON Schema mode.
+                    #
+                    # Keep the SAME schema for A/B testing, but do not require
+                    # OpenAI's strict-subset validation at the API boundary.
+                    "strict": False,
+                }
+            },
+        )
+
+        content = response.output_text
+
+        if (
+            not isinstance(content, str)
+            or not content.strip()
+        ):
+            raise StructuredProviderError(
+                f"{stage}/openai Responses API "
+                "沒有回傳有效 output_text"
+            )
+
+        message = {
+            "role": "assistant",
+            "content": content,
+        }
+
+    except StructuredProviderError:
+        raise
+
+    except Exception as exc:
+        raise StructuredProviderError(
+            f"{stage}/openai structured inference 失敗："
+            f"{type(exc).__name__}: {exc}"
+        ) from exc
+
+    return _normalize_message(
+        message,
+        provider="openai",
+        stage=stage,
+    )
+
+
+# ============================================================
 # Public API
 # ============================================================
 
@@ -334,13 +470,23 @@ def chat_structured(
             provider="remote",
         )
 
+        # Explicit OpenAI API
+        chat_structured(
+            stage="brain",
+            messages=messages,
+            response_schema=schema,
+            provider="openai",
+            model="...",
+        )
+
     There is intentionally no automatic fallback:
+
         local failure  -> raise
         remote failure -> raise
+        openai failure -> raise
 
-    `api_key` is kept temporarily only for compatibility with older planning
-    callers. OpenAI API is no longer a supported provider. A non-empty
-    api_key is rejected so it cannot be used accidentally.
+    api_key is only used by provider="openai".
+    OPENAI_API_KEY may be used instead.
     """
 
     effective_provider = resolve_provider(
@@ -369,10 +515,10 @@ def chat_structured(
                 "api_key 必須是非空字串或 None"
             )
 
-        raise StructuredProviderError(
-            "OpenAI API 已停用；"
-            "請使用 provider='local' 或 provider='remote'"
-        )
+        if effective_provider != "openai":
+            raise StructuredProviderError(
+                "api_key 只可搭配 provider='openai'"
+            )
 
     try:
         temperature = float(
@@ -466,6 +612,17 @@ def chat_structured(
             temperature=temperature,
             max_tokens=max_tokens,
             timeout=timeout,
+        )
+
+    if effective_provider == "openai":
+        return _chat_openai(
+            stage=stage,
+            messages=validated_messages,
+            response_schema=validated_schema,
+            model=validated_model,
+            max_tokens=max_tokens,
+            timeout=timeout,
+            api_key=api_key,
         )
 
     # resolve_provider() already validates this.

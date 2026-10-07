@@ -81,6 +81,157 @@ def _load_skill() -> str:
 
 
 
+# ============================================================
+# LLM WorldState views
+# ============================================================
+
+_GOAL_VIEW_HIDDEN_ENTITY_FIELDS = {
+    # Raw perception / geometry
+    "bbox",
+    "position",
+    "yaw_deg",
+    "confidence",
+    "camera_source",
+    "observed_at",
+    "source",
+
+    # Robot low-level state
+    "pose",
+    "joints",
+    "connected",
+    "driver",
+
+    # Grasp / device-allocation evidence
+    "grasp",
+    "grasp_point",
+    "grasp_xyz",
+    "gripper_yaw_deg",
+    "grasp_yaw_deg",
+    "gripper_width_mm",
+    "pickable",
+    "pickable_by",
+    "reachable_by",
+
+    # May contain derived execution-oriented labels such as "pickable".
+    "tags",
+}
+
+
+def _goal_world_view(
+    world: WorldState,
+) -> dict[str, Any]:
+    """
+    Semantic WorldState view for Stage 1 goal interpretation.
+
+    Preserve semantic application fields while removing raw perception,
+    grasp geometry, robot kinematics, and device-allocation evidence.
+    """
+
+    snapshot = world.snapshot()
+
+    raw_entities = snapshot.get(
+        "entities",
+        {},
+    )
+
+    entities: dict[str, Any] = {}
+
+    if isinstance(
+        raw_entities,
+        dict,
+    ):
+        for entity_id, entity in raw_entities.items():
+            if not isinstance(
+                entity,
+                dict,
+            ):
+                continue
+
+            entities[entity_id] = {
+                key:
+                    deepcopy(value)
+                for key, value
+                in entity.items()
+                if key
+                not in _GOAL_VIEW_HIDDEN_ENTITY_FIELDS
+            }
+
+    relations = snapshot.get(
+        "relations",
+        [],
+    )
+
+    if not isinstance(
+        relations,
+        list,
+    ):
+        relations = []
+
+    return {
+        "entities":
+            entities,
+
+        "relations":
+            deepcopy(
+                relations
+            ),
+    }
+
+
+_COORDINATION_IDENTITY_FIELDS = {
+    "type",
+    "class_name",
+    "arm_name",
+    "name",
+}
+
+
+def _coordination_world_view(
+    world: WorldState,
+) -> dict[str, Any]:
+    """
+    Minimal identity-only WorldState view for Stage 2 coordination.
+
+    This lets the LLM resolve an explicitly named device such as left_arm,
+    but prevents it from seeing allocation evidence such as pickable_by,
+    reachable_by, connected, or grasp data.
+    """
+
+    snapshot = world.snapshot()
+
+    raw_entities = snapshot.get(
+        "entities",
+        {},
+    )
+
+    entities: dict[str, Any] = {}
+
+    if isinstance(
+        raw_entities,
+        dict,
+    ):
+        for entity_id, entity in raw_entities.items():
+            if not isinstance(
+                entity,
+                dict,
+            ):
+                continue
+
+            entities[entity_id] = {
+                key:
+                    deepcopy(value)
+                for key, value
+                in entity.items()
+                if key
+                in _COORDINATION_IDENTITY_FIELDS
+            }
+
+    return {
+        "entities":
+            entities,
+    }
+
+
 def _semantic_value_schema() -> dict[str, Any]:
     """
     Runtime semantic values are intentionally limited to scalars
@@ -293,6 +444,7 @@ def _call_stage(
     payload: dict[str, Any],
     response_schema: dict[str, Any],
     llm_options: dict[str, Any] | None,
+    openai_api_key: str | None = None,
 ) -> dict[str, Any]:
     provider, model = _stage_options(
         llm_options,
@@ -329,6 +481,11 @@ def _call_stage(
         keep_alive=-1,
         wait=True,
         owner=f"runtime_task_interpreter_{provider_stage}",
+        api_key=(
+            openai_api_key
+            if provider == "openai"
+            else None
+        ),
     )
 
     if not isinstance(message, dict):
@@ -768,14 +925,15 @@ def interpret_task(
     world: WorldState,
     grounded_targets: Any = None,
     llm_options: dict[str, Any] | None = None,
+    openai_api_key: str | None = None,
 ) -> TaskSpec:
     """
     Convert one human task into semantic runtime intent.
 
-    Stage 1:
+    Goal Decomposition:
         user task -> goals / optional relative motion
 
-    Stage 2:
+    Coordination Extraction:
         goals + task -> explicit coordination constraints
 
     No action sequence is produced here.
@@ -796,27 +954,30 @@ def interpret_task(
 
     user_text = user_text.strip()
 
-    stage1 = _call_stage(
-        provider_stage="stage1",
+    goal_decomposition = _call_stage(
+        provider_stage="goal_decomposition",
         prompt_stage="goals",
         payload={
             "user_text": user_text,
-            "world_state": world.snapshot(),
+            "world_state": _goal_world_view(
+                world
+            ),
             "grounded_targets": deepcopy(
                 grounded_targets
             ),
         },
         response_schema=_goals_schema(),
         llm_options=llm_options,
+        openai_api_key=openai_api_key,
     )
 
     goals = _parse_goals(
-        stage1,
+        goal_decomposition,
         world=world,
     )
 
     motion_request = _parse_motion_request(
-        stage1,
+        goal_decomposition,
         world=world,
     )
 
@@ -829,12 +990,14 @@ def interpret_task(
             "semantic goals 或 motion_request"
         )
 
-    stage2 = _call_stage(
-        provider_stage="stage2",
+    coordination_extraction = _call_stage(
+        provider_stage="coordination_extraction",
         prompt_stage="coordination",
         payload={
             "user_text": user_text,
-            "world_state": world.snapshot(),
+            "world_state": _coordination_world_view(
+                world
+            ),
             "goals": (
                 goals.summary(world)
                 if goals is not None
@@ -846,16 +1009,17 @@ def interpret_task(
         },
         response_schema=_coordination_schema(),
         llm_options=llm_options,
+        openai_api_key=openai_api_key,
     )
 
     coordination = _parse_coordination(
-        stage2,
+        coordination_extraction,
         world=world,
         goals=goals,
     )
 
     summary = str(
-        stage1.get("summary") or ""
+        goal_decomposition.get("summary") or ""
     ).strip()
 
     return TaskSpec(
@@ -864,7 +1028,11 @@ def interpret_task(
         motion_request=motion_request,
         summary=summary,
         raw={
-            "stage1": deepcopy(stage1),
-            "stage2": deepcopy(stage2),
+            "goal_decomposition": deepcopy(
+                goal_decomposition
+            ),
+            "coordination_extraction": deepcopy(
+                coordination_extraction
+            ),
         },
     )

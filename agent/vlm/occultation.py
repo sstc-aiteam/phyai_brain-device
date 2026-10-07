@@ -158,6 +158,23 @@ def infer_occlusion_on_pc(
     public_objects = _public_objects(
         objects
     )
+    print("\n[OCCLUSION PUBLIC OBJECTS]")
+
+    for obj in public_objects:
+        print(
+            obj.get("object_id"),
+            "class=", obj.get("class_name"),
+            "seg_points=",
+            len(
+                obj.get(
+                    "segmentation_points"
+                )
+                or []
+            ),
+            "box=",
+            obj.get("box"),
+        )
+
 
     payload = {
         "camera_name":
@@ -235,6 +252,17 @@ def infer_occlusion_on_pc(
                 "utf-8"
             )
         )
+        print("\n[OCCLUSION RAW RESPONSE]"        )
+
+        print(
+            json.dumps(
+                result,
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+
+
 
         if (
             raise_on_error
