@@ -1,12 +1,19 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LeRobot 錄製</title>
+    <title>Raw data 錄製</title>
     <style>
-        * { box-sizing: border-box; }
-        [hidden] { display: none !important; }
+        * {
+            box-sizing: border-box;
+        }
+
+        [hidden] {
+            display: none !important;
+        }
+
         body {
             margin: 0;
             padding: 24px;
@@ -14,8 +21,20 @@
             color: #1f2937;
             background: #f3f4f6;
         }
-        .container { width: min(960px, 100%); margin: 0 auto; }
-        .header { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 20px; }
+
+        .container {
+            width: min(960px, 100%);
+            margin: 0 auto;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
         .page-nav {
             position: sticky;
             top: 0;
@@ -31,6 +50,7 @@
             box-shadow: 0 5px 18px rgba(15, 23, 42, .08);
             backdrop-filter: blur(8px);
         }
+
         .page-nav a {
             flex: 1 0 auto;
             padding: 10px 14px;
@@ -42,13 +62,41 @@
             white-space: nowrap;
             transition: color .15s ease, background .15s ease;
         }
-        .page-nav a:hover { color: #1d4ed8; background: #eff6ff; }
-        .page-nav a.active { color: #fff; background: #2563eb; }
-        .page-section { scroll-margin-top: 86px; }
-        h1, h2 { margin: 0; }
-        h1 { font-size: 28px; }
-        h2 { margin-bottom: 16px; font-size: 20px; }
-        .back-link { color: #2563eb; font-weight: 700; text-decoration: none; }
+
+        .page-nav a:hover {
+            color: #1d4ed8;
+            background: #eff6ff;
+        }
+
+        .page-nav a.active {
+            color: #fff;
+            background: #2563eb;
+        }
+
+        .page-section {
+            scroll-margin-top: 86px;
+        }
+
+        h1,
+        h2 {
+            margin: 0;
+        }
+
+        h1 {
+            font-size: 28px;
+        }
+
+        h2 {
+            margin-bottom: 16px;
+            font-size: 20px;
+        }
+
+        .back-link {
+            color: #2563eb;
+            font-weight: 700;
+            text-decoration: none;
+        }
+
         .card {
             margin-bottom: 18px;
             padding: 20px;
@@ -56,11 +104,29 @@
             border: 1px solid #d8dce2;
             border-radius: 12px;
         }
-        .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-        .field { display: flex; flex-direction: column; gap: 7px; }
-        .field.full { grid-column: 1 / -1; }
-        label { font-weight: 700; }
-        select, input {
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 16px;
+        }
+
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 7px;
+        }
+
+        .field.full {
+            grid-column: 1 / -1;
+        }
+
+        label {
+            font-weight: 700;
+        }
+
+        select,
+        input {
             width: 100%;
             padding: 10px 12px;
             border: 1px solid #b8c0cc;
@@ -69,10 +135,35 @@
             color: #1f2937;
             font: inherit;
         }
-        select:disabled, input:disabled { background: #eef1f5; }
-        .hint { color: #64748b; font-size: 13px; }
-        .action-hint { flex: 1 0 100%; margin: 0 0 4px; padding: 10px 13px; border: 1px solid #fcd34d; border-radius: 8px; color: #92400e; background: #fffbeb; font-size: 14px; }
-        .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+
+        select:disabled,
+        input:disabled {
+            background: #eef1f5;
+        }
+
+        .hint {
+            color: #64748b;
+            font-size: 13px;
+        }
+
+        .action-hint {
+            flex: 1 0 100%;
+            margin: 0 0 4px;
+            padding: 10px 13px;
+            border: 1px solid #fcd34d;
+            border-radius: 8px;
+            color: #92400e;
+            background: #fffbeb;
+            font-size: 14px;
+        }
+
+        .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
         button {
             padding: 11px 18px;
             border: 0;
@@ -83,20 +174,80 @@
             font-weight: 700;
             cursor: pointer;
         }
-        button.secondary { background: #64748b; }
-        button.danger { background: #dc2626; }
-        button.gripper { background: #7c3aed; }
-        button.freedrive { background: #0f766e; }
-        button:disabled { opacity: .45; cursor: not-allowed; }
-        .status-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-        .status-item { padding: 13px; border-radius: 9px; background: #f8fafc; border: 1px solid #e2e8f0; }
-        .status-label { margin-bottom: 5px; color: #64748b; font-size: 13px; }
-        .status-value { font-weight: 700; word-break: break-word; }
-        .recording { color: #047857; }
-        .stopped { color: #b91c1c; }
-        #message, #playbackMessage, #uploadMessage { min-height: 24px; margin-top: 14px; white-space: pre-wrap; }
-        #message.success, #playbackMessage.success, #uploadMessage.success { color: #047857; }
-        #message.error, #playbackMessage.error, #uploadMessage.error { color: #b91c1c; }
+
+        button.secondary {
+            background: #64748b;
+        }
+
+        button.danger {
+            background: #dc2626;
+        }
+
+        button.gripper {
+            background: #7c3aed;
+        }
+
+        button.freedrive {
+            background: #0f766e;
+        }
+
+        button:disabled {
+            opacity: .45;
+            cursor: not-allowed;
+        }
+
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .status-item {
+            padding: 13px;
+            border-radius: 9px;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+        }
+
+        .status-label {
+            margin-bottom: 5px;
+            color: #64748b;
+            font-size: 13px;
+        }
+
+        .status-value {
+            font-weight: 700;
+            word-break: break-word;
+        }
+
+        .recording {
+            color: #047857;
+        }
+
+        .stopped {
+            color: #b91c1c;
+        }
+
+        #message,
+        #playbackMessage,
+        #uploadMessage {
+            min-height: 24px;
+            margin-top: 14px;
+            white-space: pre-wrap;
+        }
+
+        #message.success,
+        #playbackMessage.success,
+        #uploadMessage.success {
+            color: #047857;
+        }
+
+        #message.error,
+        #playbackMessage.error,
+        #uploadMessage.error {
+            color: #b91c1c;
+        }
+
         #apiResponse,
         #taskRegistry {
             min-height: 90px;
@@ -109,6 +260,7 @@
             font: 13px/1.5 monospace;
             white-space: pre-wrap;
         }
+
         .preview-wrapper {
             position: relative;
             display: flex;
@@ -120,13 +272,20 @@
             border-radius: 10px;
             background: #111827;
         }
+
         #cameraPreview {
             display: none;
             width: 100%;
             max-height: 600px;
             object-fit: contain;
         }
-        #previewPlaceholder { padding: 24px; color: #cbd5e1; text-align: center; }
+
+        #previewPlaceholder {
+            padding: 24px;
+            color: #cbd5e1;
+            text-align: center;
+        }
+
         .preview-badge {
             position: absolute;
             top: 12px;
@@ -139,22 +298,341 @@
             font-size: 13px;
             font-weight: 700;
         }
+
+        .training-auth {
+            padding: 20px;
+            border: 1px solid #dbe3ef;
+            border-radius: 10px;
+            background: #f8fafc;
+        }
+
+        #trainingAuthForm {
+            max-width: 420px;
+            margin: 0 auto;
+        }
+
+        #trainingAuthForm h3 {
+            margin: 0 0 8px;
+        }
+
+        #trainingAuthInputs {
+            border: 0;
+            padding: 0;
+            margin: 18px 0 0;
+            display: grid;
+            gap: 16px;
+            min-width: 0;
+        }
+
+        .password-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            font-weight: normal;
+        }
+
+        .password-toggle input {
+            width: auto;
+        }
+
+        .auth-switch {
+            text-align: center;
+            font-size: 14px;
+        }
+
+        .auth-switch button {
+            background: transparent;
+            color: #2563eb;
+            padding: 5px;
+        }
+
+        .account-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        #trainingAuthMessage {
+            margin: 12px 0 0;
+            color: #047857;
+        }
+
+        #trainingAuthMessage:empty {
+            display: none;
+        }
+
+        .training-auth.signed-in {
+            padding: 8px 0;
+            border: 0;
+            border-bottom: 1px solid #e2e8f0;
+            border-radius: 0;
+            background: transparent;
+        }
+
+        .training-auth.signed-in .account-bar {
+            gap: 10px;
+            font-size: 14px;
+        }
+
+        .training-auth.signed-in #trainingLogoutButton {
+            flex: 0 0 auto;
+            padding: 6px 12px;
+            font-size: 13px;
+        }
+
+        .training-auth.signed-in #trainingAuthMessage:not(.error) {
+            display: none;
+        }
+
+        #trainingAuthMessage.error {
+            color: #b91c1c;
+        }
+
+        #trainingWorkspace {
+            display: grid;
+            gap: 18px;
+            margin-top: 20px;
+        }
+
+        .training-panel {
+            padding: 20px;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            min-width: 0;
+        }
+
+        .training-panel h3 {
+            margin: 0;
+            font-size: 17px;
+        }
+
+        .training-panel p.hint {
+            margin: 8px 0 16px;
+            line-height: 1.6;
+        }
+
+        #trainingFields {
+            border: 0;
+            padding: 0;
+            margin: 0;
+            min-width: 0;
+        }
+
+        .training-selection {
+            display: grid;
+            grid-template-columns: minmax(0, 2fr) minmax(180px, 1fr);
+            gap: 18px;
+        }
+
+        .training-selection .field {
+            min-width: 0;
+        }
+
+        #trainingWorkspace .actions {
+            align-items: center;
+        }
+
+        .training-summary {
+            background: #fafbfe;
+        }
+
+        .training-section-heading {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        .training-section-heading button {
+            padding: 8px 13px;
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+
+        .training-section-heading p.hint {
+            margin-bottom: 0;
+        }
+
+        .training-status-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 12px;
+        }
+
+        .training-status-grid .status-item {
+            background: white;
+        }
+
+        .training-details {
+            margin-top: 14px;
+            color: #64748b;
+            font-size: 13px;
+        }
+
+        .training-details summary {
+            cursor: pointer;
+            padding: 4px 0;
+        }
+
+        .training-details div {
+            margin-top: 8px;
+            overflow-wrap: anywhere;
+            line-height: 1.6;
+        }
+
+        #uploadMessage {
+            font-size: 13px;
+            line-height: 1.7;
+            overflow-wrap: anywhere;
+            min-height: 0;
+        }
+
+        #uploadMessage:empty {
+            display: none;
+        }
+
+        #myTraining {
+            margin-top: 20px;
+        }
+
+        .training-search {
+            display: flex;
+            align-items: end;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .training-search label {
+            flex: 1;
+            min-width: 0;
+        }
+
+        #trainingJobs {
+            display: grid;
+            gap: 12px;
+        }
+
+        .training-job {
+            border: 1px solid #e2e8f0;
+            border-radius: 9px;
+            padding: 16px;
+            min-width: 0;
+        }
+
+        .training-job-header {
+            display: flex;
+            align-items: start;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .training-job-title {
+            font-size: 15px;
+            overflow-wrap: anywhere;
+        }
+
+        .training-badge {
+            border-radius: 20px;
+            background: #eff6ff;
+            color: #1d4ed8;
+            padding: 5px 9px;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+
+        .training-badge.complete {
+            background: #ecfdf5;
+            color: #047857;
+        }
+
+        .training-badge.failed {
+            background: #fef2f2;
+            color: #b91c1c;
+        }
+
+        .training-job-meta {
+            font-size: 13px;
+            color: #64748b;
+            margin: 8px 0 12px;
+        }
+
+        .training-job progress {
+            width: 100%;
+            height: 8px;
+            accent-color: #2563eb;
+        }
+
+        .training-job-error {
+            color: #b91c1c;
+            overflow-wrap: anywhere;
+        }
+
         @media (max-width: 700px) {
-            body { padding: 14px; }
-            .header { align-items: flex-start; flex-direction: column; }
-            .form-grid, .status-grid { grid-template-columns: 1fr; }
-            .field.full { grid-column: auto; }
-            button { flex: 1 1 140px; }
-            .page-nav { margin-right: -4px; margin-left: -4px; }
-            .page-nav a { flex: 0 0 auto; }
+
+            .training-selection,
+            .training-status-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .training-panel {
+                padding: 16px;
+            }
+
+            .training-section-heading,
+            .training-job-header {
+                flex-wrap: wrap;
+            }
+
+            .training-search button,
+            .training-section-heading button {
+                flex: 0 0 auto;
+            }
+        }
+
+        @media (max-width: 700px) {
+            body {
+                padding: 14px;
+            }
+
+            .header {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .form-grid,
+            .status-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .field.full {
+                grid-column: auto;
+            }
+
+            button {
+                flex: 1 1 140px;
+            }
+
+            .page-nav {
+                margin-right: -4px;
+                margin-left: -4px;
+            }
+
+            .page-nav a {
+                flex: 0 0 auto;
+            }
         }
     </style>
 </head>
+
 <body>
     <main class="container">
         <header class="header">
             <div>
-                <h1>LeRobot 示範錄製</h1>
+                <h1>Raw data 示範錄製</h1>
                 <div class="hint">錄製手臂狀態、local/base TCP actions、action_joints、夾爪事件與相機影像</div>
             </div>
             <a class="back-link" href="/">返回控制首頁</a>
@@ -171,29 +649,17 @@
             <form id="recordForm">
                 <div class="form-grid">
                     <div class="field">
-                        <label for="datasetFormat">dataset format</label>
-                        <select id="datasetFormat" name="dataset_format">
-                            <option value="lerobot_v3">LeRobot v3</option>
-                            <option value="lerobot_v2">LeRobot v2</option>
-                        </select>
-                    </div>
-                    <div class="field">
-                        <label for="trainingTarget">training target</label>
-                        <select id="trainingTarget" name="training_target"></select>
-                        <span id="trainingTargetHint" class="hint"></span>
-                    </div>
-                    <div class="field">
                         <label for="datasetMode">dataset mode</label>
                         <select id="datasetMode" name="dataset_mode">
                             <option value="multi_task">multi-task（同一 dataset 共用多個 task）</option>
-                            <option value="single_task">single-task（依 task 分資料夾）</option>
+                            <option value="single_task">single-task（task 寫入 episode 資訊）</option>
                         </select>
                     </div>
                     <div id="multiDatasetField" class="field">
                         <label for="multiDatasetName">multi-task dataset name</label>
-                        <input id="multiDatasetName" name="dataset_name" type="text"
-                            value="medical_multi_task_v1" maxlength="100" required>
-                        <span class="hint">所有 task episode 都會寫入這個 dataset。</span>
+                        <input id="multiDatasetName" name="dataset_name" type="text" value="medical_multi_task_v1"
+                            maxlength="100" required>
+                        <span class="hint">dataset name 會保存在 episode.json。</span>
                     </div>
                     <div class="field">
                         <label for="armName">arm_name</label>
@@ -211,16 +677,15 @@
                         <label>output_path（依 format / arm 自動決定）</label>
                         <div class="status-item">
                             <div class="status-label">資料集根目錄</div>
-                            <div id="datasetRoot" class="status-value">~/robot/lerobot_datasets</div>
+                            <div id="datasetRoot" class="status-value">~/robot/raw_data</div>
                             <div class="status-label" style="margin-top: 10px">本次輸出路徑</div>
                             <div id="resolvedOutputPath" class="status-value">輸入 task 後自動配置</div>
                         </div>
-                        <span class="hint">multi-task：同一 format / arm 的所有 task 共用 dataset。single-task：同一 task / arm 共用
-                            dataset，不同 task 分開。每個 episode 都保留 task 標籤。</span>
+                        <span class="hint">所有錄製直接存入 raw_data/episode_XXXXXX；task 與 dataset name 保存在 episode.json。</span>
                     </div>
                     <div class="field">
                         <label for="interval">interval（秒）</label>
-                        <input id="interval" name="interval" type="number" min="0.033" max="10" step="0.001" value="0.1"
+                        <input id="interval" name="interval" type="number" min="0.1" max="0.1" step="0.1" value="0.1" readonly
                             required>
                         <span class="hint">0.1 秒約為 10 FPS。</span>
                     </div>
@@ -257,8 +722,7 @@
                         <select id="registeredTask" name="registered_task" required></select>
                         <span class="hint">Multi-task 錄製只能選擇已註冊的英文小寫指令。</span>
                         <div class="actions" style="margin-top: 10px">
-                            <input id="newTaskName" type="text" maxlength="200"
-                                placeholder="例如：open the drawer">
+                            <input id="newTaskName" type="text" maxlength="200" placeholder="例如：open the drawer">
                             <button id="registerTaskButton" class="secondary" type="button">註冊 Task</button>
                         </div>
                     </div>
@@ -288,19 +752,41 @@
         <section class="card">
             <h2>錄製狀態</h2>
             <div class="status-grid">
-                <div class="status-item"><div class="status-label">狀態</div><div id="recordingStatus" class="status-value stopped">未錄製</div></div>
-                <div class="status-item"><div class="status-label">錄製時間</div><div id="elapsedStatus" class="status-value">0.0 秒</div></div>
-                <div class="status-item"><div class="status-label">Samples</div><div id="sampleStatus" class="status-value">0</div></div>
-                <div class="status-item"><div class="status-label">Episode</div><div id="episodeStatus" class="status-value">—</div></div>
-                <div class="status-item"><div class="status-label">手臂／夾爪</div><div id="hardwareStatus" class="status-value">—</div></div>
-                <div class="status-item"><div class="status-label">相機</div><div id="cameraStatus" class="status-value">—</div></div>
-                <div class="status-item" style="grid-column: span 2"><div class="status-label">輸出位置</div><div id="pathStatus" class="status-value">—</div></div>
+                <div class="status-item">
+                    <div class="status-label">狀態</div>
+                    <div id="recordingStatus" class="status-value stopped">未錄製</div>
+                </div>
+                <div class="status-item">
+                    <div class="status-label">錄製時間</div>
+                    <div id="elapsedStatus" class="status-value">0.0 秒</div>
+                </div>
+                <div class="status-item">
+                    <div class="status-label">Samples</div>
+                    <div id="sampleStatus" class="status-value">0</div>
+                </div>
+                <div class="status-item">
+                    <div class="status-label">Episode</div>
+                    <div id="episodeStatus" class="status-value">—</div>
+                </div>
+                <div class="status-item">
+                    <div class="status-label">手臂／夾爪</div>
+                    <div id="hardwareStatus" class="status-value">—</div>
+                </div>
+                <div class="status-item">
+                    <div class="status-label">相機</div>
+                    <div id="cameraStatus" class="status-value">—</div>
+                </div>
+                <div class="status-item" style="grid-column: span 2">
+                    <div class="status-label">輸出位置</div>
+                    <div id="pathStatus" class="status-value">—</div>
+                </div>
             </div>
         </section>
 
         <section id="replay-recordings" class="card page-section">
             <h2>Replay 錄製軌跡</h2>
-            <div class="hint" style="margin-bottom: 14px">Replay 會讓實體手臂先移動到 episode 起點，再依原始 FPS 播放joints與夾爪。開始前請清空工作區並準備急停。</div>
+            <div class="hint" style="margin-bottom: 14px">Replay 會讓實體手臂先移動到 episode 起點，再依原始 FPS
+                播放joints與夾爪。開始前請清空工作區並準備急停。</div>
             <div class="form-grid">
                 <div class="field full">
                     <label for="replayDataset">Task / Dataset</label>
@@ -309,18 +795,6 @@
                 <div class="field">
                     <label for="replayEpisode">Episode</label>
                     <select id="replayEpisode"></select>
-                </div>
-                <div class="field">
-                    <label for="replayArm">Arm</label>
-                    <select id="replayArm">
-                        <option value="">正在讀取已連接設備...</option>
-                    </select>
-                </div>
-                <div class="field">
-                    <label for="replayGripper">Gripper</label>
-                    <select id="replayGripper">
-                        <option value="">正在讀取已連接設備...</option>
-                    </select>
                 </div>
                 <div class="field">
                     <label for="replayMoveToStart">Move to start</label>
@@ -352,41 +826,116 @@
                 <button id="refreshReplayButton" class="secondary" type="button">更新資料夾</button>
             </div>
             <div class="status-grid" style="margin-top: 16px">
-                <div class="status-item"><div class="status-label">播放狀態</div><div id="playingStatus" class="status-value stopped">未播放</div></div>
-                <div class="status-item"><div class="status-label">經過時間</div><div id="playbackElapsed">0.0 秒</div></div>
-                <div class="status-item" style="grid-column: span 2"><div class="status-label">目前資料集</div><div id="playbackPath" class="status-value">—</div></div>
+                <div class="status-item">
+                    <div class="status-label">播放狀態</div>
+                    <div id="playingStatus" class="status-value stopped">未播放</div>
+                </div>
+                <div class="status-item">
+                    <div class="status-label">經過時間</div>
+                    <div id="playbackElapsed">0.0 秒</div>
+                </div>
+                <div class="status-item" style="grid-column: span 2">
+                    <div class="status-label">目前資料集</div>
+                    <div id="playbackPath" class="status-value">—</div>
+                </div>
             </div>
             <div id="playbackMessage" aria-live="polite"></div>
         </section>
 
         <section id="training-upload" class="card page-section">
             <h2>上傳訓練資料與訓練</h2>
-            <div class="hint" style="margin-bottom: 14px">選擇 recording 產生的完整 LeRobot dataset；後端會打包、送至訓練 server，並請求建立訓練工作。</div>
-            <div class="form-grid">
-                <div class="field full">
-                    <label for="uploadDataset">Dataset</label>
-                    <select id="uploadDataset"></select>
+            <div class="hint" style="margin-bottom: 14px">本機初版：帳號儲存在本機，尚未同步 GCP；會實際打包檔案，上傳與訓練進度為模擬。模型格式相容性將在正式串接時驗證。
+            </div>
+            <div class="training-auth">
+                <form id="trainingAuthForm">
+                    <h3 id="trainingAuthTitle">登入訓練帳號</h3>
+                    <p class="hint" id="trainingAuthHint">登入後即可提交資料集，並查看自己的訓練紀錄。錄製與 Replay 不需要登入。</p>
+                    <fieldset id="trainingAuthInputs">
+                        <div class="field">
+                            <label for="trainingUsername">帳號</label>
+                            <input id="trainingUsername" name="username" autocomplete="username" placeholder="輸入帳號"
+                                maxlength="32" required>
+                        </div>
+                        <div class="field">
+                            <label for="trainingPassword">密碼</label>
+                            <input id="trainingPassword" name="password" type="password" autocomplete="current-password"
+                                placeholder="輸入密碼" maxlength="128" required>
+                        </div>
+                        <div class="field" id="trainingConfirmField" hidden>
+                            <label for="trainingConfirmPassword">確認密碼</label>
+                            <input id="trainingConfirmPassword" type="password" autocomplete="new-password"
+                                placeholder="再次輸入密碼" maxlength="128" disabled>
+                        </div>
+                        <label class="password-toggle"><input id="trainingShowPassword" type="checkbox">顯示密碼</label>
+                        <button id="trainingLoginButton" type="submit">登入</button>
+                        <div class="auth-switch"><span id="trainingSwitchHint">還沒有帳號？</span> <button
+                                id="trainingRegisterButton" type="button">建立帳號</button></div>
+                    </fieldset>
+                </form>
+                <div id="trainingAccountBar" class="account-bar" hidden>
+                    <strong id="trainingAuthStatus">已登入</strong>
+                    <button id="trainingLogoutButton" class="secondary" type="button">登出</button>
                 </div>
-                <div class="field full">
-                    <label for="trainingServerUrl">Training server upload URL</label>
-                    <input id="trainingServerUrl" type="url" placeholder="https://training.example.com/api/datasets/upload">
-                    <span class="hint">可由伺服器環境變數 TRAINING_SERVER_URL 預填。</span>
+                <p id="trainingAuthMessage" role="status" aria-live="polite"></p>
+            </div>
+            <div id="trainingWorkspace" hidden>
+                <div class="training-panel">
+                    <h3>建立訓練</h3>
+                    <p class="hint">選擇資料集與模型，再提交訓練工作。</p>
+                    <fieldset id="trainingFields" disabled>
+                        <div class="training-selection">
+                            <div class="field">
+                                <label for="uploadDataset">Dataset</label>
+                                <select id="uploadDataset"></select>
+                            </div>
+                            <div class="field">
+                                <label for="uploadModel">訓練模型</label>
+                                <select id="uploadModel">
+                                    <option value="smolvla">SmolVLA</option>
+                                    <option value="groot_n15">GR00T N1.5</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="actions">
+                            <button id="uploadDatasetButton" type="button">打包並模擬訓練</button>
+                            <span class="hint">會儲存本機壓縮檔，不會執行雲端訓練。</span>
+                        </div>
+                    </fieldset>
                 </div>
-                <div class="field full">
-                    <label for="trainingApiToken">API token（選填）</label>
-                    <input id="trainingApiToken" type="password" autocomplete="off" placeholder="Bearer token">
+                <div class="training-panel training-summary">
+                    <div class="training-section-heading">
+                        <h3>本次狀態</h3><button id="refreshUploadButton" class="secondary" type="button">更新狀態</button>
+                    </div>
+                    <div class="training-status-grid">
+                        <div class="status-item">
+                            <div class="status-label">狀態</div>
+                            <div id="uploadStatus" class="status-value">尚未上傳</div>
+                        </div>
+                        <div class="status-item">
+                            <div class="status-label">壓縮檔大小</div>
+                            <div id="uploadSize" class="status-value">—</div>
+                        </div>
+                    </div>
+                    <details class="training-details">
+                        <summary>資料集路徑</summary>
+                        <div id="uploadPath">—</div>
+                    </details>
+                    <div id="uploadMessage" aria-live="polite"></div>
                 </div>
             </div>
-            <div class="actions">
-                <button id="uploadDatasetButton" type="button">上傳並開始訓練</button>
-                <button id="refreshUploadButton" class="secondary" type="button">更新狀態</button>
+            <div id="myTraining" class="training-panel" hidden>
+                <div class="training-section-heading">
+                    <div>
+                        <h3>我的訓練</h3>
+                        <p class="hint">進行中的工作每 5 秒自動更新 · 目前為模擬進度</p>
+                    </div><button id="refreshTrainingJobsButton" class="secondary" type="button">更新進度</button>
+                </div>
+                <div class="training-search"><label class="field" for="trainingSearch"><span
+                            class="hint">搜尋工作</span><input id="trainingSearch" type="search"
+                            placeholder="Dataset、模型或工作 ID"></label><button id="searchTrainingButton"
+                        type="button">查詢</button></div>
+                <div id="trainingJobs" aria-live="polite"></div>
             </div>
-            <div class="status-grid" style="margin-top: 16px">
-                <div class="status-item"><div class="status-label">狀態</div><div id="uploadStatus" class="status-value stopped">尚未上傳</div></div>
-                <div class="status-item"><div class="status-label">壓縮檔大小</div><div id="uploadSize" class="status-value">—</div></div>
-                <div class="status-item" style="grid-column: span 2"><div class="status-label">Dataset</div><div id="uploadPath" class="status-value">—</div></div>
-            </div>
-            <div id="uploadMessage" aria-live="polite"></div>
         </section>
 
         <section class="card">
@@ -396,17 +945,28 @@
 
         <section class="card">
             <h2>Task Registry</h2>
-            <div class="hint" style="margin-bottom: 10px">檔案：<span id="registryPath">~/robot/lerobot_datasets/task_registry.json</span></div>
+            <div class="hint" style="margin-bottom: 10px">檔案：<span
+                    id="registryPath">~/robot/lerobot_datasets/task_registry.json</span></div>
             <pre id="taskRegistry">尚無 task</pre>
         </section>
     </main>
 
     <script type="module">
-        import { getJson } from "/web/includes/library/JSFile/modules/core.js";
-        import { start_arm_freedrive, stop_arm_freedrive } from "/web/includes/library/JSFile/modules/arm.js";
-        import { getRecordingStatus, getTaskRegistry, registerTask, moveRecordingGripper, startRecording, stopRecording } from "/recording-training-replay/static/recording.js";
-        import { getPlaybackStatus, getReplayCatalog, startPlayback, stopPlayback } from "/recording-training-replay/static/replay.js";
-        import { getTrainingUploadStatus, submitTrainingDataset } from "/recording-training-replay/static/training.js";
+        import { RobotAPI } from "/web/includes/library/JSFile/robotjs2026.js";
+
+        const {
+            getJson,
+            get_camera_stream,
+            start_arm_freedrive,
+            stop_arm_freedrive,
+            getRecordingStatus, getTaskRegistry, registerTask,
+            moveRecordingGripper, startRecording, stopRecording,
+            getPlaybackStatus, getReplayCatalog, startPlayback, stopPlayback,
+            getTrainingUploadStatus, submitTrainingDataset, hasTrainingSession,
+            loginTraining, logoutTraining, registerTraining, getTrainingJobs,
+            getTrainingAccount, trainingSessionKey,
+        } = RobotAPI;
+
 
         const form = document.getElementById("recordForm");
         const startButton = document.getElementById("startButton");
@@ -426,8 +986,9 @@
         let uploadPollingTimer = null;
         let replayCatalogSignature = "";
         let previewCameraName = null;
-        let taskRegistryData = { tasks: [], dataset_root: "~/robot/lerobot_datasets" };
+        let taskRegistryData = { tasks: [], dataset_root: "~/robot/raw_data" };
         let replayDatasets = [];
+        let trainingDatasets = [];
         let recordingDevices = [];
         const pageNavLinks = [...document.querySelectorAll(".page-nav a[data-section]")];
         function booleanValue(id) { return document.getElementById(id).value === "true"; }
@@ -548,7 +1109,6 @@
                 cameras: [{ camera_name: arm.arm_name, arm_name: arm.arm_name }],
             }));
             fillArmSelect("armName", "gripperName");
-            fillArmSelect("replayArm", "replayGripper");
             if (!recordingDevices.length) throw new Error("arm_service 沒有回報任何已連接手臂");
             renderResolvedOutputPath();
         }
@@ -560,50 +1120,10 @@
         function showResponse(response) {
             apiResponse.textContent = JSON.stringify(response, null, 2);
         }
-        // 依 LeRobot 格式更新可選的訓練模型。
-        function syncTrainingTargets() {
-            const format = document.getElementById("datasetFormat").value;
-            const select = document.getElementById("trainingTarget");
-            const hint = document.getElementById("trainingTargetHint");
-            const targets = {
-                lerobot_v2: [{ value: "groot_n15", label: "GR00T N1.5" }],
-                lerobot_v3: [],
-            }[format] ?? [];
-            select.replaceChildren();
-            if (!targets.length) {
-                select.add(new Option("不轉換（保留原始格式）", ""));
-                select.disabled = true;
-                hint.textContent = "此格式目前尚未實作訓練模型轉換。";
-                return;
-            }
-            for (const target of targets) select.add(new Option(target.label, target.value));
-            select.disabled = false;
-            hint.textContent = "選擇錄製資料要產生的訓練模型格式。";
-        }
         function renderResolvedOutputPath() {
-            const task = selectedTask();
-            const arm = document.getElementById("armName").value;
-            const format = document.getElementById("datasetFormat").value;
-            const mode = document.getElementById("datasetMode").value;
-            const datasetName = document.getElementById("multiDatasetName").value.trim();
             const datasetRoot = taskRegistryData.dataset_root;
             document.getElementById("datasetRoot").textContent = datasetRoot;
-            const folderName = mode === "multi_task" ? datasetSlug(datasetName) : taskSlug(task);
-            const folder = `${mode}/${folderName}`;
-            const target = document.getElementById("trainingTarget").value;
-            const formatPath = target ? `${format}/${target}` : format;
-            const expectedPath = `${datasetRoot}/${formatPath}/${folder}`;
-            const existing = (taskRegistryData.tasks ?? []).find((item) =>
-                String(item.task ?? "").toLowerCase() === task.toLowerCase()
-                && String(item.arm_name ?? "").toLowerCase() === arm
-                && String(item.dataset_path ?? "") === expectedPath
-            );
-            if (existing) {
-                document.getElementById("resolvedOutputPath").textContent = `${existing.dataset_path}（下一個 episode：${existing.episode_count ?? 0}）`;
-                return;
-            }
-            const description = mode === "multi_task" ? "multi-task 共用 dataset" : "single-task dataset";
-            document.getElementById("resolvedOutputPath").textContent = `${expectedPath}（${description}）`;
+            document.getElementById("resolvedOutputPath").textContent = `${datasetRoot}/episode_XXXXXX（每次錄製新增一個 episode）`;
         }
         async function loadTaskRegistry() {
             try {
@@ -653,22 +1173,33 @@
                 const option = document.createElement("option");
                 option.value = String(episode);
                 const detail = (dataset.episode_details ?? []).find((item) => Number(item.episode_index) === Number(episode));
-                option.textContent = detail?.label ?? `episode_${String(episode).padStart(6, "0")}`;
+                option.textContent = `${detail?.label ?? `episode_${String(episode).padStart(6, "0")}`} — ${detail?.metadata?.robot_type ?? dataset.robot_type}`;
                 episodeSelect.appendChild(option);
             }
-            const arm = dataset?.compatible_arms?.[0];
-            if (arm) {
-                document.getElementById("replayArm").value = arm;
-                fillGripperSelect("replayGripper", arm);
-            }
+            updateReplayEpisodeSelection();
             document.getElementById("playbackPath").textContent = dataset?.dataset_path ?? "—";
-            document.getElementById("startReplayButton").disabled = !dataset || !(dataset.episodes ?? []).length || !(dataset.compatible_arms ?? []).length;
+        }
+
+        function selectedReplayEpisodeDevices() {
+            const dataset = selectedReplayDataset();
+            const index = Number(document.getElementById("replayEpisode").value);
+            const detail = dataset?.episode_details?.find((item) => Number(item.episode_index) === index);
+            const metadata = detail?.metadata ?? {};
+            const candidates = recordingDevices.filter((item) => item.driver === metadata.robot_type);
+            const arm = metadata.arm_name ?? (candidates.length === 1 ? candidates[0].arm_name : null);
+            return { arm_name: arm, gripper_name: metadata.gripper_name ?? null };
+        }
+
+        function updateReplayEpisodeSelection() {
+            const dataset = selectedReplayDataset();
+            document.getElementById("playbackPath").textContent = dataset?.dataset_path ?? "—";
+            document.getElementById("startReplayButton").disabled = !dataset || !(dataset.episodes ?? []).length;
         }
 
         function updateUploadDatasets() {
             const select = document.getElementById("uploadDataset");
             const previous = select.value;
-            const uniqueDatasets = [...new Map(replayDatasets.map((item) => [item.dataset_path, item])).values()];
+            const uniqueDatasets = [...new Map(trainingDatasets.map((item) => [item.dataset_path, item])).values()];
             select.replaceChildren();
             for (const dataset of uniqueDatasets) {
                 const option = document.createElement("option");
@@ -690,6 +1221,8 @@
             const response = await getReplayCatalog();
             if (!responseSucceeded(response)) throw new Error(responseError(response));
             const nextDatasets = responseData(response).datasets ?? [];
+            trainingDatasets = responseData(response).training_datasets ?? [];
+            updateUploadDatasets();
             const nextSignature = JSON.stringify(nextDatasets.map((dataset) => ({
                 dataset_path: dataset.dataset_path,
                 total_episodes: dataset.total_episodes,
@@ -698,7 +1231,7 @@
                 episode_details: dataset.episode_details,
             })));
             if (!force && nextSignature === replayCatalogSignature) return false;
-            
+
             const select = document.getElementById("replayDataset");
             const previousSelection = selectedReplayDataset();
             const previousDataset = previousSelection?.dataset_path;
@@ -730,6 +1263,7 @@
             if ([...episodeSelect.options].some((option) => option.value === previousEpisode)) {
                 episodeSelect.value = previousEpisode;
             }
+            updateReplayEpisodeSelection();
             return true;
         }
 
@@ -759,8 +1293,6 @@
                 document.getElementById("playbackPath").textContent = data.input_path ?? selectedReplayDataset()?.dataset_path ?? "—";
                 document.getElementById("replayDataset").disabled = playing;
                 document.getElementById("replayEpisode").disabled = playing;
-                document.getElementById("replayArm").disabled = playing;
-                document.getElementById("replayGripper").disabled = playing;
                 if (playing) {
                     document.getElementById("startReplayButton").disabled = true;
                     if (replayPollingTimer === null) replayPollingTimer = window.setInterval(refreshReplayStatus, 500);
@@ -793,34 +1325,81 @@
             return `${(value / (1024 ** index)).toFixed(index ? 1 : 0)} ${units[index]}`;
         }
 
+        let trainingAuthMode = "login";
+        function authMessage(text, failed = false) {
+            const element = document.getElementById("trainingAuthMessage");
+            element.textContent = text;
+            element.className = failed ? "error" : "";
+        }
+        function syncTrainingAuth() {
+            const loggedIn = hasTrainingSession();
+            document.querySelector(".training-auth").classList.toggle("signed-in", loggedIn);
+            document.getElementById("trainingWorkspace").hidden = !loggedIn;
+            document.getElementById("trainingFields").disabled = !loggedIn;
+            document.getElementById("trainingAuthForm").hidden = loggedIn;
+            document.getElementById("trainingAccountBar").hidden = !loggedIn;
+            document.getElementById("myTraining").hidden = !loggedIn;
+            document.getElementById("trainingAuthStatus").textContent = `已登入 · ${getTrainingAccount()?.username || "訓練帳號"}`;
+            if (!loggedIn) {
+                if (uploadPollingTimer !== null) window.clearInterval(uploadPollingTimer);
+                uploadPollingTimer = null;
+                document.getElementById("trainingJobs").replaceChildren();
+                document.getElementById("trainingSearch").value = "";
+                document.getElementById("uploadStatus").textContent = "尚未登入";
+                document.getElementById("uploadSize").textContent = "—";
+                document.getElementById("uploadPath").textContent = "—";
+                apiResponse.textContent = "尚未呼叫 API";
+                showUploadMessage("");
+            }
+        }
+        function setAuthMode(mode) {
+            trainingAuthMode = mode;
+            const registering = mode === "register";
+            document.getElementById("trainingAuthTitle").textContent = registering ? "建立訓練帳號" : "登入訓練帳號";
+            document.getElementById("trainingAuthHint").textContent = registering ? "帳號使用 3–32 個英文字母、數字或底線，密碼至少 8 個字元。註冊後自動登入。" : "登入後即可提交資料集，並查看自己的訓練紀錄。錄製與 Replay 不需要登入。";
+            document.getElementById("trainingLoginButton").textContent = registering ? "建立帳號並登入" : "登入";
+            document.getElementById("trainingRegisterButton").textContent = registering ? "返回登入" : "建立帳號";
+            document.getElementById("trainingSwitchHint").textContent = registering ? "已經有帳號？" : "還沒有帳號？";
+            document.getElementById("trainingConfirmField").hidden = !registering;
+            const confirm = document.getElementById("trainingConfirmPassword");
+            confirm.disabled = !registering;
+            confirm.required = registering;
+            confirm.value = "";
+            const password = document.getElementById("trainingPassword");
+            password.autocomplete = registering ? "new-password" : "current-password";
+            password.minLength = registering ? 8 : 1;
+            authMessage("");
+        }
+
         async function refreshUploadStatus() {
+            syncTrainingAuth();
+            if (!hasTrainingSession()) return;
+            const session = trainingSessionKey();
             try {
                 const response = await getTrainingUploadStatus();
+                if (session !== trainingSessionKey()) return;
                 if (!responseSucceeded(response)) throw new Error(responseError(response));
                 const data = responseData(response);
-                if (!document.getElementById("trainingServerUrl").value && data.default_server_url) {
-                    document.getElementById("trainingServerUrl").value = data.default_server_url;
-                }
-                const labels = { idle: "尚未上傳", starting: "準備中", packaging: "正在打包", uploading: "正在上傳", completed: "上傳完成", failed: "上傳失敗" };
-                const status = document.getElementById("uploadStatus");
-                status.textContent = labels[data.phase] ?? data.phase;
-                status.className = `status-value ${data.phase === "completed" ? "recording" : (data.uploading ? "" : "stopped")}`;
+                await refreshTrainingJobs();
+                if (session !== trainingSessionKey()) return;
+                const labels = { idle: "尚未上傳", packaging: "正在打包", simulated_training: "模擬訓練中", simulated_completed: "打包完成／訓練已模擬", failed: "打包失敗" };
+                document.getElementById("uploadStatus").textContent = labels[data.phase] ?? data.phase;
+                document.getElementById("uploadStatus").className = `status-value ${data.phase === "failed" ? "stopped" : data.phase === "simulated_completed" ? "recording" : ""}`;
                 document.getElementById("uploadSize").textContent = formatBytes(data.archive_bytes);
                 document.getElementById("uploadPath").textContent = data.dataset_path ?? "—";
+                document.getElementById("trainingFields").disabled = Boolean(data.uploading);
                 document.getElementById("uploadDatasetButton").disabled = Boolean(data.uploading) || !document.getElementById("uploadDataset").value;
-                document.getElementById("uploadDataset").disabled = Boolean(data.uploading);
-                document.getElementById("trainingServerUrl").disabled = Boolean(data.uploading);
-                document.getElementById("trainingApiToken").disabled = Boolean(data.uploading);
-                if (data.error) showUploadMessage(`上傳失敗：${data.error}`, true);
-                else if (data.phase === "completed") showUploadMessage(`上傳完成（HTTP ${data.response_status}）。`);
-                else if (data.uploading) showUploadMessage(data.phase === "packaging" ? "正在壓縮 dataset…" : "資料正在傳送，請勿關閉後端服務…");
-                if (data.uploading && uploadPollingTimer === null) uploadPollingTimer = window.setInterval(refreshUploadStatus, 1000);
+                if (data.error) showUploadMessage(data.error, true);
+                else if (data.phase === "simulated_completed") showUploadMessage(`壓縮檔：${data.archive_path}。尚未實際上傳或訓練。`);
+                else if (data.uploading) showUploadMessage(data.phase === "packaging" ? "正在壓縮 dataset…" : "模擬訓練中（未連接 GCP）");
+                if (data.uploading && uploadPollingTimer === null) uploadPollingTimer = window.setInterval(refreshUploadStatus, 5000);
                 if (!data.uploading && uploadPollingTimer !== null) {
                     window.clearInterval(uploadPollingTimer);
                     uploadPollingTimer = null;
                 }
             } catch (error) {
-                showUploadMessage(`無法讀取上傳狀態：${error.message}`, true);
+                if (!hasTrainingSession()) { syncTrainingAuth(); authMessage("登入已過期，請重新登入。", true); }
+                else if (session === trainingSessionKey()) showUploadMessage(`無法讀取狀態：${error.message}`, true);
             }
         }
 
@@ -832,14 +1411,12 @@
             closeGripperButton.disabled = !locked;
             if (!locked) {
                 syncDatasetModeUI();
-                syncTrainingTargets();
             }
         }
         function startPreview(cameraName) {
             if (!cameraName || previewCameraName === cameraName) return;
             previewCameraName = cameraName;
-            const params = new URLSearchParams({ camera_name: cameraName, t: String(Date.now()) });
-            cameraPreview.src = `/api/vision/camera_stream?${params.toString()}`;
+            cameraPreview.src = `${get_camera_stream(cameraName, { quality: 90 })}&t=${Date.now()}`;
             cameraPreview.style.display = "block";
             previewPlaceholder.style.display = "none";
             previewBadge.style.display = "block";
@@ -863,8 +1440,9 @@
         function renderStatus(response) {
             const data = responseData(response);
             const recording = Boolean(data.recording);
+            const sessionActive = Boolean(data.session_active ?? recording);
             const status = document.getElementById("recordingStatus");
-            status.textContent = recording ? "錄製中" : "未錄製";
+            status.textContent = sessionActive && data.error ? "錄製失敗，請停止收尾" : recording ? "錄製中" : "未錄製";
             status.className = `status-value ${recording ? "recording" : "stopped"}`;
             document.getElementById("elapsedStatus").textContent = `${Number(data.elapsed_seconds ?? 0).toFixed(1)} 秒`;
             document.getElementById("sampleStatus").textContent = String(data.sample_count ?? 0);
@@ -875,15 +1453,15 @@
             const cameraName = (data.camera_names ?? [])[0];
             if (recording && data.record_video && cameraName) startPreview(cameraName);
             else if (!recording || !data.record_video) stopPreview();
-            setFormLocked(recording);
-            if (recording && pollingTimer === null) pollingTimer = window.setInterval(refreshStatus, 1000);
-            if (!recording && pollingTimer !== null) { window.clearInterval(pollingTimer); pollingTimer = null; }
+            setFormLocked(sessionActive);
+            if (sessionActive && data.error) showMessage(`錄製失敗：${data.error}。請按「停止並儲存」完成收尾；此 episode 會保留為 failed。`, true);
+            if (sessionActive && pollingTimer === null) pollingTimer = window.setInterval(refreshStatus, 1000);
+            if (!sessionActive && pollingTimer !== null) { window.clearInterval(pollingTimer); pollingTimer = null; }
         }
 
         async function refreshStatus() {
             try {
-                const format = document.getElementById("datasetFormat").value;
-                const response = await getRecordingStatus(format);
+                const response = await getRecordingStatus();
                 if (!responseSucceeded(response)) throw new Error(responseError(response));
                 renderStatus(response);
             } catch (error) {
@@ -907,8 +1485,6 @@
                 task,
                 initial_gripper_position: Number(document.getElementById("initialGripperPosition").value),
                 dataset_mode: document.getElementById("datasetMode").value,
-                dataset_format: document.getElementById("datasetFormat").value,
-                training_target: document.getElementById("trainingTarget").value || null,
                 dataset_name: document.getElementById("multiDatasetName").value.trim(),
             };
             startButton.disabled = true;
@@ -933,12 +1509,11 @@
         stopButton.addEventListener("click", async () => {
             stopButton.disabled = true;
             stopPreview("錄製已停止；正在寫入 dataset…");
-            showMessage("正在停止並寫入 LeRobot episode…");
+            showMessage("正在停止並儲存 raw data…");
             try {
                 const response = await stopRecording({
                     arm_name: document.getElementById("armName").value,
                     gripper_name: document.getElementById("gripperName").value,
-                    dataset_format: document.getElementById("datasetFormat").value,
                 });
                 showResponse(response);
                 if (!responseSucceeded(response)) throw new Error(responseError(response));
@@ -949,8 +1524,8 @@
                 await loadTaskRegistry();
                 await refreshStatus();
             } catch (error) {
+                await refreshStatus();
                 showMessage(`停止失敗：${error.message}`, true);
-                stopButton.disabled = false;
             }
         });
 
@@ -997,11 +1572,6 @@
         document.getElementById("task").addEventListener("input", renderResolvedOutputPath);
         document.getElementById("registeredTask").addEventListener("change", renderResolvedOutputPath);
         document.getElementById("multiDatasetName").addEventListener("input", renderResolvedOutputPath);
-        document.getElementById("datasetFormat").addEventListener("change", () => {
-            syncTrainingTargets();
-            renderResolvedOutputPath();
-        });
-        document.getElementById("trainingTarget").addEventListener("change", renderResolvedOutputPath);
         document.getElementById("datasetMode").addEventListener("change", () => {
             syncDatasetModeUI();
             renderResolvedOutputPath();
@@ -1024,14 +1594,12 @@
             }
         });
         document.getElementById("replayDataset").addEventListener("change", updateReplaySelection);
-        document.getElementById("replayArm").addEventListener("change", (event) => {
-            fillGripperSelect("replayGripper", event.target.value);
-        });
+        document.getElementById("replayEpisode").addEventListener("change", updateReplayEpisodeSelection);
         document.getElementById("startReplayButton").addEventListener("click", async () => {
             const dataset = selectedReplayDataset();
             if (!dataset) return showPlaybackMessage("請先選擇 dataset。", true);
-            const arm = document.getElementById("replayArm").value;
-            if (!(dataset.compatible_arms ?? []).includes(arm)) return showPlaybackMessage(`此 dataset 的 robot_type=${dataset.robot_type}，不可使用 ${arm}。`, true);
+            const devices = selectedReplayEpisodeDevices();
+            const arm = devices.arm_name ?? "episode 對應的";
             const episode = Number(document.getElementById("replayEpisode").value);
             if (!window.confirm(`即將移動實體 ${arm} 手臂並播放 episode ${episode}。\n\n請確認工作區無人、無障礙物且急停可用。\n\n確定開始嗎？`)) return;
             showPlaybackMessage("正在載入 episode 並啟動 Replay…");
@@ -1039,8 +1607,6 @@
                 const response = await startPlayback({
                     input_path: dataset.dataset_path,
                     dataset_format: dataset.format,
-                    arm_name: arm,
-                    gripper_name: document.getElementById("replayGripper").value,
                     episode_index: episode,
                     speed: Number(document.getElementById("replaySpeed").value),
                     acceleration: Number(document.getElementById("replayAcceleration").value),
@@ -1067,26 +1633,130 @@
             try { await loadReplayCatalog(true); showPlaybackMessage("資料夾已重新掃描，資料集清單已更新。"); }
             catch (error) { showPlaybackMessage(`資料夾更新失敗：${error.message}`, true); }
         });
-        document.getElementById("uploadDatasetButton").addEventListener("click", async () => {
-            const datasetPath = document.getElementById("uploadDataset").value;
-            const serverUrl = document.getElementById("trainingServerUrl").value.trim();
-            if (!datasetPath) return showUploadMessage("請先選擇 dataset。", true);
-            if (!serverUrl) return showUploadMessage("請輸入 training server upload URL。", true);
-            if (!window.confirm(`確定要將以下資料集上傳到訓練 server？\n\n${datasetPath}\n\n${serverUrl}`)) return;
-            showUploadMessage("正在啟動上傳…");
+        async function refreshTrainingJobs() {
+            const session = trainingSessionKey();
+            const response = await getTrainingJobs(document.getElementById("trainingSearch").value);
+            if (session !== trainingSessionKey()) return;
+            const container = document.getElementById("trainingJobs");
+            container.replaceChildren();
+            const jobs = responseData(response).jobs || [];
+            if (!jobs.length) container.textContent = "沒有符合的訓練工作";
+            for (const job of jobs) {
+                const row = document.createElement("article");
+                row.className = "training-job";
+                const labels = { packaging: "打包中", simulated_training: "模擬訓練中", simulated_completed: "模擬完成", failed: "失敗" };
+                const header = document.createElement("div");
+                header.className = "training-job-header";
+                const title = document.createElement("strong");
+                title.className = "training-job-title";
+                title.textContent = String(job.dataset_path || "Dataset").split(/[\\/]/).filter(Boolean).pop();
+                const badge = document.createElement("span");
+                badge.className = `training-badge ${job.phase === "failed" ? "failed" : job.phase === "simulated_completed" ? "complete" : ""}`;
+                badge.textContent = labels[job.phase] || job.phase;
+                header.append(title, badge);
+                const meta = document.createElement("div");
+                meta.className = "training-job-meta";
+                const date = new Date(job.created_at);
+                meta.textContent = `${({ smolvla: "SmolVLA", groot_n15: "GR00T N1.5" })[job.model] || job.model} · ${Number.isNaN(date.getTime()) ? "—" : date.toLocaleString("zh-TW")}`;
+                row.append(header, meta);
+                if (job.total_steps > 0) {
+                    const progress = document.createElement("progress");
+                    progress.max = job.total_steps;
+                    progress.value = Math.max(0, Math.min(job.current_step || 0, job.total_steps));
+                    progress.setAttribute("aria-label", "模擬訓練進度");
+                    const caption = document.createElement("div");
+                    caption.className = "hint";
+                    caption.textContent = `${progress.value} / ${job.total_steps} steps（模擬）`;
+                    row.append(progress, caption);
+                }
+                const details = document.createElement("details");
+                details.className = "training-details";
+                const summary = document.createElement("summary");
+                summary.textContent = "工作詳細資訊";
+                const information = document.createElement("div");
+                information.textContent = `工作 ID：${job.job_id} · Dataset：${job.dataset_path}${job.archive_path ? " · 壓縮檔：" + job.archive_path : ""}`;
+                details.append(summary, information);
+                row.append(details);
+                if (job.error) {
+                    const error = document.createElement("p");
+                    error.className = "training-job-error";
+                    error.textContent = job.error;
+                    row.append(error);
+                }
+                container.appendChild(row);
+            }
+        }
+        document.getElementById("trainingRegisterButton").addEventListener("click", () => {
+            setAuthMode(trainingAuthMode === "login" ? "register" : "login");
+            document.getElementById("trainingUsername").focus();
+        });
+        document.getElementById("trainingShowPassword").addEventListener("change", (event) => {
+            for (const id of ["trainingPassword", "trainingConfirmPassword"]) document.getElementById(id).type = event.target.checked ? "text" : "password";
+        });
+        for (const id of ["searchTrainingButton", "refreshTrainingJobsButton"]) {
+            document.getElementById(id).addEventListener("click", () => refreshUploadStatus());
+        }
+        document.getElementById("trainingAuthForm").addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const fields = document.getElementById("trainingAuthInputs");
+            if (fields.disabled) return;
+            const username = document.getElementById("trainingUsername").value.trim();
+            const password = document.getElementById("trainingPassword").value;
+            if (trainingAuthMode === "register" && password !== document.getElementById("trainingConfirmPassword").value) {
+                authMessage("兩次輸入的密碼不一致。", true);
+                document.getElementById("trainingConfirmPassword").focus();
+                return;
+            }
+            fields.disabled = true;
+            const button = document.getElementById("trainingLoginButton");
+            button.textContent = trainingAuthMode === "register" ? "建立帳號中…" : "登入中…";
+            authMessage("");
+            let registered = false;
             try {
-                const response = await submitTrainingDataset({
-                    dataset_path: datasetPath,
-                    server_url: serverUrl,
-                    api_token: document.getElementById("trainingApiToken").value,
-                    metadata: { request_training: true },
-                });
-                showResponse(response);
-                if (!responseSucceeded(response)) throw new Error(responseError(response));
-                document.getElementById("trainingApiToken").value = "";
+                if (trainingAuthMode === "register") { await registerTraining(username, password); registered = true; }
+                await loginTraining(username, password);
+                document.getElementById("trainingPassword").value = "";
+                document.getElementById("trainingConfirmPassword").value = "";
+                document.getElementById("trainingShowPassword").checked = false;
+                for (const id of ["trainingPassword", "trainingConfirmPassword"]) document.getElementById(id).type = "password";
+                syncTrainingAuth();
+                authMessage(registered ? "帳號已建立，已登入。" : "登入成功。");
+                document.getElementById("trainingLogoutButton").focus();
                 await refreshUploadStatus();
             } catch (error) {
-                showUploadMessage(`啟動上傳失敗：${error.message}`, true);
+                if (registered) setAuthMode("login");
+                authMessage(`${registered ? "帳號已建立，請重新登入。" : ""}${error.message}`, true);
+            } finally {
+                fields.disabled = false;
+                button.textContent = trainingAuthMode === "register" ? "建立帳號並登入" : "登入";
+            }
+        });
+        document.getElementById("trainingLogoutButton").addEventListener("click", async () => {
+            const button = document.getElementById("trainingLogoutButton");
+            button.disabled = true;
+            button.textContent = "登出中…";
+            try { await logoutTraining(); authMessage("已登出。"); }
+            catch (error) { authMessage(`已清除本機登入。${error.message}`, true); }
+            finally {
+                syncTrainingAuth();
+                button.disabled = false;
+                button.textContent = "登出";
+                document.getElementById("trainingPassword").value = "";
+                document.getElementById("trainingUsername").focus();
+            }
+        });
+        document.getElementById("uploadDatasetButton").addEventListener("click", async () => {
+            const datasetPath = document.getElementById("uploadDataset").value;
+            if (!datasetPath) return showUploadMessage("請先選擇 dataset。", true);
+            document.getElementById("uploadDatasetButton").disabled = true;
+            try {
+                const response = await submitTrainingDataset({ dataset_path: datasetPath, model: document.getElementById("uploadModel").value });
+                showResponse(response);
+                if (!responseSucceeded(response)) throw new Error(responseError(response));
+                await refreshUploadStatus();
+            } catch (error) {
+                showUploadMessage(`啟動失敗：${error.message}`, true);
+                document.getElementById("uploadDatasetButton").disabled = false;
             }
         });
         document.getElementById("refreshUploadButton").addEventListener("click", refreshUploadStatus);
@@ -1103,7 +1773,6 @@
         });
         try { await loadRecordingDevices(); } catch (error) { showMessage(`设备读取失败：${error.message}`, true); }
         syncDatasetModeUI();
-        syncTrainingTargets();
         await loadTaskRegistry();
         try {
             await loadReplayCatalog(true);
@@ -1114,4 +1783,5 @@
         refreshStatus();
     </script>
 </body>
+
 </html>
