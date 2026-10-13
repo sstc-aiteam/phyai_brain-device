@@ -22,6 +22,7 @@ from .dispatch import (
 )
 
 from .coordinator import (
+    RuntimeEngine,
     RuntimeCoordinator,
     RuntimeRunResult,
     RuntimeTraceRow,
@@ -42,6 +43,7 @@ __all__ = [
     "BoundDispatch",
     "ActionExecutionResult",
     "DispatchExecutionReport",
+    "RuntimeEngine",
     "RuntimeCoordinator",
     "RuntimeRunResult",
     "RuntimeTraceRow",
