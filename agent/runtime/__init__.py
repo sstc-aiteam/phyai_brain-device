@@ -1,18 +1,15 @@
-from .world_state import WorldState
+from .domain.world import WorldState
 
-from .goals import (
+from .domain.task import (
     GoalCondition,
     GoalSet,
-)
-
-from .coordination import (
     ActionGate,
     CoordinationSpec,
     DeviceRule,
     MaintainFactUntilGoal,
 )
 
-from .dispatch import (
+from .domain.action import (
     ActionIntent,
     DispatchDecision,
     BoundAction,
@@ -21,8 +18,7 @@ from .dispatch import (
     DispatchExecutionReport,
 )
 
-from .coordinator import (
-    RuntimeEngine,
+from .engine.runtime import (
     RuntimeCoordinator,
     RuntimeRunResult,
     RuntimeTraceRow,
@@ -43,7 +39,6 @@ __all__ = [
     "BoundDispatch",
     "ActionExecutionResult",
     "DispatchExecutionReport",
-    "RuntimeEngine",
     "RuntimeCoordinator",
     "RuntimeRunResult",
     "RuntimeTraceRow",

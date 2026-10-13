@@ -684,7 +684,7 @@ def build_runtime_dispatch_observer():
     Build the production action-coupled observer.
 
     The returned callback has the signature expected by
-    agent.runtime.observation.make_dispatch_observer().
+    agent.runtime.adapters.observation.make_dispatch_observer().
     """
 
     return make_dispatch_observer(
