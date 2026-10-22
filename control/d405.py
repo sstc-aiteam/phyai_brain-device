@@ -1,8 +1,10 @@
 import logging
 import math
 import threading
+import time
 import numpy as np
 import pyrealsense2 as rs
+import cv2
 
 logger = logging.getLogger(__name__)
 
@@ -268,6 +270,7 @@ class D405Driver:
         enable_depth=None,
         align_to=None,
         frame_timeout_ms=None,
+        image_size=None,
     ):
         """
         啟動 RealSense pipeline。
@@ -407,7 +410,7 @@ class D405Driver:
                     rs.stream.color,
                     width,
                     height,
-                    rs.format.bgr8,
+                    rs.format.yuyv,
                     fps,
                 )
 
@@ -680,6 +683,8 @@ class D405Driver:
                 )
             )
 
+            host_received_monotonic = time.monotonic()
+
             if self._align is not None:
                 frames = (
                     self._align
@@ -719,13 +724,67 @@ class D405Driver:
             color_image = None
             depth_image = None
 
+
             if color_frame is not None:
-                color_image = (
-                    np.asanyarray(
-                        color_frame
-                        .get_data()
-                    )
+                # Decode using the RealSense pixel format rather than relying
+                # on the numpy shape inferred from the frame buffer.
+                frame_width = color_frame.get_width()
+                frame_height = color_frame.get_height()
+                frame_format = color_frame.profile.format()
+
+                raw = np.frombuffer(
+                    color_frame.get_data(),
+                    dtype=np.uint8,
                 )
+
+                if frame_format == rs.format.yuyv:
+                    expected_size = frame_width * frame_height * 2
+                    if raw.size != expected_size:
+                        raise RuntimeError(
+                            "D405 YUYV buffer size mismatch: "
+                            f"expected={expected_size}, actual={raw.size}"
+                        )
+
+                    yuyv_image = raw.reshape(
+                        frame_height, frame_width, 2
+                    )
+                    color_image = cv2.cvtColor(
+                        yuyv_image,
+                        cv2.COLOR_YUV2BGR_YUY2,
+                    )
+
+                elif frame_format in (rs.format.bgr8, rs.format.rgb8):
+                    expected_size = frame_width * frame_height * 3
+                    if raw.size != expected_size:
+                        raise RuntimeError(
+                            "D405 RGB/BGR buffer size mismatch: "
+                            f"expected={expected_size}, actual={raw.size}"
+                        )
+
+                    three_channel_image = raw.reshape(
+                        frame_height, frame_width, 3
+                    )
+                    if frame_format == rs.format.rgb8:
+                        color_image = cv2.cvtColor(
+                            three_channel_image,
+                            cv2.COLOR_RGB2BGR,
+                        )
+                    else:
+                        color_image = three_channel_image.copy()
+
+                else:
+                    raise RuntimeError(
+                        f"Unsupported D405 color format: {frame_format}"
+                    )
+
+                if (
+                    color_image.ndim != 3
+                    or color_image.shape != (frame_height, frame_width, 3)
+                ):
+                    raise RuntimeError(
+                        "Invalid D405 BGR image shape: "
+                        f"{color_image.shape}"
+                    )
 
             if depth_frame is not None:
                 depth_image = (
@@ -744,7 +803,17 @@ class D405Driver:
             except Exception:
                 timestamp = None
 
+            frame_id = None
+            if color_frame is not None:
+                try:
+                    timestamp = float(color_frame.get_timestamp())
+                    frame_id = int(color_frame.get_frame_number())
+                except Exception:
+                    pass
+
             return {
+                "frame_id": frame_id,
+                "host_received_monotonic": host_received_monotonic,
                 # Generic camera-service contract
                 "timestamp":
                     timestamp,

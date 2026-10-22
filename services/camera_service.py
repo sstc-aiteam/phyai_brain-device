@@ -183,21 +183,6 @@ def get_camera_status(
     camera_name=None,
 ):
     """
-    Standard camera status schema:
-
-    {
-        "connected": bool,
-        "running": bool | None,
-        "width": int | None,
-        "height": int | None,
-        "fps": float | int | None,
-        "color_enabled": bool | None,
-        "depth_enabled": bool | None,
-        "fault": bool | None
-    }
-
-    回傳 config.CAMERAS 中所有已設定的 camera。
-
     Camera 無法建立、連線或取得狀態時，
     仍保留該 camera 並標記 connected=False。
     """
@@ -243,99 +228,40 @@ def get_camera_status(
                     )
 
                 status = {
-                    "connected":
-                        bool(
-                            raw_status.get(
-                                "connected",
-                                False,
-                            )
-                        ),
-
-                    "running":
-                        raw_status.get(
-                            "running"
-                        ),
-
-                    "width":
-                        raw_status.get(
-                            "width"
-                        ),
-
-                    "height":
-                        raw_status.get(
-                            "height"
-                        ),
-
-                    "fps":
-                        raw_status.get(
-                            "fps"
-                        ),
-
-                    "color_enabled":
-                        raw_status.get(
-                            "color_enabled"
-                        ),
-
-                    "depth_enabled":
-                        raw_status.get(
-                            "depth_enabled"
-                        ),
-
-                    "fault":
-                        raw_status.get(
-                            "fault"
-                        ),
+                    "connected": bool(raw_status.get("connected", False)),
+                    "running": raw_status.get("running"),
+                    "width": raw_status.get("width"),
+                    "height": raw_status.get("height"),
+                    "fps": raw_status.get("fps"),
+                    "image_size": raw_status.get("image_size"),
+                    "color_enabled": raw_status.get("color_enabled"),
+                    "depth_enabled": raw_status.get("depth_enabled"),
+                    "fault": raw_status.get("fault"),
                 }
 
-                cameras.append(
-                    {
-                        "camera_name":
-                            current_name,
-
-                        "driver":
-                            driver,
-
-                        "status":
-                            status,
-                    }
-                )
+                cameras.append({
+                    "camera_name": current_name,
+                    "driver": driver,
+                    "status": status,
+                })
 
             except Exception:
-                cameras.append(
-                    {
-                        "camera_name":
-                            name,
+                cameras.append({
+                    "camera_name": name,
+                    "driver": driver,
+                    "status": {
+                        "connected": False,
+                        "running": None,
+                        "width": None,
+                        "height": None,
+                        "fps": None,
+                        "image_size": None,
+                        "color_enabled": None,
+                        "depth_enabled": None,
+                        "fault": None,
+                    },
+                })
 
-                        "driver":
-                            driver,
-
-                        "status": {
-                            "connected":
-                                False,
-
-                            "running":
-                                None,
-
-                            "width":
-                                None,
-
-                            "height":
-                                None,
-
-                            "fps":
-                                None,
-
-                            "color_enabled":
-                                None,
-
-                            "depth_enabled":
-                                None,
-
-                            "fault":
-                                None,
-                        },
-                    }
-                )
 
         return response.success(
             MODULE,
@@ -369,14 +295,6 @@ def start_camera(
 ):
     """
     啟動指定 camera。
-
-    Public generic parameters:
-        width
-        height
-        fps
-
-    其他 stream-specific 設定由 config.CAMERAS
-    的 stream configuration 提供。
     """
 
     action = "start_camera"
@@ -415,60 +333,42 @@ def start_camera(
                 "fps"
             )
 
-        result = (
-            camera.start_camera(
-                width=width,
-                height=height,
-                fps=fps,
-                enable_color=
-                    stream.get(
-                        "enable_color"
-                    ),
-                enable_depth=
-                    stream.get(
-                        "enable_depth"
-                    ),
-                align_to=
-                    stream.get(
-                        "align_to"
-                    ),
-                frame_timeout_ms=
-                    stream.get(
-                        "frame_timeout_ms"
-                    ),
-            )
-        )
+        camera_options = {
+            "width": width,
+            "height": height,
+            "fps": fps,
+            "image_size": stream.get("image_size"),
+            "enable_color": stream.get("enable_color"),
+            "enable_depth": stream.get("enable_depth"),
+            "align_to": stream.get("align_to"),
+            "frame_timeout_ms": stream.get("frame_timeout_ms"),
+        }
 
-        if not isinstance(
-            result,
-            bool,
-        ):
-            raise RuntimeError(
-                f"camera driver "
-                f"'{driver}' "
-                f"start_camera() "
-                f"must return bool"
-            )
+        result = camera.start_camera(**camera_options)
+
+        if not isinstance(result, bool):
+            raise RuntimeError(f"camera driver '{driver}' start_camera() must return bool")
+
+        if result is False:
+            raise RuntimeError(f"Camera '{camera_name}' failed to start")
+
+
+        camera_status = camera.get_camera_status()
 
         return response.success(
             MODULE,
             action,
             result=result,
             data={
-                "camera_name":
-                    camera_name,
-
-                "width":
-                    width,
-
-                "height":
-                    height,
-
-                "fps":
-                    fps,
+                "camera_name": camera_name,
+                "width": camera_status.get("width"),
+                "height": camera_status.get("height"),
+                "fps": camera_status.get("fps"),
+                "image_size": stream.get("image_size"),
             },
             driver=driver,
         )
+
 
     except Exception as exc:
         return response.error(

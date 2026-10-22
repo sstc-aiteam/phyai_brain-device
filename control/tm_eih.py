@@ -458,6 +458,98 @@ class TMEIHDriver:
                     exc_info=True,
                 )
 
+
+
+    def _get_image_size_stub(self):
+        if self._channel is None:
+            raise RuntimeError("TM EIH gRPC is not connected")
+
+        self._load_proto_modules()
+
+        for pb2_module, grpc_module in zip(
+            self._pb2_modules,
+            self._pb2_grpc_modules
+        ):
+            service = (
+                pb2_module.DESCRIPTOR
+                .services_by_name
+                .get("EIHCameraApi")
+            )
+
+            if service is None:
+                continue
+
+            stub_class = getattr(
+                grpc_module,
+                "EIHCameraApiStub",
+                None
+            )
+
+            if stub_class is None:
+                continue
+
+            return stub_class(self._channel), service
+
+        raise RuntimeError(
+            "EIHCameraApi service not found"
+        )
+
+
+    def _configure_image_size(self, image_size):
+        if image_size is None:
+            return None
+
+        image_size = str(image_size).strip()
+
+        if not image_size:
+            raise ValueError("image_size must not be empty")
+
+        stub, service = self._get_image_size_stub()
+
+        set_method = service.methods_by_name["setImageSize"]
+        get_method = service.methods_by_name["getImageSize"]
+
+        # Create official protobuf request
+        request_class = self._message_class(
+            set_method.input_type
+        )
+
+        request = request_class()
+        request.imagesize = image_size
+
+        # Set camera image size
+        stub.setImageSize(
+            request,
+            timeout=self._rpc_timeout_seconds()
+        )
+
+        # Read back the configuration
+        get_request_class = self._message_class(
+            get_method.input_type
+        )
+
+        response = stub.getImageSize(
+            get_request_class(),
+            timeout=self._rpc_timeout_seconds()
+        )
+
+        actual_size = response.imagesize
+
+        logger.info(
+            "[TM_EIH] requested image size=%s, reported=%s",
+            image_size,
+            actual_size
+        )
+
+        if actual_size != image_size:
+            raise RuntimeError(
+                f"TM EIH image size mismatch: "
+                f"requested={image_size}, "
+                f"reported={actual_size}"
+            )
+
+        return actual_size
+
     # ========================================================
     # RPC discovery
     # ========================================================
@@ -1196,6 +1288,7 @@ class TMEIHDriver:
         enable_depth=None,
         align_to=None,
         frame_timeout_ms=None,
+        image_size=None,
     ):
         """
         Connect to the Techman EIH Camera API and verify one image.
@@ -1259,10 +1352,31 @@ class TMEIHDriver:
             self._last_error = None
 
             try:
+
                 self._connect()
+
+                # Configure TM EIH image size through gRPC
+                self._configure_image_size(image_size)
+
+                # Discover the image RPC after configuration
                 self._discover_image_rpc()
 
                 image = self._read_image()
+
+                # Verify actual image resolution
+                if width is not None and height is not None:
+                    actual_height, actual_width = image.shape[:2]
+
+                    if (
+                        actual_width != int(width)
+                        or actual_height != int(height)
+                    ):
+                        raise RuntimeError(
+                            "TM EIH actual resolution mismatch: "
+                            f"requested={width}x{height}, "
+                            f"actual={actual_width}x{actual_height}"
+                        )
+
 
                 if (
                     not isinstance(

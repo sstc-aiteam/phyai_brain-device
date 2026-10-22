@@ -342,6 +342,7 @@ class LogitechDriver:
         enable_depth=None,
         align_to=None,
         frame_timeout_ms=None,
+        image_size=None,
     ):
         """
         啟動 USB camera。
@@ -857,6 +858,7 @@ class LogitechDriver:
                     ret
                     and color_image is not None
                 ):
+                    host_received_monotonic = time.monotonic()
                     break
 
                 elapsed = (
@@ -901,6 +903,8 @@ class LogitechDriver:
             )
 
             return {
+                "frame_id": None,
+                "host_received_monotonic": host_received_monotonic,
                 # Generic frame contract
                 "timestamp":
                     timestamp,
