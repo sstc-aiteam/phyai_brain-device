@@ -71,7 +71,7 @@ MAX_TRAJECTORY_POINTS = 1_000_000
 # Feedback / reached detection
 # ============================================================
 
-ARM_POSE_TOLERANCE = 0.005          # m
+ARM_POSE_TOLERANCE = 0.03           # m
 ARM_ROTATION_TOLERANCE = 0.03       # rad
 ARM_JOINT_TOLERANCE = 0.01          # rad
 ARM_WAIT_TIMEOUT = 15.0             # s
@@ -87,7 +87,7 @@ FEEDBACK_POLL_INTERVAL = 0.05
 # RTDE Receive monitor
 # ============================================================
 
-RTDE_RECEIVE_MONITOR_HZ = 20.0
+RTDE_RECEIVE_MONITOR_HZ = 100.0
 RTDE_RECEIVE_MONITOR_INTERVAL = 1.0 / RTDE_RECEIVE_MONITOR_HZ
 RTDE_RECEIVE_STALE_TIMEOUT = 0.5
 RTDE_RECEIVE_INITIAL_TIMEOUT = 3.0

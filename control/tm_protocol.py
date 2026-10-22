@@ -1,24 +1,3 @@
-from __future__ import annotations
-
-"""
-Pure-Python Techman Robot TMSCT / TMSVR protocol client.
-
-No ROS dependency.
-No techmanpy dependency.
-Python standard library only.
-
-Wire framing:
-    $HEADER,LENGTH,DATA,*CHECKSUM\r\n
-
-Ports:
-    TMSCT / Listen Node      : TCP 5890
-    TMSVR / Ethernet Slave   : TCP 5891
-
-Robot Brain integration:
-    This module is a low-level protocol helper.  It is NOT an ARM driver by
-    itself.  control.tm12.tm12Driver should continue satisfying the loader
-    contract and import TMProtocol internally.
-"""
 
 import ast
 import json
@@ -207,45 +186,69 @@ def decode_packet(raw: bytes) -> TMPacket:
 
 
 class TMPacketStream:
+    """Incremental length-framed parser for Techman packets.
+
+    DATA can contain CRLF. Only the CRLF at the length-derived
+    packet boundary is a framing delimiter.
+    """
+
     def __init__(
         self,
         max_packet_bytes: int = DEFAULT_MAX_PACKET_BYTES,
     ):
         self._buffer = bytearray()
         self.max_packet_bytes = int(max_packet_bytes)
+        if self.max_packet_bytes <= 0:
+            raise ValueError("max_packet_bytes must be > 0")
 
     def feed(self, data: bytes) -> list[TMPacket]:
         if not data:
             return []
 
         self._buffer.extend(data)
-
-        if len(self._buffer) > self.max_packet_bytes:
-            raise TMPacketError(
-                "receive buffer exceeded maximum packet size"
-            )
-
         packets = []
 
         while True:
             start = self._buffer.find(b"$")
-
             if start < 0:
                 self._buffer.clear()
                 break
-
-            if start > 0:
+            if start:
                 del self._buffer[:start]
 
-            end = self._buffer.find(b"\r\n")
-
-            if end < 0:
+            # Need $HEADER,LENGTH, before interpreting DATA.
+            first_comma = self._buffer.find(b",")
+            if first_comma < 0:
+                if len(self._buffer) > self.max_packet_bytes:
+                    raise TMPacketError("TM packet header exceeds maximum size")
+                break
+            second_comma = self._buffer.find(b",", first_comma + 1)
+            if second_comma < 0:
+                if len(self._buffer) > self.max_packet_bytes:
+                    raise TMPacketError("TM packet length header exceeds maximum size")
                 break
 
-            raw = bytes(self._buffer[:end + 2])
-            del self._buffer[:end + 2]
+            header = bytes(self._buffer[1:first_comma])
+            length_bytes = bytes(self._buffer[first_comma + 1:second_comma])
+            if not header or not _HEADER_RE.fullmatch(header.decode("ascii", errors="replace")):
+                raise TMPacketError(f"invalid TM packet header: {header!r}")
+            if not length_bytes or not length_bytes.isdigit():
+                raise TMPacketError(f"invalid TM packet length: {length_bytes!r}")
 
-            packets.append(decode_packet(raw))
+            data_length = int(length_bytes)
+            # DATA + ',' + '*' + 2 ASCII hex + CRLF
+            expected_bytes = second_comma + 1 + data_length + 6
+            if expected_bytes > self.max_packet_bytes:
+                raise TMPacketError("TM packet exceeds maximum size")
+            if len(self._buffer) < expected_bytes:
+                break
+
+            raw = bytes(self._buffer[:expected_bytes])
+            # Validate checksum, exact length and terminal framing first.
+            # Never silently discard a possibly valid command response.
+            packet = decode_packet(raw)
+            del self._buffer[:expected_bytes]
+            packets.append(packet)
 
         return packets
 

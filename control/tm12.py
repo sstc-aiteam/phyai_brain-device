@@ -16,7 +16,7 @@ DEFAULT_SPEED = 0.10
 DEFAULT_ACCELERATION = 0.20
 DEFAULT_TRAJECTORY_DT = 0.10
 ARM_WAIT_TIMEOUT = 20.0
-ARM_POSE_TOLERANCE = 0.005       # m
+ARM_POSE_TOLERANCE = 0.03        # m
 ARM_ROTATION_TOLERANCE = 0.03    # rad
 ARM_JOINT_TOLERANCE = 0.003      # rad
 
@@ -1038,15 +1038,61 @@ class tm12Driver:
     def _rotation_distance(a, b):
         return math.sqrt(sum((a[i] - b[i]) ** 2 for i in range(3, 6)))
 
-    def _wait_until_pose_reached(self, target, timeout=ARM_WAIT_TIMEOUT):
+    def _wait_until_pose_reached(
+        self,
+        target,
+        timeout=ARM_WAIT_TIMEOUT,
+    ):
         deadline = time.monotonic() + timeout
+
+        stable_count = 0
+        required_stable_count = 3
+
+        last_xyz_error = None
+        last_rot_error = None
+
         while time.monotonic() < deadline:
+
             actual = self.get_arm_pose()
-            xyz_error = math.sqrt(sum((actual[i] - target[i]) ** 2 for i in range(3)))
-            rot_error = self._rotation_distance(actual, target)
-            if xyz_error <= ARM_POSE_TOLERANCE and rot_error <= ARM_ROTATION_TOLERANCE:
-                return True
+
+            xyz_error = math.sqrt(
+                sum(
+                    (actual[i] - target[i]) ** 2
+                    for i in range(3)
+                )
+            )
+
+            rot_error = self._rotation_distance(
+                actual,
+                target
+            )
+
+            last_xyz_error = xyz_error
+            last_rot_error = rot_error
+
+            if (
+                xyz_error <= ARM_POSE_TOLERANCE
+                and rot_error <= ARM_ROTATION_TOLERANCE
+            ):
+                stable_count += 1
+
+                if stable_count >= required_stable_count:
+                    return True
+            else:
+                stable_count = 0
+
             time.sleep(0.05)
+
+        logger.warning(
+            "[TM12] Pose timeout: "
+            "target=%s, actual=%s, "
+            "xyz_error=%.6f, rot_error=%.6f",
+            target,
+            actual,
+            last_xyz_error,
+            last_rot_error,
+        )
+
         return False
 
     def _wait_until_joints_reached(self, target, timeout=ARM_WAIT_TIMEOUT):
