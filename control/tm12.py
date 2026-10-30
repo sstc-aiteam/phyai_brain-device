@@ -266,6 +266,7 @@ class tm12Driver:
         try:
             pose = self.get_arm_pose()
             joints = self.get_arm_joints()
+            updated_monotonic = time.monotonic()
             connected = True
             self._last_error = None
         except Exception as exc:
@@ -283,6 +284,7 @@ class tm12Driver:
                 "pose": None,
                 "joints": None,
                 "receive_error": self._last_error,
+                "updated_monotonic": None,
             }
 
         robot_link = self._as_bool(self._safe_svr_get("Robot_Link", True))
@@ -317,6 +319,7 @@ class tm12Driver:
             "joints": joints,
             "project_paused": project_pause,
             "receive_error": None,
+            "updated_monotonic": updated_monotonic,
         }
 
     # ========================================================

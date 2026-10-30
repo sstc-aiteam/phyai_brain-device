@@ -21,15 +21,14 @@ def _json():
 @record_bp.post("/start_robot_recording")
 def start_robot_recording():
     data = _json()
-    return jsonify(subsystem_service.start_recording_service(
+    return jsonify(subsystem_service.start_recording(
         arm_name=data.get("arm_name"), gripper_name=data.get("gripper_name"),
         output_path=data.get("output_path"), interval=data.get("interval", 0.1),
-        freedrive=data.get("freedrive", False), record_video=data.get("record_video", False),
+        freedrive=data.get("freedrive", True), record_video=data.get("record_video", True),
         task=data.get("task", "robot demonstration"),
         initial_gripper_position=data.get("initial_gripper_position", 0),
         dataset_mode=data.get("dataset_mode", "multi_task"),
         dataset_format=data.get("dataset_format", "lerobot_v3"),
-        training_target=data.get("training_target"),
         dataset_name=data.get("dataset_name"),
     ))
 
@@ -38,7 +37,7 @@ def start_robot_recording():
 @record_bp.post("/stop_robot_recording")
 def stop_robot_recording():
     data = _json()
-    return jsonify(subsystem_service.stop_recording_service(
+    return jsonify(subsystem_service.stop_recording(
         arm_name=data.get("arm_name"), gripper_name=data.get("gripper_name"),
         dataset_format=data.get("dataset_format"),
     ))
@@ -47,7 +46,7 @@ def stop_robot_recording():
 # 回傳目前的錄製狀態。
 @record_bp.get("/get_robot_recording_status")
 def get_robot_recording_status():
-    return jsonify(subsystem_service.get_recording_status_service(
+    return jsonify(subsystem_service.get_recording_status(
         dataset_format=request.args.get("dataset_format")
     ))
 
@@ -56,6 +55,11 @@ def get_robot_recording_status():
 @record_bp.get("/get_task_registry")
 def get_task_registry():
     return jsonify(subsystem_service.get_task_registry())
+
+
+@record_bp.get("/startup_status")
+def recording_startup_status():
+    return jsonify(subsystem_service.get_startup_status())
 
 
 # 新增一筆錄製任務。
@@ -112,24 +116,32 @@ def get_replay_catalog():
 # 啟動指定 episode 的機器人回放。
 @replay_bp.post("/start_robot_playback")
 def start_robot_playback():
-    data = request.get_json(silent=True) or {}
-    return jsonify(subsystem_service.start_replay_service(
-        input_path=data.get("input_path"), arm_name=data.get("arm_name"),
-        gripper_name=data.get("gripper_name"), episode_index=data.get("episode_index", 0),
-        speed=data.get("speed"), acceleration=data.get("acceleration"),
-        lookahead_time=data.get("lookahead_time", 0.1), gain=data.get("gain", 300),
-        move_to_start=data.get("move_to_start", True),
-        move_to_start_speed=data.get("move_to_start_speed"),
-        move_to_start_acceleration=data.get("move_to_start_acceleration"),
-        dataset_format=data.get("dataset_format"),
-    ))
+    data = _json()
+
+    return jsonify(
+        subsystem_service.start_robot_playback(
+            input_path=data.get("input_path"),
+            arm_name=data.get("arm_name"),
+            gripper_name=data.get("gripper_name"),
+            episode_index=data.get("episode_index", 0),
+            speed=data.get("speed"),
+            acceleration=data.get("acceleration"),
+            lookahead_time=data.get("lookahead_time", 0.1),
+            gain=data.get("gain", 300),
+            move_to_start=data.get("move_to_start", True),
+            move_to_start_speed=data.get("move_to_start_speed"),
+            move_to_start_acceleration=data.get("move_to_start_acceleration"),
+            dataset_format=data.get("dataset_format", "lerobot_v3"),
+        )
+    )
+
 
 
 # 停止目前進行中的機器人回放。
 @replay_bp.post("/stop_robot_playback")
 def stop_robot_playback():
     data = request.get_json(silent=True) or {}
-    return jsonify(subsystem_service.stop_replay_service(
+    return jsonify(subsystem_service.stop_robot_playback(
         arm_name=data.get("arm_name"), gripper_name=data.get("gripper_name"),
     ))
 
@@ -137,7 +149,7 @@ def stop_robot_playback():
 # 回傳目前的機器人回放狀態。
 @replay_bp.get("/get_robot_playback_status")
 def get_robot_playback_status():
-    return jsonify(subsystem_service.get_replay_status_service())
+    return jsonify(subsystem_service.get_robot_playback_status())
 
 
 # ============================================================
@@ -145,39 +157,70 @@ def get_robot_playback_status():
 # ============================================================
 
 training_bp = Blueprint("training", __name__, url_prefix="/api/training")
-legacy_training_bp = Blueprint("legacy_training", __name__, url_prefix="/api/record")
 
 
-# 上傳資料集並建立訓練工作。
+def _training_token():
+    return request.headers.get("Authorization", "").removeprefix("Bearer ")
+
+
+def _training_call(action, **kwargs):
+    try:
+        return jsonify(action(token=_training_token(), **kwargs))
+    except PermissionError as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 401
+    except ValueError as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 400
+    except LookupError as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 404
+
+
+@training_bp.post("/auth/register")
+def training_register():
+    data = _json()
+    return _training_call(subsystem_service.register_training_user,
+                          username=data.get("username"), password=data.get("password"))
+
+
+@training_bp.post("/auth/login")
+def training_login():
+    data = _json()
+    return _training_call(subsystem_service.login_training_user,
+                          username=data.get("username"), password=data.get("password"))
+
+
+@training_bp.post("/auth/logout")
+def training_logout():
+    return _training_call(subsystem_service.training_logout)
+
+
+@training_bp.get("/jobs")
+def training_jobs():
+    return _training_call(subsystem_service.get_training_jobs, query=request.args.get("q", ""))
+
+
+@training_bp.get("/jobs/<job_id>")
+def training_job(job_id):
+    return _training_call(subsystem_service.get_training_jobs, job_id=job_id)
+
+
 def upload_training_dataset():
-    data = request.get_json(silent=True) or {}
-    return jsonify(subsystem_service.start_dataset_upload(
-        dataset_path=data.get("dataset_path"), server_url=data.get("server_url"),
-        api_token=data.get("api_token"), metadata=data.get("metadata"),
-        timeout_seconds=data.get("timeout_seconds"),
-    ))
+    data = _json()
+    return _training_call(subsystem_service.start_dataset_upload,
+                          dataset_path=data.get("dataset_path"), model=data.get("model"))
 
 
-# 回傳訓練資料集的上傳狀態。
 def get_dataset_upload_status():
-    return jsonify(subsystem_service.get_dataset_upload_status())
+    return _training_call(subsystem_service.get_dataset_upload_status)
 
 
 training_bp.add_url_rule("/datasets", view_func=upload_training_dataset, methods=["POST"])
 training_bp.add_url_rule("/datasets/status", view_func=get_dataset_upload_status, methods=["GET"])
-legacy_training_bp.add_url_rule(
-    "/upload_training_dataset", view_func=upload_training_dataset, methods=["POST"]
-)
-legacy_training_bp.add_url_rule(
-    "/get_dataset_upload_status", view_func=get_dataset_upload_status, methods=["GET"]
-)
 
 
 BLUEPRINTS = (
     record_bp,
     replay_bp,
     training_bp,
-    legacy_training_bp,
 )
 
 __all__ = ["BLUEPRINTS"]

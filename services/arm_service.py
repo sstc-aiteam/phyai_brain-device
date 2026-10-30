@@ -498,216 +498,91 @@ def _get_connected_arm_context(
 # GET STATUS
 # ============================================================
 
-# ============================================================
-# GET STATUS
-# ============================================================
-
-def get_arm_status(
-    arm_name=None,
-):
-    """
-    取得所有手臂的狀態。
-    """
-
+def get_arm_status(arm_name=None):
+    """取得指定或所有手臂的狀態，保留 Driver 提供的取樣時間與診斷資訊。"""
     action = "get_arm_status"
 
     try:
         arms = []
 
-        for name in (
-            _get_target_arm_names(
-                arm_name
-            )
-        ):
+        for name in _get_target_arm_names(arm_name):
             driver = None
 
             try:
-                (
-                    current_name,
-                    arm,
-                    driver,
-                    _,
-                ) = _get_arm_context(
-                    name
-                )
+                current_name, arm, driver, _ = _get_arm_context(name)
+                raw_status = arm.get_arm_status()
 
-                raw_status = (
-                    arm.get_arm_status()
-                )
+                if not isinstance(raw_status, dict):
+                    raise RuntimeError(f"arm driver '{driver}' get_arm_status() must return dict")
 
-                if not isinstance(
-                    raw_status,
-                    dict,
+                # Keep native Driver fields (timestamps, RTDE sequence, health,
+                # vendor-specific diagnostics) instead of filtering them out.
+                status = dict(raw_status)
+                status["connected"] = bool(raw_status.get("connected", False))
+
+                if raw_status.get("pose") is not None:
+                    status["pose"] = _normalize_pose(raw_status["pose"])
+                else:
+                    status["pose"] = None
+
+                if raw_status.get("joints") is not None:
+                    status["joints"] = _normalize_joints(raw_status["joints"], arm.ARM_DOF)
+                else:
+                    status["joints"] = None
+
+                # These are common *optional* fields. Never synthesize controller
+                # timestamps or claim freshness when a Driver does not report it.
+                for key in (
+                    "ready", "moving", "protective_stop", "emergency_stop",
+                    "fault", "program_running", "arm_mode", "safety_mode",
+                    "updated_monotonic", "controller_timestamp", "sequence",
+                    "data_valid", "data_stale", "data_age_seconds", "receive_error",
                 ):
-                    raise RuntimeError(
-                        f"arm driver "
-                        f"'{driver}' "
-                        f"get_arm_status() "
-                        f"must return dict"
-                    )
+                    status.setdefault(key, None)
 
-                pose = raw_status.get(
-                    "pose"
-                )
+                metadata = getattr(arm, "DRIVER_METADATA", {})
+                supported = metadata.get("capabilities", [])
+                unsupported = metadata.get("unsupported_capabilities", [])
 
-                if pose is not None:
-                    pose = (
-                        _normalize_pose(
-                            pose
-                        )
-                    )
-
-                joints = raw_status.get(
-                    "joints"
-                )
-
-                if joints is not None:
-                    joints = (
-                        _normalize_joints(
-                            joints,
-                            arm.ARM_DOF,
-                        )
-                    )
-
-                status = {
-                    "connected":
-                        bool(
-                            raw_status.get(
-                                "connected",
-                                False,
-                            )
-                        ),
-
-                    "ready":
-                        raw_status.get(
-                            "ready"
-                        ),
-
-                    "moving":
-                        raw_status.get(
-                            "moving"
-                        ),
-
-                    "protective_stop":
-                        raw_status.get(
-                            "protective_stop"
-                        ),
-
-                    "emergency_stop":
-                        raw_status.get(
-                            "emergency_stop"
-                        ),
-
-                    "fault":
-                        raw_status.get(
-                            "fault"
-                        ),
-
-                    "program_running":
-                        raw_status.get(
-                            "program_running"
-                        ),
-
-                    "arm_mode":
-                        raw_status.get(
-                            "arm_mode"
-                        ),
-
-                    "safety_mode":
-                        raw_status.get(
-                            "safety_mode"
-                        ),
-
-                    "pose":
-                        pose,
-
-                    "joints":
-                        joints,
+                capabilities = {
+                    "freedrive": "freedrive" in supported and "freedrive" not in unsupported,
                 }
 
-                arms.append(
-                    {
-                        "arm_name":
-                            current_name,
-
-                        "driver":
-                            driver,
-
-                        "status":
-                            status,
-                    }
-                )
+                arms.append({
+                    "arm_name": current_name,
+                    "driver": driver,
+                    "capabilities": capabilities,
+                    "status": status,
+                })
 
             except Exception as exc:
-                logger.warning(
-                    "arm status unavailable: "
-                    "arm_name=%s, error=%s",
-                    name,
-                    exc,
-                )
+                logger.warning("arm status unavailable: arm_name=%s, error=%s", name, exc)
+                status = {
+                    "connected": False,
+                    "ready": False,
+                    "moving": None,
+                    "protective_stop": None,
+                    "emergency_stop": None,
+                    "fault": None,
+                    "program_running": None,
+                    "arm_mode": None,
+                    "safety_mode": None,
+                    "pose": None,
+                    "joints": None,
+                    "updated_monotonic": None,
+                    "controller_timestamp": None,
+                    "sequence": None,
+                    "data_valid": False,
+                    "data_stale": True,
+                    "data_age_seconds": None,
+                    "receive_error": str(exc),
+                }
+                arms.append({"arm_name": name, "driver": driver, "status": status})
 
-                arms.append(
-                    {
-                        "arm_name":
-                            name,
-
-                        "driver":
-                            driver,
-
-                        "status": {
-                            "connected":
-                                False,
-
-                            "ready":
-                                None,
-
-                            "moving":
-                                None,
-
-                            "protective_stop":
-                                None,
-
-                            "emergency_stop":
-                                None,
-
-                            "fault":
-                                None,
-
-                            "program_running":
-                                None,
-
-                            "arm_mode":
-                                None,
-
-                            "safety_mode":
-                                None,
-
-                            "pose":
-                                None,
-
-                            "joints":
-                                None,
-                        },
-                    }
-                )
-
-        return response.success(
-            MODULE,
-            action,
-            result=True,
-            data={
-                "arms": arms,
-            },
-        )
+        return response.success(MODULE, action, result=True, data={"arms": arms})
 
     except Exception as exc:
-        return response.error(
-            MODULE,
-            action,
-            error=exc,
-            error_type=
-                type(exc).__name__,
-        )
+        return response.error(MODULE, action, error=exc, error_type=type(exc).__name__)
 
 
 # ============================================================
@@ -1541,6 +1416,81 @@ def move_arm_joints(
                 type(exc).__name__,
         )
 
+
+# ============================================================
+# MOVE DIRECTION
+# ============================================================
+
+def move_arm_direction(arm_name, direction, speed=None, acceleration=None, wait=True):
+
+    action = "move_arm_direction"
+    driver = None
+
+    try:
+        arm_name, arm, driver, arm_config = _get_arm_context(arm_name)
+
+        speed, acceleration = _get_motion_params(arm_config, speed, acceleration)
+
+        if not isinstance(direction, str):
+            raise ValueError("direction must be a string")
+
+        direction = direction.strip().lower()
+
+        direction_map = {
+            "front": "front",
+            "left": "left",
+            "back": "back",
+            "right": "right",
+            "up": "up",
+            "down": "down",
+            "前": "front",
+            "左": "left",
+            "後": "back",
+            "后": "back",
+            "右": "right",
+            "上": "up",
+            "下": "down",
+        }
+
+        if direction not in direction_map:
+            raise ValueError(f"Unsupported direction: {direction}")
+
+        direction = direction_map[direction]
+
+        poses = arm_config.get("poses", {})
+        target_joints = poses.get(direction)
+
+        if target_joints is None:
+            raise ValueError(f"poses.{direction} is not configured for arm '{arm_name}'")
+
+        target_joints = _normalize_joints(target_joints, arm.ARM_DOF)
+
+        reached = arm.move_arm_joints(
+            joints=target_joints,
+            speed=speed,
+            acceleration=acceleration,
+            wait=wait
+        )
+
+        return _execution_results(
+            action,
+            reached,
+            data={
+                "arm_name": arm_name,
+                "direction": direction,
+                "target_joints": target_joints,
+            },
+            driver=driver
+        )
+
+    except Exception as exc:
+        return response.error(
+            MODULE,
+            action,
+            error=exc,
+            driver=driver,
+            error_type=type(exc).__name__
+        )
 
 # ============================================================
 # TRAJECTORY

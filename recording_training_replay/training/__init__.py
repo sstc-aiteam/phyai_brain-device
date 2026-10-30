@@ -1,1 +1,1 @@
-"""Training routes for the Recording / Training / Replay subsystem."""
+"""Training dataset discovery and local job execution."""

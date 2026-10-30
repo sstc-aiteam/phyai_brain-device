@@ -7,16 +7,15 @@ from pathlib import Path
 import hashlib
 import hmac
 import json
-import os
 import re
 import threading
 import time
 from datetime import datetime, timezone
 from utils.response import success, error
-from recording_training_replay.training.dataset import read_dataset_info
+from recording_training_replay.dataset import read_dataset_info
+from recording_training_replay.storage import PROJECT_ROOT, LEROBOT_DATASET_DIR as DEFAULT_DATASET_DIR
+
 MODULE = "recording_training_replay"
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-DEFAULT_DATASET_DIR = os.path.join(PROJECT_ROOT, "lerobot_datasets")
 
 # Local accounts and persistent job history; cloud execution remains simulated.
 
@@ -182,11 +181,11 @@ def start_dataset_upload(dataset_path=None, model=None, token=None, dataset_root
             raise ValueError("請選擇 SmolVLA 或 GR00T N1.5")
         root = Path(dataset_root or DEFAULT_DATASET_DIR).resolve()
         path = Path(dataset_path or "").resolve()
-        if path == root or root not in path.parents or not (path / "meta/info.json").is_file():
+        if path == root or root not in path.parents:
             raise ValueError("請選擇 lerobot_datasets 內的完整 dataset")
         if (read_dataset_info(str(path)) or {}).get("codebase_version") != "v3.0":
             raise ValueError("訓練上傳僅支援 v3 資料集")
-        if not any(path.rglob("*.parquet")):
+        if not __import__("recording_training_replay.dataset", fromlist=["episode_details"]).episode_details(str(path)):
             raise ValueError("dataset 沒有 parquet 資料")
         if recording:
             raise ValueError("請先停止錄製，再打包 dataset")

@@ -5,12 +5,6 @@ web_bp = Blueprint("web", __name__)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WEB_DIR = os.path.join(BASE_DIR, "web")
-RECORDING_FRONTEND_DIR = os.path.join(
-    BASE_DIR,
-    "recording_training_replay",
-    "frontend",
-)
-
 @web_bp.route("/")
 def index():
     return send_from_directory(WEB_DIR, "index.html")
@@ -31,9 +25,9 @@ def action():
 def plan():
     return send_from_directory(WEB_DIR,"includes/component/plan.html",)
 
-@web_bp.route("/demo")
-def demo():
-    return send_from_directory(WEB_DIR,"includes/component/demo.html",)
+@web_bp.route("/training")
+def training():
+    return send_from_directory(WEB_DIR, "includes/component/training.html")
 
 
 @web_bp.route("/web/<path:filename>")

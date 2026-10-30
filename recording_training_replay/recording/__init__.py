@@ -1,1 +1,1 @@
-"""Recording module skeleton awaiting its new implementation."""
+"""Raw and LeRobot recording backends."""

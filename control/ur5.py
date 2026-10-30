@@ -1067,6 +1067,7 @@ class UR5Driver:
                 "data_stale": True,
                 "data_age_seconds": None,
                 "controller_timestamp": None,
+                "updated_monotonic": None,
                 "sequence": None,
                 "receive_error": str(exc),
             }
@@ -1116,6 +1117,7 @@ class UR5Driver:
             "data_stale": bool(state["data_stale"]),
             "data_age_seconds": state.get("data_age_seconds"),
             "controller_timestamp": state.get("controller_timestamp"),
+            "updated_monotonic": state.get("updated_monotonic"),
             "sequence": state.get("sequence"),
             "receive_error": state.get("receive_error"),
         }

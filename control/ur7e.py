@@ -76,7 +76,7 @@ MAX_TRAJECTORY_POINTS = 1_000_000
 # ============================================================
 
 ARM_POSE_TOLERANCE = 0.03           # m
-ARM_ROTATION_TOLERANCE = 0.03       # rad
+ARM_ROTATION_TOLERANCE = 0.08       # rad
 ARM_JOINT_TOLERANCE = 0.01          # rad
 ARM_WAIT_TIMEOUT = 15.0             # s
 
@@ -1071,6 +1071,7 @@ class UR7eDriver:
                 "data_stale": True,
                 "data_age_seconds": None,
                 "controller_timestamp": None,
+                "updated_monotonic": None,
                 "sequence": None,
                 "receive_error": str(exc),
             }
@@ -1120,6 +1121,7 @@ class UR7eDriver:
             "data_stale": bool(state["data_stale"]),
             "data_age_seconds": state.get("data_age_seconds"),
             "controller_timestamp": state.get("controller_timestamp"),
+            "updated_monotonic": state.get("updated_monotonic"),
             "sequence": state.get("sequence"),
             "receive_error": state.get("receive_error"),
         }
