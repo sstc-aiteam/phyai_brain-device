@@ -1,22 +1,16 @@
-"""
- World Model service facade.
-
-Responsibilities:
-- scene description
-- occlusion relations
-- canonical live WorldState collection
-- compact object-relation API payload
-"""
 from __future__ import annotations
 from copy import deepcopy
 from datetime import datetime, timezone
 import logging
 from typing import Any
 import config
-from agent.runtime.world_state import WorldState
-from agent.vlm import occultation, vlm_describe, material,grasp
+from agent.runtime.domain.world import WorldState
+from agent.vlm import occultation, vlm_describe, vlm_world_observe, material,grasp,smoke
 from services import arm_service, camera_service, perception_service
 from utils import response
+import threading
+import time
+
 MODULE = "vlm"
 _DETECTION_CAMERAS = (
     "left",
@@ -34,6 +28,21 @@ _INSTAORDER_EXCLUDED_CLASSES = (
     "chair_surface",
 )
 logger = logging.getLogger(__name__)
+
+_SMOKE_PC_URL = (
+    "http://192.168.50.37:8023"
+)
+
+_SMOKE_CAMERA_DEFAULT = "left"
+
+_SMOKE_SOURCE_FPS = 15.0
+
+_SMOKE_OBSERVE_SECONDS = 4.0
+
+_SMOKE_QUERY_LOCK = (
+    threading.Lock()
+)
+
 def assign_object_ids(objects):
     """Assign one consistent set of IDs to a collected object batch."""
     if not isinstance(objects, list):
@@ -91,6 +100,33 @@ def describe_scene(
     )
 
 # ============================================================
+# Domain-specific World Observation (image file)
+# ============================================================
+
+def observe_world_image(
+    *,
+    image_path,
+    domain: str,
+    entities: Any,
+    task_context: Any = None,
+    system_context: Any = None,
+    vlm_backend: str | None = None,
+):
+    """Return an observation patch without mutating canonical WorldState.
+
+    This is a facade for the image-file observation capability.
+    The local/openai backend selection is validated by vlm_world_observe.
+    """
+    return vlm_world_observe.observe_world_image(
+        image_path=image_path,
+        domain=domain,
+        entities=entities,
+        task_context=task_context,
+        system_context=system_context,
+        vlm_backend=vlm_backend,
+    )
+
+# ============================================================
 # Health
 # ============================================================
 
@@ -104,6 +140,8 @@ def get_health():
             "capabilities": {
                 "describe_scene":
                     vlm_describe.get_health(),
+                "observe_world_image":
+                    vlm_world_observe.get_health(),
                 "occlusion":
                     {
                         "implementation":
@@ -122,6 +160,8 @@ def get_health():
             "implementations": {
                 "describe_scene":
                     "agent.vlm.vlm_describe",
+                "observe_world_image":
+                    "agent.vlm.vlm_world_observe",
                 "occlusion":
                     "agent.vlm.occultation",
                 "grasp":
@@ -580,11 +620,9 @@ def collect_detected_entities(
             data = (
                 perception_service
                 .get_detections_value(
-                    camera_name=
-                        camera_name,
-                    draw=False,
-                    include_robot_xyz=
-                        include_robot_xyz,
+                    camera_name = camera_name,
+                    draw = False,
+                    include_robot_xyz = include_robot_xyz,
                 )
             )
         except Exception as exc:
@@ -1758,3 +1796,382 @@ def get_object_grasp(
                 ),
         },
     )
+
+# ============================================================
+# Smoke / Fire State
+# ============================================================
+
+def get_smoke_state(
+    *,
+    camera_name:
+        str = _SMOKE_CAMERA_DEFAULT,
+    observe_seconds:
+        float = _SMOKE_OBSERVE_SECONDS,
+):
+    """
+    On-demand smoke/fire observation.
+
+    不加入 canonical WorldState。
+    每次被呼叫時才暫時連續觀察 camera，
+    將 RGB frames 傳給 remote SmokeEngine。
+
+    Remote PC 負責：
+    - YOLO smoke/fire
+    - temporal tracking
+    - PRE-ALERT
+    - Qwen verification
+    """
+
+    camera_name = str(
+        camera_name
+        or _SMOKE_CAMERA_DEFAULT
+    ).strip()
+
+    if not camera_name:
+        raise ValueError(
+            "camera_name is required"
+        )
+
+    try:
+        observe_seconds = float(
+            observe_seconds
+        )
+
+    except (
+        TypeError,
+        ValueError,
+    ) as exc:
+        raise ValueError(
+            "observe_seconds must be numeric"
+        ) from exc
+
+    observe_seconds = max(
+        0.5,
+        min(
+            observe_seconds,
+            15.0,
+        ),
+    )
+
+    # 同時間只允許一個 smoke observation，
+    # 避免同一 camera temporal state 被兩個 request 交錯。
+    with _SMOKE_QUERY_LOCK:
+
+        # 每次「重新觀察」都清掉上次 event。
+        # 特別是 ALERT 在 SmokeEngine 端是 latched state。
+        reset_result = (
+            smoke.reset_smoke_state(
+                camera_name=
+                    camera_name,
+
+                base_url=
+                    _SMOKE_PC_URL,
+
+                timeout_s=
+                    5.0,
+
+                raise_on_error=
+                    False,
+            )
+        )
+
+        if (
+            not isinstance(
+                reset_result,
+                dict,
+            )
+            or reset_result.get(
+                "result"
+            )
+            is not True
+        ):
+            logger.warning(
+                "smoke reset failed: "
+                "camera=%s response=%r",
+                camera_name,
+                reset_result,
+            )
+
+        started_at = (
+            time.monotonic()
+        )
+
+        deadline = (
+            started_at
+            + observe_seconds
+        )
+
+        frame_interval = (
+            1.0
+            / _SMOKE_SOURCE_FPS
+        )
+
+        frame_count = 0
+
+        latest_data = {
+            "camera_name":
+                camera_name,
+
+            "state":
+                "normal",
+
+            "phase":
+                "idle",
+
+            "candidate":
+                None,
+
+            "vlm":
+                None,
+        }
+
+        while (
+            time.monotonic()
+            < deadline
+        ):
+            loop_started = (
+                time.monotonic()
+            )
+
+            # --------------------------------------------
+            # Capture Robot RGB
+            # --------------------------------------------
+
+            observation = (
+                perception_service
+                .capture_vision(
+                    camera_name=
+                        camera_name,
+
+                    run_yolo=
+                        False,
+
+                    draw=
+                        False,
+
+                    include_intrinsics=
+                        False,
+
+                    include_point_cloud=
+                        False,
+
+                    include_robot_xyz=
+                        False,
+                )
+            )
+
+            camera_rgb = (
+                observation[
+                    "camera_rgb"
+                ]
+            )
+
+            timestamp = (
+                observation.get(
+                    "timestamp"
+                )
+            )
+
+            # --------------------------------------------
+            # Remote smoke inference
+            # --------------------------------------------
+
+            result = (
+                smoke.infer_smoke_on_pc(
+                    camera_rgb=
+                        camera_rgb,
+
+                    camera_name=
+                        camera_name,
+
+                    timestamp=
+                        timestamp,
+
+                    source_fps=
+                        _SMOKE_SOURCE_FPS,
+
+                    base_url=
+                        _SMOKE_PC_URL,
+
+                    jpeg_quality=
+                        85,
+
+                    timeout_s=
+                        10.0,
+
+                    raise_on_error=
+                        False,
+                )
+            )
+
+            frame_count += 1
+
+            if (
+                not isinstance(
+                    result,
+                    dict,
+                )
+                or result.get(
+                    "result"
+                )
+                is not True
+            ):
+                return response.error(
+                    MODULE,
+                    "get_smoke_state",
+                    error=RuntimeError(
+                        "remote smoke inference failed: "
+                        f"{result}"
+                    ),
+                    error_type=
+                        "SmokeInferenceError",
+                )
+
+            data = (
+                result.get(
+                    "data"
+                )
+                or {}
+            )
+
+            if isinstance(
+                data,
+                dict,
+            ):
+                latest_data = data
+
+            state = (
+                latest_data.get(
+                    "state"
+                )
+            )
+
+            vlm = (
+                latest_data.get(
+                    "vlm"
+                )
+            )
+
+            # --------------------------------------------
+            # 已經確認火災 / 煙霧
+            # --------------------------------------------
+
+            if state == "alert":
+                break
+
+            # --------------------------------------------
+            # Qwen 已經做完一次判斷
+            #
+            # 包含：
+            # smoke
+            # fire
+            # steam_or_mist
+            # light_or_reflection
+            # object
+            # uncertain
+            #
+            # 有 VLM 結果就可以結束這次 request。
+            # --------------------------------------------
+
+            if isinstance(
+                vlm,
+                dict,
+            ):
+                break
+
+            # --------------------------------------------
+            # Target FPS
+            # --------------------------------------------
+
+            elapsed = (
+                time.monotonic()
+                - loop_started
+            )
+
+            remaining = (
+                frame_interval
+                - elapsed
+            )
+
+            if remaining > 0:
+                time.sleep(
+                    remaining
+                )
+
+        elapsed_sec = (
+            time.monotonic()
+            - started_at
+        )
+
+        state = (
+            latest_data.get(
+                "state",
+                "unknown",
+            )
+        )
+
+        # 只回傳 smoke capability 自己的資訊，
+        # 不回傳整包 WorldState。
+        return response.success(
+            MODULE,
+            "get_smoke_state",
+            result=True,
+            data={
+                "camera_name":
+                    camera_name,
+
+                "detected":
+                    state == "alert",
+
+                "state":
+                    state,
+
+                "phase":
+                    latest_data.get(
+                        "phase"
+                    ),
+
+                "event_id":
+                    latest_data.get(
+                        "event_id"
+                    ),
+
+                "candidate":
+                    deepcopy(
+                        latest_data.get(
+                            "candidate"
+                        )
+                    ),
+
+                "vlm":
+                    deepcopy(
+                        latest_data.get(
+                            "vlm"
+                        )
+                    ),
+
+                "frames_processed":
+                    frame_count,
+
+                "elapsed_sec":
+                    round(
+                        elapsed_sec,
+                        3,
+                    ),
+
+                "observed_at":
+                    _utc_now_iso(),
+            },
+        )
+
+
+def checkaction(action: str, camera_name: str = "left", *,
+                target_hint: str | None = None, backend: str | None = None,
+                image_path: str | None = None) -> dict:
+
+    from agent.vlm.checkaction import checkaction as _checkaction
+
+    return _checkaction(action=action, camera_name=camera_name,
+                        target_hint=target_hint, backend=backend,
+                        image_path=image_path)
+

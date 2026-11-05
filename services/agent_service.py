@@ -1,459 +1,274 @@
+"""Agent Workflow Service: one-shot task jobs, planning, runner and HTTP gates.
+
+Core logic stays in agent.workflow. No duplicate planning or Action dispatcher.
 """
-對外 AI Agent 服務層。
-"""
+from __future__ import annotations
+
+from copy import deepcopy
+from datetime import datetime, timezone
+from threading import Condition, Lock, RLock, Thread
+import os
 import time
-from agent.agent import (build_agent_command_data, route_command)
-from time import perf_counter
-# from agent.executor import execute_tools
-from services import arm_service, perception_service, camera_service, vlm_narrator_service, plan_service
-from utils import response
+from uuid import uuid4
+
+from agent.workflow.registry import all_tools
+from agent.workflow.router import expected_tool_routes, preflight_service_names
+from agent.workflow.planner import plan_full_task
+from agent.workflow.runner import run_workflow
+
+_JOBS = {}
+_JOBS_LOCK = RLock()
+_FLIGHT_LOCK = Lock()  # agent API single-flight within this Python process
 
 
-MODULE = "agent"
+class AgentBusy(RuntimeError):
+    """Another Workflow is planning/running/waiting for operator input."""
 
 
-def _get_robot_status():
-    """
-    取得提供給 AI Agent 的精簡機器人狀態。
-    """
+def is_busy() -> bool:
+    return _FLIGHT_LOCK.locked()
+
+
+_MAX_JOBS = 64
+_TERMINAL = frozenset(("planned", "completed", "dispatched_unverified", "stopped", "failed"))  # WORKFLOW_AUTO_DISPATCH_V1
+
+
+def _now():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _confirmation_timeout():
+    raw = os.getenv("AGENT_WORKFLOW_CONFIRM_TIMEOUT_SEC", "900")
     try:
-        response = arm_service.get_arm_status()
+        seconds = float(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("AGENT_WORKFLOW_CONFIRM_TIMEOUT_SEC must be numeric") from exc
+    if not 5 <= seconds <= 86400:
+        raise ValueError("AGENT_WORKFLOW_CONFIRM_TIMEOUT_SEC must be 5..86400")
+    return seconds
 
-        if not isinstance(response, dict):
-            return {
-                "status_available": False,
-                "connected": False,
-                "status_error": "arm service 回傳格式錯誤",
-            }
 
-        result = response.get("result")
-        data = response.get("data")
-        if result is not True or not isinstance(data, dict):
-            message = response.get("message")
+class WorkflowJob:
+    def __init__(self, *, user_text, provider, camera_name, mode, check, model):
+        self.job_id = uuid4().hex
+        self.user_text = user_text
+        self.provider = provider
+        self.camera_name = camera_name
+        self.mode = mode
+        self.check = check
+        self.model = model
+        self.created_at = _now()
+        self.updated_at = self.created_at
+        self.status = "queued"
+        self.plan = None
+        self.tool_routes = None
+        self.preflight = None
+        self.result = None
+        self.error = None
+        self.pending_gate = None
+        self._decision = None
+        self._condition = Condition(RLock())
 
-            if not isinstance(message, str) or not message.strip():
-                message = "無法取得機器手臂狀態"
+    def _set(self, **values):
+        with self._condition:
+            for field, value in values.items():
+                setattr(self, field, value)
+            self.updated_at = _now()
+            self._condition.notify_all()
 
-            return {
-                "status_available": False,
-                "connected": False,
-                "status_error": message.strip(),
-            }
+    def snapshot(self):
+        with self._condition:
+            if self.mode != "real":
+                physical_state = "not_dispatched_by_request"
+            elif self.status in ("failed", "stopped"):
+                # After an error, earlier steps may already have moved hardware.
+                physical_state = "unknown_after_failure"
+            elif self.status == "dispatched_unverified":
+                physical_state = "dispatched_without_completion_verification"
+            elif self.status == "completed":
+                physical_state = "completion_evidence_in_result"
+            else:
+                physical_state = "not_confirmed_in_progress"
+            return deepcopy({
+                "physical_state": physical_state,
+                "job_id": self.job_id,
+                "status": self.status,
+                "created_at": self.created_at,
+                "updated_at": self.updated_at,
+                "user_text": self.user_text,
+                "provider": self.provider,
+                "camera_name": self.camera_name,
+                "mode": self.mode,
+                "check": self.check,
+                "plan": self.plan,
+                "tool_routes": self.tool_routes,
+                "preflight": self.preflight,
+                "pending_gate": self.pending_gate,
+                "result": self.result,
+                "error": self.error,
+                "process_local": True,
+            })
 
-        arms = data.get("arms")
-        if not isinstance(arms, list):
-            return {
-                "status_available": False,
-                "connected": False,
-                "status_error": "arm service 缺少 arms 狀態",
-            }
+    def operator_gate(self, *, step, arguments, previous_step, previous_arguments,
+                      retry_available, mode, phase="before", previous_status=None):
+        """Runs in worker thread. Wait for an explicit matching API decision.
 
-        right = next(
-            (item for item in arms if item.get("arm_name") == "right"),
-            None,
-        )
-        right_status = (right or {}).get("status") or {}
-        connected = right_status.get("connected") is True
-
-        return {
-            "status_available": True,
-            "connected": connected,
-            "arm_name": "right",
-            "driver": (right or {}).get("driver"),
-            "pose": right_status.get("pose"),
-            "joints": right_status.get("joints"),
+        Deliberately disallow API retries of already dispatched physical steps.
+        A retry requires a separate, reviewed recovery process.
+        """
+        if mode != "real" or not self.check:
+            raise RuntimeError("Unexpected operator gate in unattended mode")
+        gate = {
+            "gate_id": uuid4().hex,
+            "phase": phase,
+            "step_id": step["step_id"],
+            "tool_name": step["tool_name"],
+            "arguments": deepcopy(arguments),
+            "previous_step_id": previous_step["step_id"] if previous_step else None,
+            "previous_status": previous_status,
+            "allowed_decisions": ["continue", "stop"],
+            "retry_available_in_cli_only": bool(retry_available),
         }
+        with self._condition:
+            self.pending_gate = gate
+            self.status = "waiting_confirmation"
+            self.updated_at = _now()
+            self._condition.notify_all()
+            deadline = time.monotonic() + _confirmation_timeout()
+            while self._decision is None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    self.error = "Operator confirmation timeout; no further action authorized"
+                    choice = "stop"
+                    break
+                self._condition.wait(timeout=remaining)
+            else:
+                choice = self._decision
+            self._decision = None
+            self.pending_gate = None
+            self.status = "running" if choice == "continue" else "stopping"
+            self.updated_at = _now()
+        return choice
 
-    except Exception as exc:
-        return {
-            "status_available": False,
-            "connected": False,
-            "status_error": (f"取得機器手臂狀態時發生錯誤：{type(exc).__name__}"),
-        }
-def _get_perception_context(
-    camera_names=("left", "right"),
-    model_name="object_detector",
-    include_robot_xyz=True,
-):
-    """
-    Agent 共用 perception context。
-
-    現階段透過 perception_service.get_detections() 聚合多相機結果。
-    未來 perception_service 提供 multi-camera API 時，只需修改此函式，
-    其他 Agent / Plan 邏輯不用變。
-    """
-
-    raw_objects = []
-    timestamps = {}
-    camera_errors = {}
-
-    for camera_name in camera_names:
-        try:
-            response = perception_service.get_detections(
-                camera_name=camera_name,
-                model_name=model_name,
-                include_robot_xyz=include_robot_xyz,
-            )
-
-            # 第一次失敗時，嘗試啟動相機後再偵測一次
-            if (
-                not isinstance(response, dict)
-                or response.get("status") != "success"
-                or response.get("result") is not True
-            ):
-                start_response = camera_service.start_camera(
-                    camera_name=camera_name,
-                )
-
-                if (
-                    isinstance(start_response, dict)
-                    and start_response.get("status") == "success"
-                    and start_response.get("result") is True
-                ):
-                    time.sleep(0.3)
-
-                    response = perception_service.get_detections(
-                        camera_name=camera_name,
-                        model_name=model_name,
-                        include_robot_xyz=include_robot_xyz,
-                    )
-
-            if not isinstance(response, dict):
-                camera_errors[camera_name] = (
-                    "vision service 回傳格式錯誤"
-                )
-                continue
-
-            data = response.get("data") or {}
-            detections = data.get("detections")
-
-            if (
-                response.get("status") != "success"
-                or response.get("result") is not True
-                or not isinstance(detections, list)
-            ):
-                camera_errors[camera_name] = str(
-                    response.get("message")
-                    or "無法取得物件辨識結果"
-                )
-                continue
-
-            timestamps[camera_name] = data.get("timestamp")
-
-            for detection in detections:
-                if not isinstance(detection, dict):
-                    continue
-
-                raw_objects.append({
-                    **detection,
-                    "camera_source": camera_name,
-                })
-
-        except Exception as exc:
-            camera_errors[camera_name] = (
-                f"{type(exc).__name__}: {exc}"
-            )
-
-    if not timestamps:
-        return {
-            "detection_available": False,
-            "objects": [],
-            "count": 0,
-            "latest_time": None,
-            "detection_error": "; ".join(
-                f"{camera}: {message}"
-                for camera, message in camera_errors.items()
-            ),
-            "camera_timestamps": {},
-            "camera_errors": camera_errors,
-        }
-
-    # Reuse the centralized multi-camera identity assignment.
-    objects = vlm_narrator_service.assign_object_ids(raw_objects)
-
-    normalized_objects = []
-
-    for obj in objects:
-        if not isinstance(obj, dict):
-            continue
-
-        normalized_objects.append({
-            "object_id": obj.get("object_id"),
-            "class_name": obj.get("class_name"),
-            "camera_source": obj.get("camera_source"),
-            "confidence": obj.get("confidence"),
-            "robot_xyz": obj.get("robot_xyz"),
-            "yaw_deg": obj.get("yaw_deg"),
-            "condition": obj.get("condition"),
-            "visual_description": obj.get("visual_description"),
-            "state_tags": obj.get("state_tags"),
-        })
-
-    latest_time = next(
-        (
-            timestamps.get(camera_name)
-            for camera_name in reversed(camera_names)
-            if timestamps.get(camera_name) is not None
-        ),
-        None,
-    )
-
-    return {
-        "detection_available": True,
-        "objects": normalized_objects,
-        "count": len(normalized_objects),
-        "latest_time": latest_time,
-        "camera_timestamps": timestamps,
-        "camera_errors": camera_errors,
-    }
+    def decide(self, gate_id, decision):
+        if decision not in ("continue", "stop"):
+            raise ValueError("decision must be 'continue' or 'stop'")
+        if not isinstance(gate_id, str) or not gate_id:
+            raise ValueError("gate_id is required")
+        with self._condition:
+            gate = self.pending_gate
+            if self.status != "waiting_confirmation" or gate is None:
+                raise RuntimeError("Workflow is not waiting for confirmation")
+            if gate["gate_id"] != gate_id:
+                raise RuntimeError("Stale or mismatched gate_id")
+            if self._decision is not None:
+                raise RuntimeError("Decision already submitted")
+            self._decision = decision
+            self.updated_at = _now()
+            self._condition.notify_all()
+        return self.snapshot()
 
 
-
-#0待刪除
-def action_command(user_text):
-    """
-    解析自然語言指令，建立工具執行序列。
-    """
-    action = "action_command"
-
+def _worker(job):
     try:
-        # result = _plan_result(user_text)
-        user_text_result = result["user_text"]
-        answer = result["answer"]
-        tool_calls = result["tool_calls"]
-        
-        execution = None
-
-        if tool_calls:
-            # build_prompt 已完成白名單、必要參數、座標範圍與任務前置
-            # 條件驗證；executor 會再驗證一次工具名稱，並在單一背景執行緒
-            # 中依序呼叫 arm_service / task_service。若已有任務執行中，
-            # execute_tools 會直接拒絕，避免兩組實體動作同時進行。
-            execution = execute_tools(tool_calls)
-
-        return response.success(
-            MODULE,
-            action,
-            data={
-                "user_text": user_text_result,
-                "answer": answer,
-                "tool_calls": tool_calls,
-                "execution": execution,
-            },
-        )
-
+        job._set(status="planning")
+        from agent.capability_selector import select_capability
+        kwargs = {"provider": job.provider}
+        if job.model is not None:
+            kwargs["model"] = job.model
+        selected = select_capability(job.user_text, **kwargs)
+        if (not isinstance(selected, dict)
+                or selected.get("tool_name") != "plan_task"
+                or selected.get("arguments") != {}):
+            raise RuntimeError("Workflow requires the plan_task capability; information queries are not part of this endpoint")
+        plan = plan_full_task(job.user_text, provider=job.provider,
+                              camera_name=job.camera_name, model=job.model)
+        catalog = all_tools()
+        routes = expected_tool_routes(plan, catalog)
+        job._set(plan=plan, tool_routes=routes)
+        if job.mode == "plan":
+            job._set(status="planned")
+            return
+        # Preflight before sending *any* physical actions; runner repeats it.
+        preflight = preflight_service_names(plan, catalog)
+        job._set(preflight=preflight, status="running")
+        result = run_workflow(plan, mode="real",
+                              step_control=job.operator_gate if job.check else None)
+        if not isinstance(result, dict) or type(result.get("success")) is not bool:
+            raise RuntimeError("Workflow Runner returned an invalid report")
+        final_status = ("stopped" if not result["success"] else
+                        "dispatched_unverified" if result.get("completion_evidence") == "dispatch_only_unverified" else
+                        "completed")
+        job._set(result=result, status=final_status)
     except Exception as exc:
-        return response.error(
-            MODULE,
-            action,
-            error=exc,
-            error_type=type(exc).__name__,
-        )
+        job._set(status="failed", error={"type": type(exc).__name__,
+                                          "message": str(exc)[:500]})
+    finally:
+        _FLIGHT_LOCK.release()
 
-def _command_perceive(user_text,camera_names, started,):
-    perception = _get_perception_context(
-        camera_names=camera_names,
-    )
 
-    if perception["detection_available"] is not True:
-        raise RuntimeError(
-            "無法取得物件辨識結果"
-        )
-
-    objects = perception["objects"]
-
-    return build_agent_command_data(
-        user_text=user_text,
-        used_modules=["perceive"],
-        answer=f"共辨識到 {len(objects)} 個物件。",
-        objects=objects,
-        timings_ms={
-            "total": round(
-                (perf_counter() - started) * 1000,
-                2,
-            ),
-        },
-    )
-
-def _command_plan(user_text,planning_options, started,):
-
-    perception_started = perf_counter()
-
-    perception = _get_perception_context()
-
-    perception_ms = (
-        perf_counter() - perception_started
-    ) * 1000
-
-    result = (
-        plan_service
-        .build_one_shot_value(
-            user_text,
-            context={
-                "detected_objects":
-                    perception,
-            },
-            planning_options=
-                planning_options,
-        )
-    )
-
-    if not isinstance(result, dict):
-        raise RuntimeError(
-            "plan module 回傳格式錯誤"
-        )
-
-    objects = perception.get("objects")
-    if not isinstance(objects, list):
-        objects = []
-
-    steps = result.get("steps")
-    if not isinstance(steps, list):
-        steps = []
-
-    timings = dict(
-        result.get("timings_ms") or {}
-    )
-
-    timings["perception_context"] = round(
-        perception_ms,
-        2,
-    )
-
-    timings["total"] = round(
-        (perf_counter() - started) * 1000,
-        2,
-    )
-
-    return build_agent_command_data(
-        user_text=user_text,
-        used_modules=[
-            "perceive",
-            "plan",
-        ],
-        answer=result.get("answer") or "",
-        objects=objects,
-        steps=steps,
-        trace_id=result.get("trace_id"),
-        timings_ms=timings,
-    )
-
-def command(user_text, planning_options=None):
-    """Agent 統一自然語言入口。"""
-
-    action = "command"
-    started = perf_counter()
-    used_modules = []
-
+def create_workflow(*, user_text, provider="openai", camera_name="left",
+                    mode="plan", check=False, model=None):
+    if not isinstance(user_text, str) or not user_text.strip():
+        raise ValueError("user_text must be a nonempty string")
+    if len(user_text) > 4000:
+        raise ValueError("user_text exceeds 4000 characters")
+    if provider not in ("openai", "local"):
+        raise ValueError("provider must be openai/local")
+    if camera_name not in ("left", "right", "middle"):
+        raise ValueError("camera_name must be left/right/middle")
+    if mode not in ("plan", "real"):
+        raise ValueError("mode must be plan/real")
+    if type(check) is not bool:
+        raise ValueError("check must be boolean")
+    if check and mode != "real":
+        raise ValueError("check=true requires mode=real")
+    if model is not None and (not isinstance(model, str) or not 1 <= len(model) <= 120):
+        raise ValueError("model must be a string of 1..120 characters")
+    if check:
+        _confirmation_timeout()
+    if not _FLIGHT_LOCK.acquire(blocking=False):
+        raise AgentBusy("已有另一筆 Agent Workflow 正在執行或等待人工確認")
     try:
-        if not isinstance(user_text, str) or not user_text.strip():
-            raise ValueError("user_text 必須是非空字串")
+        job = _register_job(user_text.strip(), provider, camera_name, mode, check, model)
+        Thread(target=_worker, args=(job,),
+               name="agent-workflow-" + job.job_id[:8], daemon=True).start()
+    except BaseException:
+        if "job" in locals():
+            with _JOBS_LOCK:
+                _JOBS.pop(job.job_id, None)
+        _FLIGHT_LOCK.release()
+        raise
+    return job.snapshot()
 
-        user_text = user_text.strip()
 
-        # Agent 只負責理解需求並選擇下一層 module
-        route = route_command(user_text)
+def _register_job(user_text, provider, camera_name, mode, check, model):
+    job = WorkflowJob(user_text=user_text.strip(), provider=provider,
+                      camera_name=camera_name, mode=mode, check=check, model=model)
+    with _JOBS_LOCK:
+        if len(_JOBS) >= _MAX_JOBS:
+            for k, old in list(_JOBS.items()):
+                if old.status in _TERMINAL:
+                    del _JOBS[k]
+                if len(_JOBS) < _MAX_JOBS:
+                    break
+            if len(_JOBS) >= _MAX_JOBS:
+                raise RuntimeError("Workflow job storage is full")
+        _JOBS[job.job_id] = job
+    return job
 
-        module = route["module"]
-        camera_names = tuple(
-            route.get("camera_names") or []
-        )
 
-        # ----------------------------------------------------
-        # perceive
-        # ----------------------------------------------------
-        if module == "perceive":
-            used_modules = ["perceive"]
+def get_workflow(job_id):
+    with _JOBS_LOCK:
+        job = _JOBS.get(job_id)
+    if job is None:
+        raise LookupError("Workflow job not found in this process")
+    return job.snapshot()
 
-            if not camera_names:
-                camera_names = ("left", "right")
 
-            data = _command_perceive(
-                user_text,
-                camera_names,
-                started,
-            )
-
-        # ----------------------------------------------------
-        # plan
-        # ----------------------------------------------------
-        elif module == "plan":
-            used_modules = [
-                "perceive",
-                "plan",
-            ]
-
-            data = _command_plan(
-                user_text,
-                planning_options,
-                started,
-            )
-
-        # ----------------------------------------------------
-        # world-model
-        # ----------------------------------------------------
-        elif module == "world-model":
-            raise NotImplementedError(
-                "world-model 尚未接入 Agent command"
-            )
-
-        # ----------------------------------------------------
-        # action
-        # ----------------------------------------------------
-        elif module == "action":
-            raise NotImplementedError(
-                "action 尚未接入 Agent command"
-            )
-
-        # ----------------------------------------------------
-        # calibrate
-        # ----------------------------------------------------
-        elif module == "calibrate":
-            raise NotImplementedError(
-                "calibrate 尚未接入 Agent command"
-            )
-
-        # ----------------------------------------------------
-        # train
-        # ----------------------------------------------------
-        elif module == "train":
-            raise NotImplementedError(
-                "train 尚未接入 Agent command"
-            )
-
-        else:
-            raise RuntimeError(
-                f"不支援的 Agent module：{module}"
-            )
-
-        return response.success(
-            MODULE,
-            action,
-            data=data,
-        )
-
-    except Exception as exc:
-        data = build_agent_command_data(
-            user_text=(
-                user_text
-                if isinstance(user_text, str)
-                else ""
-            ),
-            used_modules=used_modules,
-            answer=str(exc),
-            timings_ms={
-                "total": round(
-                    (perf_counter() - started) * 1000,
-                    2,
-                ),
-            },
-        )
-
-        return response.error(
-            MODULE,
-            action,
-            error=exc,
-            error_type=type(exc).__name__,
-            result=False,
-            data=data,
-        )
+def decide_workflow(job_id, *, gate_id, decision):
+    with _JOBS_LOCK:
+        job = _JOBS.get(job_id)
+    if job is None:
+        raise LookupError("Workflow job not found in this process")
+    return job.decide(gate_id, decision)

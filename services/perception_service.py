@@ -10,10 +10,9 @@ from utils import response
 MODULE = "perception"
 
 def _normalize_model_name(model_name):
-    if not isinstance(model_name, str) or model_name.strip().lower() not in ("object_detector", "yolo"):
-        raise ValueError("Supported detection models: object_detector, yolo")
+    if not isinstance(model_name, str) or model_name.strip().lower() != "yolo":
+        raise ValueError("Supported detection models: yolo")
     return "yolo"
-
 
 def _as_bool(
     value,
@@ -98,6 +97,36 @@ def _as_int(
 # ============================================================
 # Camera Data
 # ============================================================
+def _ensure_camera_running(camera_name):
+    result = camera_service.get_camera_status(camera_name=camera_name)
+
+    if result.get("result") is not True:
+        raise RuntimeError(f"Failed to get camera status: {camera_name}")
+
+    cameras = result.get("data", {}).get("cameras", [])
+
+    if not cameras:
+        raise RuntimeError(f"Camera not found: {camera_name}")
+
+    status = cameras[0].get("status", {})
+
+    if status.get("running") is True:
+        return
+
+    result = camera_service.start_camera(camera_name=camera_name)
+
+    if result.get("result") is not True:
+        raise RuntimeError(f"Failed to start camera '{camera_name}': {result}")
+
+    status_result = camera_service.get_camera_status(camera_name=camera_name)
+
+    if status_result.get("result") is not True:
+        raise RuntimeError(f"Failed to verify camera status: {camera_name}")
+
+    cameras = status_result.get("data", {}).get("cameras", [])
+
+    if not cameras or cameras[0].get("status", {}).get("running") is not True:
+        raise RuntimeError(f"Camera '{camera_name}' is not running after start")
 
 def _get_camera_rgb(
     frame,
@@ -1146,130 +1175,59 @@ def _enrich_detection_3d(
 # ============================================================
 # Core Vision
 # ============================================================
-
-def capture_vision(
-    camera_name,
-    model_name=
-        "object_detector",
-    run_yolo=True,
-    draw=True,
-    include_intrinsics=True,
-    include_point_cloud=False,
-    include_robot_xyz=True,
-):
+def capture_vision(camera_name, model_name="yolo", run_yolo=True, draw=True, include_intrinsics=True, include_point_cloud=False, include_robot_xyz=True):
     """
     取得指定 camera 的完整 vision observation。
-
-    Camera name 的驗證、driver 取得與 frame abstraction
-    全部由 camera_service 負責。
+    如果相機尚未啟動，則自動啟動相機。
     """
 
-    frame = (
-        camera_service
-        .get_frame(
-            camera_name
-        )
-    )
+    _ensure_camera_running(camera_name)
+    frame = camera_service.get_frame(camera_name)
 
-    camera_rgb = (
-        _get_camera_rgb(
-            frame
-        )
-    )
+    camera_rgb = _get_camera_rgb(frame)
+    timestamp = frame.get("timestamp")
 
-    timestamp = (
-        frame.get(
-            "timestamp"
-        )
-    )
-
+    # Camera Intrinsics
     camera_intrinsics = None
-    intrinsics_status = (
-        "not_requested"
-    )
+    intrinsics_status = "not_requested"
 
     if include_intrinsics:
-        (
-            camera_intrinsics,
-            intrinsics_status,
-        ) = (
-            _get_intrinsics(
-                camera_name,
-                frame,
-            )
-        )
+        camera_intrinsics, intrinsics_status = _get_intrinsics(camera_name, frame)
 
+    # Point Cloud
     point_cloud = None
-    point_cloud_status = (
-        "not_requested"
-    )
+    point_cloud_status = "not_requested"
 
     if include_point_cloud:
-        (
-            point_cloud,
-            point_cloud_status,
-        ) = (
-            _get_point_cloud(
-                camera_name,
-                frame,
-            )
-        )
+        point_cloud, point_cloud_status = _get_point_cloud(camera_name, frame)
 
+    # YOLO
     annotated_frame = None
     detections = []
 
     if run_yolo:
         _normalize_model_name(model_name)
 
-        yolo_result = model_service.yolo.create_detector(
-            camera_name=camera_name, frame=frame, draw=False,
-        )
+        yolo_result = model_service.yolo.detect(camera_name=camera_name, frame=frame, draw=False)
         raw_detections = yolo_result["detections"]
-        detections = [
-            _enrich_yolo_geometry(detection, camera_rgb.shape)
-            for detection in raw_detections
-        ]
+        detections = [_enrich_yolo_geometry(detection, camera_rgb.shape) for detection in raw_detections]
 
         if include_robot_xyz:
-            detections = [
-                _enrich_detection_3d(
-                    camera_name=camera_name,
-                    frame=frame,
-                    detection=detection,
-                )
-                for detection in detections
-            ]
+            detections = [_enrich_detection_3d(camera_name=camera_name, frame=frame, detection=detection) for detection in detections]
 
         if draw:
             annotated_frame = _draw_yolo_image(camera_rgb, detections)
 
     return {
-        "camera_name":
-            camera_name,
-
-        "timestamp":
-            timestamp,
-
-        "camera_rgb":
-            camera_rgb,
-
-        "camera_intrinsics":
-            camera_intrinsics,
-
-        "intrinsics_status":
-            intrinsics_status,
-
-        "point_cloud":
-            point_cloud,
-
-        "point_cloud_status":
-            point_cloud_status,
-
-        "annotated_frame":
-            annotated_frame,
-
-        "detections":
-            detections,
+        "camera_name": camera_name,
+        "timestamp": timestamp,
+        "camera_rgb": camera_rgb,
+        "camera_intrinsics": camera_intrinsics,
+        "intrinsics_status": intrinsics_status,
+        "point_cloud": point_cloud,
+        "point_cloud_status": point_cloud_status,
+        "annotated_frame": annotated_frame,
+        "detections": detections,
     }
 
 
@@ -1278,8 +1236,7 @@ def capture_vision(
 # ============================================================
 def get_detections_value(
     camera_name,
-    model_name=
-        "object_detector",
+    model_name= "yolo",
     draw=True,
     include_robot_xyz=True,
 ):
@@ -1466,8 +1423,7 @@ def get_camera_image(
 
 def get_detection_image(
     camera_name,
-    model_name=
-        "object_detector",
+    model_name= "yolo",
     include_robot_xyz=True,
     quality=90,
 ):
@@ -1571,8 +1527,7 @@ def get_camera_stream(
 
 def get_detection_stream(
     camera_name,
-    model_name=
-        "object_detector",
+    model_name= "yolo",
     include_robot_xyz=True,
     interval_sec=0.10,
     quality=85,
@@ -1648,8 +1603,7 @@ def get_detection_stream(
 
 def get_detections(
     camera_name,
-    model_name=
-        "object_detector",
+    model_name= "yolo",
     include_robot_xyz=True,
 ):
     action = "get_detections"

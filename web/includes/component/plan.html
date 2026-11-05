@@ -1,0 +1,1121 @@
+<!DOCTYPE html>
+
+<html lang="zh-Hant">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Runtime Plan</title>
+
+<style>
+
+    * { box-sizing: border-box; }
+
+    body {
+
+        margin: 0;
+
+        padding: 18px;
+
+        font-family: Arial, "Noto Sans TC", sans-serif;
+
+        background: #f5f5f5;
+
+        color: #222;
+
+    }
+
+    .wrap { max-width: 1100px; margin: 0 auto; }
+
+    .card {
+
+        background: #fff;
+
+        border: 1px solid #ddd;
+
+        border-radius: 8px;
+
+        padding: 16px;
+
+        margin-bottom: 12px;
+
+    }
+
+    h1 { margin: 0 0 14px; font-size: 24px; }
+
+    h2 { margin: 0 0 12px; font-size: 18px; }
+
+    h3 { margin: 14px 0 8px; font-size: 15px; }
+
+    label {
+
+        display: block;
+
+        margin-bottom: 5px;
+
+        font-size: 13px;
+
+        font-weight: 700;
+
+    }
+
+    textarea, input, select, button {
+
+        width: 100%;
+
+        font: inherit;
+
+        padding: 9px 10px;
+
+        border-radius: 6px;
+
+    }
+
+    textarea, input, select {
+
+        border: 1px solid #bbb;
+
+        background: #fff;
+
+    }
+
+    textarea { min-height: 88px; resize: vertical; }
+
+    button {
+
+        border: 1px solid #aaa;
+
+        background: #eee;
+
+        cursor: pointer;
+
+    }
+
+    button:disabled { opacity: .55; cursor: default; }
+
+    .primary { background: #fff1bd; border-color: #c89d2b; font-weight: 700; }
+
+    .danger { background: #f8dddd; border-color: #c78b8b; }
+
+    .confirm { background: #dff3e3; border-color: #86ad8e; font-weight: 700; }
+
+    .grid {
+
+        display: grid;
+
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+
+        gap: 10px;
+
+    }
+
+    .phase {
+
+        margin-top: 12px;
+
+        padding: 12px;
+
+        border: 1px solid #ddd;
+
+        border-radius: 7px;
+
+        background: #fafafa;
+
+    }
+
+    .phase-title {
+
+        font-weight: 700;
+
+        margin-bottom: 7px;
+
+    }
+
+    .status {
+
+        margin-top: 10px;
+
+        white-space: pre-wrap;
+
+        font-family: monospace;
+
+        font-size: 13px;
+
+        color: #555;
+
+    }
+
+    .proposal, .instruction {
+
+        margin-top: 10px;
+
+        padding: 12px;
+
+        border-radius: 6px;
+
+        white-space: pre-wrap;
+
+        line-height: 1.45;
+
+    }
+
+    .proposal { border: 1px solid #aaa; background: #f8f8f8; }
+
+    .proposal.blocked { border-color: #c77; background: #fff1f1; }
+
+    .proposal.ready { border-color: #7a9; background: #f1faf3; }
+
+    .instruction { border: 1px solid #d0ad4f; background: #fff9e8; }
+
+    .history-item {
+
+        border-top: 1px solid #ddd;
+
+        padding: 12px 0;
+
+    }
+
+    .history-item:first-child { border-top: 0; padding-top: 0; }
+
+    .history-title { font-weight: 700; margin-bottom: 6px; }
+
+    .history-action {
+
+        white-space: pre-wrap;
+
+        margin-bottom: 6px;
+
+        line-height: 1.45;
+
+    }
+
+    details {
+
+        margin-top: 7px;
+
+        border: 1px solid #ddd;
+
+        border-radius: 5px;
+
+        padding: 7px 9px;
+
+    }
+
+    summary { cursor: pointer; font-size: 13px; }
+
+    pre {
+
+        margin: 8px 0 0;
+
+        padding: 10px;
+
+        background: #111;
+
+        color: #eee;
+
+        border-radius: 5px;
+
+        max-height: 460px;
+
+        overflow: auto;
+
+        font-size: 12px;
+
+        white-space: pre-wrap;
+
+        word-break: break-word;
+
+    }
+
+    .hidden { display: none; }
+
+    .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+    .muted { color: #777; font-size: 12px; margin-top: 5px; }
+
+    .security-note {
+
+        margin-top: 7px;
+
+        padding: 8px 10px;
+
+        border: 1px solid #ddd;
+
+        background: #f7f7f7;
+
+        border-radius: 5px;
+
+        font-size: 12px;
+
+        color: #555;
+
+    }
+
+    @media (max-width: 760px) {
+
+        .grid, .buttons { grid-template-columns: 1fr; }
+
+    }
+
+</style>
+
+</head>
+
+<body>
+
+<div class="wrap">
+
+    <div class="card">
+
+        <h1>Runtime Plan</h1>
+
+
+
+        <label for="taskInput">Command</label>
+
+        <textarea id="taskInput">把口罩放進垃圾桶</textarea>
+
+    </div>
+
+
+
+    <div class="card">
+
+        <h2>Model Routing</h2>
+
+
+
+        <div class="phase">
+            <div class="phase-title">Phase 1 — Task Interpretation</div>
+            <div class="muted">
+                Goal Decomposition 與 Coordination Extraction 共用同一組模型設定。
+            </div>
+
+            <div class="grid" style="margin-top:10px;">
+                <div>
+                    <label for="taskInterpretationProvider">Provider</label>
+                    <select id="taskInterpretationProvider">
+                        <option value="remote" selected>remote</option>
+                        <option value="openai">openai</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="taskInterpretationModel">Model / Version</label>
+                    <input id="taskInterpretationModel" list="knownModels" type="text" value="Qwen3-VL-8B-Instruct">
+                </div>
+            </div>
+        </div>
+
+        <div class="phase">
+
+            <div class="phase-title">Phase 2 — Runtime Step Planning</div>
+
+
+
+            <div class="grid">
+
+                <div>
+
+                    <label for="stepProvider">Provider</label>
+
+                    <select id="stepProvider">
+                        <option value="remote" selected>remote</option>
+                        <option value="openai">openai</option>
+                    </select>
+
+                </div>
+
+                <div>
+
+                    <label for="stepModel">Model / Version</label>
+
+                    <input id="stepModel" list="knownModels" type="text" value="Qwen3-VL-8B-Instruct">
+
+                </div>
+
+            </div>
+
+
+
+            <div class="muted">
+
+                RuntimeBrain 使用這組設定；closed-loop 每個 iteration 都會重新做一次 Step Planning。
+
+            </div>
+
+        </div>
+
+
+
+        <datalist id="knownModels">
+
+            <option value="Qwen3-VL-8B-Instruct"></option>
+
+            <option value="gpt-5-nano"></option>
+
+        </datalist>
+
+
+
+        <div class="phase">
+
+            <div class="phase-title">OpenAI Credential</div>
+
+            <label for="openaiApiKey">OpenAI API Key</label>
+
+            <input
+
+                id="openaiApiKey"
+
+                type="password"
+
+                autocomplete="new-password"
+
+                spellcheck="false"
+
+                placeholder="選 openai 時可輸入；空白則使用後端 OPENAI_API_KEY"
+
+            >
+
+            <div class="security-note">
+
+                此 key 只隨 Start request 傳給後端，不會寫入 Runtime history 或回傳在 session JSON。只要任一 phase 選 openai，就會共用這個 key。
+
+            </div>
+
+        </div>
+
+
+
+        <div style="margin-top:10px;">
+            <label for="forceDeviceInput">Force Runtime Device</label>
+            <select id="forceDeviceInput">
+
+                    <option value="">auto / Binder decides</option>
+
+                    <option value="right_arm" selected>right_arm</option>
+
+                    <option value="left_arm">left_arm</option>
+
+                    <option value="tm">tm</option>
+
+                </select>
+        </div>
+
+    </div>
+
+
+
+    <div class="card">
+
+        <div class="buttons">
+
+            <button id="startButton" class="primary">Start Manual Runtime</button>
+
+            <button id="cancelButton" class="danger" disabled>Cancel Runtime</button>
+
+        </div>
+
+
+
+        <div id="status" class="status">Manual Runtime idle</div>
+
+
+
+        <div id="proposal" class="proposal hidden"></div>
+
+        <div id="instruction" class="instruction hidden"></div>
+
+
+
+        <button id="confirmButton" class="confirm hidden" style="margin-top:10px;">
+
+            我已手動完成，繼續
+
+        </button>
+
+    </div>
+
+
+
+    <div class="card">
+
+        <h2>Step History</h2>
+
+        <div id="history">
+
+            <div class="muted">尚無 step</div>
+
+        </div>
+
+    </div>
+
+
+
+    <div class="card">
+
+        <details>
+
+            <summary>Raw Runtime Session</summary>
+
+            <div class="muted">
+
+                原始 Runtime session JSON；API key 不會出現在此資料中。
+
+            </div>
+
+            <pre id="rawOutput"></pre>
+
+        </details>
+
+    </div>
+
+</div>
+
+
+
+<script>
+
+let sessionId = null;
+
+let pollTimer = null;
+
+
+
+function el(id) {
+
+    return document.getElementById(id);
+
+}
+
+
+
+async function apiJson(url, options = {}) {
+
+    const response = await fetch(url, {
+
+        headers: {
+
+            "Content-Type": "application/json",
+
+            ...(options.headers || {})
+
+        },
+
+        ...options
+
+    });
+
+
+
+    const body = await response.json();
+
+
+
+    if (!response.ok) {
+
+        throw new Error(body?.message || `HTTP ${response.status}`);
+
+    }
+
+
+
+    return body;
+
+}
+
+
+
+function actionText(action) {
+
+    const first = action?.actions?.[0];
+
+    if (!first) return "(no action)";
+
+
+
+    return [
+
+        `${first.function_name} ${JSON.stringify(first.arguments || {})}`,
+
+        first.device_id ? `device=${first.device_id}` : ""
+
+    ].filter(Boolean).join("\n");
+
+}
+
+
+
+function modelText(config) {
+    if (!config || typeof config !== "object") return "";
+
+    const taskInterpretation =
+        config.goal_decomposition ||
+        config.coordination_extraction ||
+        {};
+    const stepPlanning = config.step_planning || {};
+
+    return [
+        `Task Interpretation: ${taskInterpretation.provider || "?"} / ${taskInterpretation.model || "default"}`,
+        `Step Planning: ${stepPlanning.provider || "?"} / ${stepPlanning.model || "default"}`
+    ].join("\n");
+}
+
+
+
+function renderHistory(state) {
+
+    const root = el("history");
+
+    const steps = Array.isArray(state.steps) ? state.steps : [];
+
+
+
+    root.innerHTML = "";
+
+
+
+    if (!steps.length) {
+
+        root.innerHTML = '<div class="muted">尚無 step</div>';
+
+        return;
+
+    }
+
+
+
+    for (const step of steps) {
+
+        const item = document.createElement("div");
+
+        item.className = "history-item";
+
+
+
+        const title = document.createElement("div");
+
+        title.className = "history-title";
+
+        title.textContent =
+
+            `STEP ${step.step} — ${step.status || step.gate_status || "unknown"}`;
+
+
+
+        item.appendChild(title);
+
+
+
+        if (step.proposal) {
+
+            const proposal = document.createElement("div");
+
+            proposal.className = "history-action";
+
+            proposal.textContent = step.proposal;
+
+            item.appendChild(proposal);
+
+        } else if (step.action) {
+
+            const action = document.createElement("div");
+
+            action.className = "history-action";
+
+            action.textContent = actionText(step.action);
+
+            item.appendChild(action);
+
+        }
+
+
+
+        if (step.instruction) {
+
+            const instruction = document.createElement("div");
+
+            instruction.className = "history-action";
+
+            instruction.textContent = step.instruction;
+
+            item.appendChild(instruction);
+
+        }
+
+
+
+        if (step.blocked_reason) {
+
+            const blocked = document.createElement("div");
+
+            blocked.className = "proposal blocked";
+
+            blocked.textContent = [
+
+                "BLOCKED",
+
+                step.blocked_reason,
+
+                "此動作未執行。"
+
+            ].join("\n");
+
+            item.appendChild(blocked);
+
+        }
+
+
+
+        root.appendChild(item);
+
+    }
+
+}
+
+
+
+function renderState(payload) {
+
+    const state = payload?.data || payload;
+
+    if (!state) return;
+
+
+
+    sessionId = state.session_id || sessionId;
+
+
+
+    el("status").textContent = [
+
+        `status=${state.status}`,
+
+        `stage=${state.stage}`,
+
+        state.force_device_id
+
+            ? `force_device=${state.force_device_id}`
+
+            : "force_device=auto",
+
+        modelText(state.model_config),
+
+        state.message || ""
+
+    ].filter(Boolean).join("\n");
+
+
+
+    const proposal = el("proposal");
+
+    if (state.proposed_instruction && state.proposed_step) {
+
+        let gateText = "PRE-COMMIT：checking";
+
+        proposal.className = "proposal";
+
+
+
+        if (state.proposed_state === "blocked") {
+
+            proposal.classList.add("blocked");
+
+            gateText = [
+
+                "PRE-COMMIT：BLOCKED",
+
+                "此動作沒有執行，也沒有要求人類執行。",
+
+                state.proposed_reason ? `原因：${state.proposed_reason}` : ""
+
+            ].filter(Boolean).join("\n");
+
+        } else if (
+
+            state.proposed_state === "validated" ||
+
+            state.proposed_state === "awaiting_human"
+
+        ) {
+
+            proposal.classList.add("ready");
+
+            gateText = "PRE-COMMIT：PASSED";
+
+        } else if (state.proposed_state === "human_confirmed") {
+
+            proposal.classList.add("ready");
+
+            gateText = "人工已確認，正在更新狀態。";
+
+        } else if (state.proposed_state === "completed") {
+
+            gateText = "STEP completed";
+
+        }
+
+
+
+        proposal.textContent = [
+
+            `STEP ${state.proposed_step}`,
+
+            state.proposed_instruction,
+
+            gateText
+
+        ].join("\n\n");
+
+
+
+        proposal.classList.remove("hidden");
+
+    } else {
+
+        proposal.className = "proposal hidden";
+
+        proposal.textContent = "";
+
+    }
+
+
+
+    const instruction = el("instruction");
+
+    const confirm = el("confirmButton");
+
+
+
+    if (state.awaiting_confirmation) {
+
+        instruction.textContent = [
+
+            `MANUAL STEP ${state.pending_step}`,
+
+            state.instruction || ""
+
+        ].join("\n\n");
+
+        instruction.classList.remove("hidden");
+
+        confirm.classList.remove("hidden");
+
+        confirm.disabled = false;
+
+    } else {
+
+        instruction.classList.add("hidden");
+
+        confirm.classList.add("hidden");
+
+    }
+
+
+
+    const active = [
+
+        "starting",
+
+        "running",
+
+        "awaiting_confirmation"
+
+    ].includes(state.status);
+
+
+
+    el("startButton").disabled = active;
+
+    el("cancelButton").disabled = !active;
+
+
+
+    renderHistory(state);
+
+    el("rawOutput").textContent = JSON.stringify(state, null, 2);
+
+
+
+    if (!active) {
+
+        stopPolling();
+
+    }
+
+}
+
+
+
+function stopPolling() {
+
+    if (pollTimer) {
+
+        clearInterval(pollTimer);
+
+        pollTimer = null;
+
+    }
+
+}
+
+
+
+async function pollStatus() {
+
+    if (!sessionId) return;
+
+
+
+    try {
+
+        const result = await apiJson(
+
+            "/api/plan/runtime/manual/status"
+
+            + "?session_id="
+
+            + encodeURIComponent(sessionId)
+
+        );
+
+        renderState(result);
+
+    } catch (error) {
+
+        el("status").textContent = `STATUS ERROR: ${error}`;
+
+        stopPolling();
+
+    }
+
+}
+
+
+
+function modelOptions(providerId, modelId) {
+
+    const result = {
+
+        provider: el(providerId).value
+
+    };
+
+
+
+    const model = el(modelId).value.trim();
+
+    if (model) {
+
+        result.model = model;
+
+    }
+
+
+
+    return result;
+
+}
+
+
+
+async function startRuntime() {
+
+    const userText = el("taskInput").value.trim();
+
+    if (!userText) {
+
+        el("status").textContent = "請輸入 Command";
+
+        return;
+
+    }
+
+    const taskInterpretation = modelOptions(
+        "taskInterpretationProvider",
+        "taskInterpretationModel"
+    );
+
+    const payload = {
+        user_text: userText,
+        planning_options: {
+            goal_decomposition: { ...taskInterpretation },
+            coordination_extraction: { ...taskInterpretation },
+            step_planning: modelOptions("stepProvider", "stepModel")
+        },
+        max_iterations: 30,
+        force_device_id: el("forceDeviceInput").value || null
+    };
+
+
+
+    const apiKeyInput = el("openaiApiKey");
+
+    const apiKey = apiKeyInput.value.trim();
+
+    if (apiKey) {
+
+        payload.openai_api_key = apiKey;
+
+    }
+
+
+
+    el("startButton").disabled = true;
+
+    el("status").textContent = "Starting manual Runtime...";
+
+
+
+    try {
+
+        const result = await apiJson(
+
+            "/api/plan/runtime/manual/start",
+
+            {
+
+                method: "POST",
+
+                body: JSON.stringify(payload)
+
+            }
+
+        );
+
+
+
+        renderState(result);
+
+
+
+        stopPolling();
+
+        pollTimer = setInterval(pollStatus, 750);
+
+        await pollStatus();
+
+    } catch (error) {
+
+        console.error("[Manual Runtime start failed]", error);
+
+        el("status").textContent = `START ERROR: ${error}`;
+
+        el("startButton").disabled = false;
+
+    } finally {
+
+        // Do not retain a typed secret in the DOM after the request.
+
+        apiKeyInput.value = "";
+
+    }
+
+}
+
+
+
+async function confirmStep() {
+
+    if (!sessionId) return;
+
+
+
+    el("confirmButton").disabled = true;
+
+
+
+    try {
+
+        const result = await apiJson(
+
+            "/api/plan/runtime/manual/confirm",
+
+            {
+
+                method: "POST",
+
+                body: JSON.stringify({
+
+                    session_id: sessionId
+
+                })
+
+            }
+
+        );
+
+
+
+        renderState(result);
+
+    } catch (error) {
+
+        el("status").textContent = `CONFIRM ERROR: ${error}`;
+
+        el("confirmButton").disabled = false;
+
+    }
+
+}
+
+
+
+async function cancelRuntime() {
+
+    if (!sessionId) return;
+
+
+
+    try {
+
+        const result = await apiJson(
+
+            "/api/plan/runtime/manual/cancel",
+
+            {
+
+                method: "POST",
+
+                body: JSON.stringify({
+
+                    session_id: sessionId
+
+                })
+
+            }
+
+        );
+
+
+
+        renderState(result);
+
+    } catch (error) {
+
+        el("status").textContent = `CANCEL ERROR: ${error}`;
+
+    }
+
+}
+
+
+
+window.addEventListener("load", () => {
+
+    el("startButton").addEventListener("click", startRuntime);
+
+    el("confirmButton").addEventListener("click", confirmStep);
+
+    el("cancelButton").addEventListener("click", cancelRuntime);
+
+});
+
+</script>
+
+</body>
+
+</html>

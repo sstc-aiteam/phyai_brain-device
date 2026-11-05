@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Control Center</title>
+<style>
+:root{color-scheme:light;--bg:#f5f5f5;--card:#fff;--line:#dedede;--text:#242424;--muted:#686868;--good:#207546;--warn:#8c6216;--bad:#aa3535;--blue:#245f8a}
+*{box-sizing:border-box}body{margin:0;padding:18px;background:var(--bg);color:var(--text);font:14px/1.55 Arial,"Noto Sans TC",sans-serif}
+.wrap{max-width:1400px;margin:auto}.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:12px}
+.top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.top h1{margin:0;font-size:23px}.muted{font-size:12px;color:var(--muted)}h2{font-size:17px;margin:0 0 12px}h3{font-size:14px;margin:0 0 9px}
+.badge{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:18px;padding:3px 9px;background:#f9f9f9;font-weight:600;font-size:12px}.badge.good{color:var(--good);background:#ecf7f0;border-color:#a3cdb1}.badge.bad{color:var(--bad);background:#fff1f1;border-color:#e5b2b2}.badge.warn{color:var(--warn);background:#fff7e8;border-color:#e7c98b}
+.two{display:grid;grid-template-columns:minmax(370px,1.2fr) minmax(320px,1fr);gap:12px}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.field{margin-bottom:12px}label{display:block;font-size:13px;font-weight:bold;margin-bottom:5px}
+input,textarea,select,button{font:inherit;border-radius:6px}input,textarea,select{width:100%;border:1px solid #bbb;background:#fff;padding:9px 10px}textarea{min-height:100px;resize:vertical}
+button{border:1px solid #aaa;background:#eee;padding:9px 12px;cursor:pointer}button:disabled{opacity:.5;cursor:default}.primary{background:#fff1bd;border-color:#c89d2b;font-weight:bold}.danger{color:#9a3434;background:#fbe9e9;border-color:#d5a3a3}.soft{background:#f9f9f9}
+.mode{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.mode label{font-weight:500;margin:0;border:1px solid #ccc;border-radius:6px;padding:8px 7px;text-align:center;cursor:pointer;font-size:12px}.mode input{position:absolute;opacity:0;width:1px;height:1px}.mode label:has(input:checked){background:#fff1bd;border-color:#c89d2b;font-weight:bold}.mode label.real:has(input:checked){background:#fbe5e5;border-color:#cd8585}
+.notice{padding:10px 12px;background:#fff9e8;border:1px solid #e4c780;border-radius:6px;font-size:12px;margin-top:10px}.note-error{background:#fff0f0;border-color:#e2aaaa}
+.inline-status{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:3px}.status-text{white-space:pre-wrap}.answer{min-height:46px;white-space:pre-wrap;padding:10px 12px;background:#f7f7f7;border:1px solid var(--line);border-radius:6px}
+.flow{display:flex;flex-direction:column;gap:9px}.step{border:1px solid var(--line);border-radius:7px;padding:10px 12px;background:#fafafa}.stephead{display:flex;justify-content:space-between;gap:8px;align-items:center}.step-title{font-weight:bold}.step-desc{font-size:12px;color:#555;margin-top:3px;overflow-wrap:anywhere}.step details{margin-top:8px}
+.list{display:flex;flex-wrap:wrap;gap:7px}.chip{border:1px solid var(--line);border-radius:5px;background:#fafafa;padding:5px 7px;font-size:12px;overflow-wrap:anywhere}
+.stack{display:flex;flex-direction:column;gap:8px}.kv{display:grid;grid-template-columns:105px 1fr;gap:8px;padding:7px 0;border-bottom:1px solid #eee}.kv:last-child{border:0}
+pre{margin:7px 0 0;background:#111;color:#eee;padding:11px;border-radius:6px;max-height:500px;overflow:auto;font:12px/1.5 Consolas,Monaco,monospace;white-space:pre-wrap;word-break:break-word}
+details summary{cursor:pointer}.tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}.tabs button.active{background:#dfeefa;border-color:#83aac9;font-weight:bold}.hide{display:none}.small{font-size:12px}
+@media(max-width:940px){.two{grid-template-columns:1fr}}@media(max-width:600px){body{padding:9px}.card{padding:12px}.form-grid{grid-template-columns:1fr}.mode{grid-template-columns:1fr 1fr}.top{display:block}.top .inline-status{margin-top:10px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="card top">
+    <div><h1>Agent Control Center</h1><div class="muted">使用現有 main.py / agent_service / auto.py；不另啟動 Flask Server。</div></div>
+    <div class="inline-status"><span class="badge" id="api-badge">API：檢查中</span><span class="badge" id="busy-badge">Agent：未知</span><button class="soft" type="button" id="refresh-health">檢查連線</button></div>
+  </header>
+  <main class="two">
+    <div>
+      <section class="card">
+        <h2>Task Command</h2>
+        <div class="field"><label for="user-text">自然語言任務</label><textarea id="user-text">用左手臂觀察前方，並用世界模型查場景</textarea></div>
+        <div class="form-grid">
+          <div class="field"><label for="provider">Provider</label><select id="provider"><option value="local">local</option><option value="openai" selected>openai</option></select></div>
+          <div class="field"><label for="camera">Camera</label><select id="camera"><option value="left" selected>left</option><option value="right">right</option><option value="middle">middle</option></select></div>
+        </div>
+        <div class="field"><label>執行模式</label><div class="mode">
+          <label><input type="radio" name="mode" value="dry_run" checked>Dry Run</label>
+          <label class="real"><input type="radio" name="mode" value="real">Real Execute</label>
+        </div></div>
+        <div class="row"><button class="primary" id="start-btn" type="button" style="flex:1">送出 Dry Run</button><button id="clear-btn" type="button">清除結果</button></div>
+        <div class="notice" id="mode-notice">Dry Run 透過 /api/agent/execute 呼叫，dry_run=true。實際涵義以 auto.py 的原生實作為準。</div>
+      </section>
+      <section class="card">
+        <h2>Execution Status</h2>
+        <div class="inline-status"><span class="badge" id="result-badge">尚未執行</span><span class="muted" id="elapsed">—</span></div>
+        <div class="status-text" id="summary" style="margin-top:9px">請輸入任務並選擇執行模式。</div>
+        <h3 style="margin-top:13px">Agent Answer</h3><div class="answer" id="answer">尚未取得回覆。</div>
+      </section>
+      <section class="card">
+        <h2>Agent Execution Flow</h2>
+        <div class="muted" style="margin-bottom:10px">依實際 response.events 與 plan/executions 呈現。任務完成前不虛構階段狀態。</div>
+        <div class="flow" id="flow"><div class="muted">尚無執行紀錄。</div></div>
+      </section>
+    </div>
+    <div>
+      <section class="card">
+        <h2>WorldModel / Scene</h2>
+        <div id="wm-status" class="badge">尚未取得</div>
+        <div class="stack" style="margin-top:8px">
+          <div class="kv"><span class="muted">Camera</span><strong id="wm-camera">—</strong></div>
+          <div class="kv"><span class="muted">Scene</span><strong id="wm-scene">—</strong></div>
+          <div class="kv"><span class="muted">本次觀察</span><strong id="wm-observation">—</strong></div>
+        </div>
+        <h3>Objects / Relations</h3>
+        <div class="list" id="objects"><div class="muted">目前 API 不提供持續影像串流；此處僅展示 response 中的 WorldModel。</div></div>
+        <details style="margin-top:12px"><summary>WorldModel JSON</summary><pre id="wm-json">—</pre></details>
+      </section>
+      <section class="card">
+        <h2>Plan / Steps</h2>
+        <div class="stack" id="plans"><div class="muted">尚無 Plan。</div></div>
+      </section>
+      <section class="card">
+        <h2>Debug / Raw Response</h2>
+        <div class="tabs" id="tabs"><button class="active" type="button" data-tab="events">Events</button><button type="button" data-tab="plan">Plan JSON</button><button type="button" data-tab="worldmodel">WorldModel</button><button type="button" data-tab="raw">Raw Response</button></div>
+        <pre id="debug-json">—</pre>
+      </section>
+    </div>
+  </main>
+</div>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+let responseData = null;
+let running = false;
+let startedAt = 0;
+let ticker = null;
+let activeTab = 'events';
+const phases = ['AGENT','PLAN','AUTO PREFLIGHT','AUTO EXECUTION','WORLDMODEL','REPLAN','ANSWER'];
+const jp = obj => JSON.stringify(obj ?? null, null, 2);
+const str = value => value == null ? '—' : typeof value === 'string' ? value : JSON.stringify(value);
+function elem(tag, cls, content){const el=document.createElement(tag);if(cls)el.className=cls;if(content!=null)el.textContent=String(content);return el;}
+function setBadge(node,text,tone=''){node.className=`badge ${tone}`.trim();node.textContent=text;}
+function mode(){return document.querySelector('input[name="mode"]:checked').value;}
+function modeChanged(){
+  const m=mode();
+  $('start-btn').textContent={dry_run:'送出 Dry Run',real:'執行 Real Execute'}[m];
+  const notice={
+    dry_run:'Dry Run 透過 /api/agent/execute 呼叫，dry_run=true。實際涵義以 auto.py 的原生實作為準。',
+    real:'REAL EXECUTE：呼叫 /api/agent/execute，dry_run=false 且 preflight_only=false。可能派送實際機械手臂動作；原有安全檢查仍生效。'
+  };
+  $('mode-notice').textContent=notice[m];$('mode-notice').classList.toggle('note-error',m==='real');
+}
+async function jsonFetch(url,opts={}){
+  const resp=await fetch(url,{...opts,credentials:'same-origin',headers:{'Content-Type':'application/json',...(opts.headers||{})},cache:'no-store'});
+  const raw=await resp.text();let value;
+  try{value=JSON.parse(raw);}catch{throw new Error(`HTTP ${resp.status} 非 JSON 回應：${raw.slice(0,200)}`);}
+  return {ok:resp.ok,status:resp.status,body:value};
+}
+async function checkHealth(){
+  try{
+    const r=await jsonFetch('/api/agent/health');
+    if(!r.ok||!r.body?.result)throw new Error(r.body?.message||`HTTP ${r.status}`);
+    setBadge($('api-badge'),'API：Connected','good');
+    setBadge($('busy-badge'),r.body?.data?.command_busy?'Agent：Busy':'Agent：Idle',r.body?.data?.command_busy?'warn':'good');
+  }catch(error){setBadge($('api-badge'),'API：Disconnected','bad');setBadge($('busy-badge'),'Agent：未知');if(!responseData&&!running)$('summary').textContent='Health 檢查失敗：'+error.message;}
+}
+function appendJsonDetails(parent, obj, title){if(obj==null)return;const details=elem('details');details.appendChild(elem('summary','',title));details.appendChild(elem('pre','',jp(obj)));parent.appendChild(details);}
+function renderEvent(event,index){
+  const phase=String(event?.phase||`EVENT ${index+1}`);
+  const box=elem('div','step');const head=elem('div','stephead');head.appendChild(elem('span','step-title',`${index+1}. ${phase}`));
+  const d=event?.data||{};let state='完成紀錄';let tone='good';
+  if(d?.gateway_preflight_passed===false||d?.result===false||d?.error){state='失敗';tone='bad';}
+  else if(phase==='AUTO PREFLIGHT'){
+    state=d.gateway_preflight_passed===true?'Preflight Passed':'已記錄';
+    if(d.trajectory_collision_checked===false){state+=' · collision not checked';tone='warn';}
+  }
+  else if(phase==='AUTO EXECUTION'){
+    const steps=Array.isArray(d.steps)?d.steps:[];
+    if(steps.length&&steps.every(s=>s.status==='real_completed_verified'||s.execution?.physical_completion_verified===true))state='Physical Verified';
+    else state='已執行 / 請檢查細節';
+  }
+  head.appendChild(elem('span',`badge ${tone}`,state));box.appendChild(head);
+  if(phase==='AGENT')box.appendChild(elem('div','step-desc',`${d.tool_name||'—'}：${d.reason||'—'}`));
+  else if(phase==='PLAN')box.appendChild(elem('div','step-desc',`${d.plan_id||''} · ${(d.steps||[]).map(s=>`${s.step_id||'?'} ${s.action_name||'?'}(${str(s.arguments||{})})`).join('；')||'尚無 steps'}`));
+  else if(phase==='AUTO PREFLIGHT')box.appendChild(elem('div','step-desc',`arm=${str(d.arm_name)} · ready=${str(d.arm_status?.ready)} · delta gate=${str(d.delta_gate_enabled)} · collision checked=${str(d.trajectory_collision_checked)}`));
+  else if(phase==='AUTO EXECUTION')box.appendChild(elem('div','step-desc',(d.steps||[]).map(s=>`${s.step_id||'?'} ${s.action_name||'?'} → ${s.status||'?'} · physical_verified=${str(s.execution?.physical_completion_verified)}`).join('；')||'請展開執行紀錄'));
+  else box.appendChild(elem('div','step-desc',str(d.message||d.answer||'')));
+  appendJsonDetails(box,d,'查看階段 JSON');return box;
+}
+function renderFlow(data){
+  const root=$('flow');root.replaceChildren();const events=Array.isArray(data?.events)?data.events:[];
+  if(events.length){events.forEach((event,i)=>root.appendChild(renderEvent(event,i)));}
+  else if(data?.selection||data?.plan||data?.executions){
+    if(data.selection)root.appendChild(renderEvent({phase:'AGENT',data:data.selection},0));
+    if(data.plan)root.appendChild(renderEvent({phase:'PLAN',data:data.plan},1));
+    if(Array.isArray(data.executions))data.executions.forEach((execution,i)=>root.appendChild(renderEvent({phase:`EXECUTION ${i+1}`,data:execution},i+2)));
+  }else root.appendChild(elem('div','muted','這筆回應沒有 events / plan / executions。'));
+}
+function renderPlan(data){
+  const root=$('plans');root.replaceChildren();
+  const plan=data?.plan || (data?.events||[]).find(e=>e.phase==='PLAN')?.data;
+  if(!plan){root.appendChild(elem('div','muted','本次回應未包含 Plan。'));return;}
+  const meta=elem('div','small muted',`Plan ID: ${plan.plan_id||'—'} · Planner: ${plan.planner||'—'} · followup_after_observe: ${str(plan.followup_after_observe)}`);root.appendChild(meta);
+  const steps=Array.isArray(plan.steps)?plan.steps:[];
+  if(!steps.length){root.appendChild(elem('div','muted','Plan 沒有 Steps。'));return;}
+  steps.forEach(step=>{
+    const item=elem('div','step');const h=elem('div','stephead');h.appendChild(elem('strong','',`${step.step_id||'?'} · ${step.action_name||step.function_name||'unknown_action'}`));h.appendChild(elem('span','badge',step.status||'planned'));item.appendChild(h);
+    item.appendChild(elem('div','step-desc',`Arguments: ${str(step.arguments||{})}`));appendJsonDetails(item,step,'Step JSON');root.appendChild(item);
+  });
+}
+function worldmodelFrom(data){return data?.worldmodel || data?.executions?.find(x=>x?.worldmodel?.scene)?.worldmodel || data?.events?.find(x=>x?.phase==='WORLDMODEL')?.data || null;}
+function listEntities(scene){
+  if(!scene||typeof scene!=='object')return [];
+  let objs=scene.objects ?? scene.entities ?? scene.detected_objects;
+  if(Array.isArray(objs))return objs.map(x=>x?.object_id||x?.id||x?.name||x?.class_name||str(x));
+  if(objs&&typeof objs==='object')return Object.keys(objs);
+  return [];
+}
+function renderWorldmodel(data,body){
+  const wm=worldmodelFrom(data);const scene=wm?.scene??null;
+  $('wm-camera').textContent=wm?.camera_name || data?.camera_name || '—';
+  $('wm-scene').textContent=scene==null?'未提供':Array.isArray(scene)?`Array (${scene.length})`:typeof scene==='object'?`Object (${Object.keys(scene).length} keys)`:str(scene);
+  $('wm-observation').textContent=wm?.used===true||scene!=null?'包含場景資訊':wm?.used===false?'未使用 / 未取得':'無法確認';
+  setBadge($('wm-status'),scene!=null?'本次包含 Scene':body?.status==='error'?'本次未取得 Scene':'未取得 Scene',scene!=null?'good':body?.status==='error'?'warn':'');
+  $('wm-json').textContent=jp(wm);
+  const root=$('objects');root.replaceChildren();const entities=listEntities(scene);
+  if(entities.length)entities.slice(0,100).forEach(s=>root.appendChild(elem('span','chip',s)));
+  else root.appendChild(elem('div','muted','回應中沒有可列出的 objects；可展開 WorldModel JSON 查閱原始結構。'));
+}
+function chooseTab(name){activeTab=name;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));renderDebug();}
+function renderDebug(){
+  const data=responseData?.data||{};
+  const value={events:data?.events||[],plan:data?.plan??null,worldmodel:worldmodelFrom(data),raw:responseData}[activeTab];
+  $('debug-json').textContent=jp(value);
+}
+function renderResult(body,httpStatus){
+  responseData=body;const data=body?.data||{};const success=body?.status==='success' && body?.result!==false;
+  setBadge($('result-badge'),success?'Success':`Failed · HTTP ${httpStatus}`,success?'good':'bad');
+  $('summary').textContent=success?`Action: ${body?.action||'—'} · Mode: ${data?.mode||'—'}`:`${body?.error_type||'Error'}：${body?.message||'請查看 Raw Response'}${data?.physical_state?'\nphysical_state: '+data.physical_state:''}`;
+  $('answer').textContent=data?.answer || '本次回應沒有 answer。';
+  renderFlow(data);renderPlan(data);renderWorldmodel(data,body);renderDebug();
+}
+function clearResult(){
+  responseData=null;setBadge($('result-badge'),'尚未執行');$('elapsed').textContent='—';$('summary').textContent='請輸入任務並選擇執行模式。';$('answer').textContent='尚未取得回覆。';
+  $('flow').replaceChildren(elem('div','muted','尚無執行紀錄。'));$('plans').replaceChildren(elem('div','muted','尚無 Plan。'));
+  $('wm-camera').textContent='—';$('wm-scene').textContent='—';$('wm-observation').textContent='—';setBadge($('wm-status'),'尚未取得');$('wm-json').textContent='—';$('objects').replaceChildren(elem('div','muted','尚無本次 WorldModel。'));renderDebug();
+}
+function setRunning(on){
+  running=on;$('start-btn').disabled=on;$('clear-btn').disabled=on;
+  document.querySelectorAll('input[name="mode"],#provider,#camera,#user-text').forEach(n=>n.disabled=on);
+  if(ticker){clearInterval(ticker);ticker=null;}
+  if(on){startedAt=Date.now();ticker=setInterval(()=>{$('elapsed').textContent=`已等待 ${Math.round((Date.now()-startedAt)/1000)} 秒（同步請求）`;},300);}
+  else if(startedAt){$('elapsed').textContent=`耗時 ${((Date.now()-startedAt)/1000).toFixed(1)} 秒（瀏覽器）`;}
+}
+async function startTask(){
+  if(running)return;
+  const m=mode();const text=$('user-text').value.trim();if(!text){$('summary').textContent='請輸入任務內容。';return;}
+  const body={
+    user_text:text,
+    provider:$('provider').value,
+    camera_name:$('camera').value,
+    dry_run:m==='dry_run',
+    preflight_only:false
+  };
+  clearResult();setRunning(true);setBadge($('result-badge'),'執行中','warn');$('summary').textContent='請求已送出；等待同步 API 回應，期間無法顯示真正的逐階段進度。';
+  try{
+    const r=await jsonFetch('/api/agent/execute',{method:'POST',body:JSON.stringify(body)});
+    renderResult(r.body,r.status);
+  }catch(error){
+    renderResult({status:'error',result:false,error_type:'NetworkError',message:error.message,data:null},'network');
+  }finally{setRunning(false);await checkHealth();}
+}
+window.addEventListener('DOMContentLoaded',()=>{
+  document.querySelectorAll('input[name="mode"]').forEach(i=>i.addEventListener('change',modeChanged));
+  $('start-btn').addEventListener('click',startTask);$('clear-btn').addEventListener('click',clearResult);$('refresh-health').addEventListener('click',checkHealth);
+  document.querySelectorAll('#tabs button').forEach(b=>b.addEventListener('click',()=>chooseTab(b.dataset.tab)));
+  modeChanged();clearResult();checkHealth();
+});
+</script>
+</body>
+</html>

@@ -1,45 +1,34 @@
 from __future__ import annotations
 from flask import Blueprint, jsonify, request
 from services import worldmodel_service
-
-
 worldmodel_bp = Blueprint(
     "worldmodel",
     __name__,
     url_prefix="/api/worldmodel",
 )
-
-
 # ============================================================
 # Scene Description
 # ============================================================
-
 @worldmodel_bp.post("/describe_scene")
 def describe_scene():
     """
     單張 RGB 場景理解。
-
     Request:
         {
             "camera_name": "left",
             "vlm_backend": "remote"
         }
-
     camera_name 未指定時，
     由 VLM capability 使用其預設值。
-
     vlm_backend:
         "remote" -> PC Qwen3-VL
         其他 / 未指定 -> local Qwen
     """
-
     data = request.get_json(
         silent=True
     )
-
     if data is None:
         data = {}
-
     if not isinstance(data, dict):
         return jsonify({
             "status": "error",
@@ -50,43 +39,35 @@ def describe_scene():
                 "request body 必須是 JSON object"
             ),
         }), 400
-
     result = (
         worldmodel_service
         .describe_scene(
             camera_name=data.get(
                 "camera_name"
             ),
-
             vlm_backend=data.get(
                 "vlm_backend"
             ),
         )
     )
-
     status_code = (
         200
         if result.get("status") == "success"
         else 400
     )
-
     return jsonify(
         result
     ), status_code
-
 #============================================================
 # Object state
 #============================================================
-
 @worldmodel_bp.post("/get_object_state")
 def get_object_state():
     data = request.get_json(
         silent=True
     )
-
     if data is None:
         data = {}
-
     if not isinstance(
         data,
         dict,
@@ -99,7 +80,6 @@ def get_object_state():
             "message":
                 "request body 必須是 JSON object",
         }), 400
-
     try:
         result = (
             worldmodel_service
@@ -112,11 +92,9 @@ def get_object_state():
                 ),
             )
         )
-
         return jsonify(
             result
         ), 200
-
     except Exception as exc:
         return jsonify({
             "status": "error",
@@ -128,31 +106,24 @@ def get_object_state():
             "error_type":
                 type(exc).__name__,
         }), 400
-
-
 # ============================================================
 # Object Relations
 # ============================================================
-
 @worldmodel_bp.post("/get_object_relations")
 def get_object_relations():
     """
     重新觀察目前場景，
     回傳精簡 object-object relations。
-
     Request:
         {
             "camera_names": ["left"]
         }
     """
-
     data = request.get_json(
         silent=True
     )
-
     if data is None:
         data = {}
-
     if not isinstance(
         data,
         dict,
@@ -165,7 +136,6 @@ def get_object_relations():
             "message":
                 "request body 必須是 JSON object",
         }), 400
-
     try:
         result = (
             worldmodel_service
@@ -178,7 +148,6 @@ def get_object_relations():
                 ),
             )
         )
-
         status_code = (
             200
             if result.get(
@@ -187,11 +156,9 @@ def get_object_relations():
             == "success"
             else 400
         )
-
         return jsonify(
             result
         ), status_code
-
     except Exception as exc:
         return jsonify({
             "status": "error",
@@ -207,31 +174,25 @@ def get_object_relations():
                     exc
                 ).__name__,
         }), 400
-
 # ============================================================
 # Semantic Relations
 # ============================================================
-
 @worldmodel_bp.post("/relations")
 def infer_relations():
     """
     根據單張 RGB 與已知 entities，
     判斷 entities 之間的 semantic relations。
-
     Request:
         {
             "camera_name": "left",
             "entities": [...]
         }
     """
-
     data = request.get_json(
         silent=True
     )
-
     if data is None:
         data = {}
-
     if not isinstance(data, dict):
         return jsonify({
             "status": "error",
@@ -241,7 +202,6 @@ def infer_relations():
             "message":
                 "request body 必須是 JSON object",
         }), 400
-
     result = (
         worldmodel_service
         .infer_relations(
@@ -253,49 +213,39 @@ def infer_relations():
             ),
         )
     )
-
     status_code = (
         200
         if result.get("status") == "success"
         else 400
     )
-
     return jsonify(
         result
     ), status_code
-
-
 # ============================================================
 # Health
 # ============================================================
-
 @worldmodel_bp.get("/health")
 def get_worldmodel_health():
     """
     回傳目前公開的 WorldModel capabilities
     與 implementation metadata。
     """
-
     return jsonify(
         worldmodel_service.get_health()
     )
 # ============================================================
 # World State
 # ============================================================
-
 @worldmodel_bp.post("/world_state")
 def get_world_state():
     """
     建立目前 live canonical WorldState。
     """
-
     data = request.get_json(
         silent=True
     )
-
     if data is None:
         data = {}
-
     if not isinstance(
         data,
         dict,
@@ -308,7 +258,6 @@ def get_world_state():
             "message":
                 "request body 必須是 JSON object",
         }), 400
-
     try:
         world = (
             worldmodel_service
@@ -316,37 +265,33 @@ def get_world_state():
                 context=data.get(
                     "context"
                 ),
-
+                active_region_id=data.get(
+                    "active_region_id"
+                ),
                 include_robot=data.get(
                     "include_robot",
                     True,
                 ),
-
                 include_cameras=data.get(
                     "include_cameras",
                     True,
                 ),
-
                 include_detections=data.get(
                     "include_detections",
                     True,
                 ),
-
                 include_materials=data.get(
                     "include_materials",
                     False,
                 ),
-
                 include_relations=data.get(
                     "include_relations",
                     True,
                 ),
-
                 include_grasp=data.get(
                     "include_grasp",
                     True,
                 ),
-
                 camera_names=tuple(
                     data.get(
                         "camera_names",
@@ -355,7 +300,6 @@ def get_world_state():
                 ),
             )
         )
-
         return jsonify({
             "status": "success",
             "module": "worldmodel",
@@ -364,7 +308,6 @@ def get_world_state():
             "data":
                 world.snapshot(),
         }), 200
-
     except Exception as exc:
         return jsonify({
             "status": "error",
@@ -380,13 +323,73 @@ def get_world_state():
                     exc
                 ).__name__,
         }), 400
-
 # ============================================================
 # Object Grasp
 # ============================================================
-
 @worldmodel_bp.post("/get_object_grasp")
 def get_object_grasp():
+    data = request.get_json(
+        silent=True
+    )
+    if data is None:
+        data = {}
+    if not isinstance(
+        data,
+        dict,
+    ):
+        return jsonify({
+            "status": "error",
+            "module": "worldmodel",
+            "action": "get_object_grasp",
+            "result": False,
+            "message":
+                "request body 必須是 JSON object",
+        }), 400
+    try:
+        result = (
+            worldmodel_service
+            .get_object_grasp(
+                camera_names=tuple(
+                    data.get(
+                        "camera_names",
+                        ("left", "right"),
+                    )
+                ),
+            )
+        )
+        status_code = (
+            200
+            if result.get(
+                "status"
+            )
+            == "success"
+            else 400
+        )
+        return jsonify(
+            result
+        ), status_code
+    except Exception as exc:
+        return jsonify({
+            "status": "error",
+            "module": "worldmodel",
+            "action": "get_object_grasp",
+            "result": False,
+            "message":
+                str(
+                    exc
+                ),
+            "error_type":
+                type(
+                    exc
+                ).__name__,
+        }), 400
+
+# ============================================================
+# Smoke / Fire State
+# ============================================================
+
+@worldmodel_bp.post("/get_smoke_state")
+def get_smoke_state():
 
     data = request.get_json(
         silent=True
@@ -400,10 +403,18 @@ def get_object_grasp():
         dict,
     ):
         return jsonify({
-            "status": "error",
-            "module": "worldmodel",
-            "action": "get_object_grasp",
-            "result": False,
+            "status":
+                "error",
+
+            "module":
+                "worldmodel",
+
+            "action":
+                "get_smoke_state",
+
+            "result":
+                False,
+
             "message":
                 "request body 必須是 JSON object",
         }), 400
@@ -411,13 +422,18 @@ def get_object_grasp():
     try:
         result = (
             worldmodel_service
-            .get_object_grasp(
-                camera_names=tuple(
+            .get_smoke_state(
+                camera_name=
                     data.get(
-                        "camera_names",
-                        ("left", "right"),
-                    )
-                ),
+                        "camera_name",
+                        "left",
+                    ),
+
+                observe_seconds=
+                    data.get(
+                        "observe_seconds",
+                        4.0,
+                    ),
             )
         )
 
@@ -436,14 +452,21 @@ def get_object_grasp():
 
     except Exception as exc:
         return jsonify({
-            "status": "error",
-            "module": "worldmodel",
-            "action": "get_object_grasp",
-            "result": False,
+            "status":
+                "error",
+
+            "module":
+                "worldmodel",
+
+            "action":
+                "get_smoke_state",
+
+            "result":
+                False,
+
             "message":
-                str(
-                    exc
-                ),
+                str(exc),
+
             "error_type":
                 type(
                     exc

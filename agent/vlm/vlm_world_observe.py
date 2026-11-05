@@ -1,16 +1,6 @@
 """
 Domain-specific one-shot WorldState observation from an image file.
-
-Intended usage:
-    fake/staged image + known entities + selected domain
-        -> domain skill
-        -> structured observation patch
-
 This module does NOT persist WorldState.
-It also does NOT create canonical entity identities.
-
-Place at:
-    agent/vlm/vlm_world_observe.py
 """
 
 from __future__ import annotations
@@ -22,15 +12,14 @@ from functools import lru_cache
 from pathlib import Path
 from time import perf_counter
 from typing import Any
-
 from PIL import Image
-
-from config import OLLAMA_VLM_MODEL
+from agent.vlm.vision_skill_runner import run_vision_skill
 from services import model_service
 from utils.response import error, success
 
 
 MODULE = "vlm"
+
 
 _MAX_IMAGE_WIDTH = 640
 _JPEG_QUALITY = 88
@@ -1117,6 +1106,7 @@ def observe_world_image(
     entities: Any,
     task_context: Any = None,
     system_context: Any = None,
+    vlm_backend: str | None = None,
 ) -> dict[str, Any]:
     """
     Test/staging capability using an image file instead of
@@ -1134,6 +1124,26 @@ def observe_world_image(
     try:
         domain = _normalize_domain(
             domain
+        )
+
+        # Use the same explicit provider selection as describe_scene.
+        # Validate before loading any image or invoking a model.
+        if vlm_backend is None:
+            backend_name = "local"
+        elif isinstance(vlm_backend, str):
+            backend_name = vlm_backend.strip().lower()
+        else:
+            raise TypeError("vlm_backend 必須是字串或 None")
+
+        if backend_name not in {"local", "openai"}:
+            raise ValueError(
+                f"不支援 vlm_backend={backend_name!r}；僅支援 local/openai"
+            )
+
+        model_name = (
+            model_service.QWEN_MODEL
+            if backend_name == "local"
+            else model_service.OPENAI_MODEL
         )
 
         normalized_entities = (
@@ -1180,84 +1190,39 @@ def observe_world_image(
             )
         )
 
-        message = (
-            model_service.qwen
-            .chat_structured(
-                messages=[
-                    {
-                        "role":
-                            "system",
+        # Keep the original domain-specific prompt and observation schema.
+        # The runner loads agent/skills/{domain}_world.md on the Edge
+        # and dispatches to local Qwen or GPT Vision without fallback.
+        user_prompt = (
+            f"目前 domain 已由外部指定為：{domain}\n"
+            "不要重新分類場域。\n\n"
+            "以下為已知 entities：\n"
+            f"{entity_context}\n\n"
+            "以下為 task_context；只有 skill 明確允許"
+            "使用的非視覺欄位才能引用：\n"
+            f"{task_context_text}\n\n"
+            "以下為 system_context；只有 skill 明確允許"
+            "使用的系統狀態才能引用：\n"
+            f"{system_context_text}\n\n"
+            "請根據這張 RGB 與上述 context，"
+            "輸出本次 observation patch。"
+        )
 
-                        "content":
-                            _load_skill(
-                                domain
-                            ),
-                    },
-                    {
-                        "role":
-                            "user",
-
-                        "content": [
-                            {
-                                "type":
-                                    "text",
-
-                                "text": (
-                                    f"目前 domain 已由外部指定為：{domain}\n"
-                                    "不要重新分類場域。\n\n"
-                                    "以下為已知 entities：\n"
-                                    f"{entity_context}\n\n"
-                                    "以下為 task_context；只有 skill 明確允許"
-                                    "使用的非視覺欄位才能引用：\n"
-                                    f"{task_context_text}\n\n"
-                                    "以下為 system_context；只有 skill 明確允許"
-                                    "使用的系統狀態才能引用：\n"
-                                    f"{system_context_text}\n\n"
-                                    "請根據這張 RGB 與上述 context，"
-                                    "輸出本次 observation patch。"
-                                ),
-                            },
-                            {
-                                "type":
-                                    "image_url",
-
-                                "image_url": {
-                                    "url":
-                                        _image_data_url(
-                                            jpeg_bytes
-                                        ),
-                                },
-                            },
-                        ],
-                    },
-                ],
-
-                response_schema=
-                    _build_schema(
-                        domain
-                    ),
-
-                model=
-                    OLLAMA_VLM_MODEL,
-
-                temperature=0.0,
-
-                max_tokens=
-                    _MAX_TOKENS,
-
-                num_ctx=8192,
-
-                timeout=
-                    _TIMEOUT_SEC,
-
-                keep_alive=
-                    _KEEP_ALIVE,
-
-                wait=True,
-
-                owner=
-                    f"vlm_world_{domain}",
-            )
+        message = run_vision_skill(
+            image_jpeg=jpeg_bytes,
+            skill=f"{domain}_world",
+            response_schema=_build_schema(domain),
+            user_prompt=user_prompt,
+            backend=backend_name,
+            local_model=(model_name if backend_name == "local" else None),
+            openai_model=(model_name if backend_name == "openai" else None),
+            temperature=0.0,
+            max_tokens=_MAX_TOKENS,
+            num_ctx=8192,
+            timeout=_TIMEOUT_SEC,
+            keep_alive=_KEEP_ALIVE,
+            wait=True,
+            owner=f"vlm_world_{domain}",
         )
 
         (
@@ -1284,8 +1249,11 @@ def observe_world_image(
                 "source":
                     "image_file",
 
+                "backend":
+                    backend_name,
+
                 "model":
-                    OLLAMA_VLM_MODEL,
+                    model_name,
 
                 "observation":
                     observation,
@@ -1331,6 +1299,20 @@ def get_health() -> dict[str, Any]:
     return {
         "capability":
             "observe_world_image",
+
+        "default_backend":
+            "local",
+
+        "supported_backends": [
+            "local",
+            "openai",
+        ],
+
+        "local_model":
+            model_service.QWEN_MODEL,
+
+        "openai_model":
+            model_service.OPENAI_MODEL,
 
         "domains":
             sorted(_DOMAINS),

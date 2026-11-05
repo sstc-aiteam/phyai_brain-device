@@ -9,12 +9,12 @@ from time import perf_counter
 from threading import Lock
 from typing import Any
 from PIL import Image
-from config import OLLAMA_VLM_MODEL
-from services import camera_service, model_service, perception_service
+from services import camera_service, perception_service, model_service
 from utils.response import error, success
-from agent.vlm import remote_vlm
 from agent.vlm.vision_skill_runner import run_vision_skill
+
 MODULE = "vlm"
+
 _MAX_IMAGE_WIDTH = 640
 _JPEG_QUALITY = 88
 _MAX_TOKENS = 1024
@@ -1014,25 +1014,26 @@ def describe_scene(
                 previous_scene_source = (
                     "cache"
                 )
-        # Only the explicit string "remote" uses the PC VLM.
-        # None / "local" / any other value stays on the Edge.
-        use_remote = (
-            isinstance(
-                vlm_backend,
-                str,
+        # Only local Qwen and OpenAI GPT Vision are supported.
+        # Validate before capturing any frames or contacting a model.
+        if vlm_backend is None:
+            backend_name = "local"
+        elif isinstance(vlm_backend, str):
+            backend_name = vlm_backend.strip().lower()
+        else:
+            raise TypeError("vlm_backend 必須是字串或 None")
+
+        if backend_name not in {"local", "openai"}:
+            raise ValueError(
+                f"不支援 vlm_backend={backend_name!r}；"
+                "僅支援 local/openai"
             )
-            and vlm_backend.strip().lower()
-            == "remote"
-        )
-        backend_name = (
-            "remote"
-            if use_remote
-            else "local"
-        )
+
+        # PM model_service is the source of truth for model selection.
         model_name = (
-            remote_vlm.REMOTE_VLM_MODEL
-            if use_remote
-            else OLLAMA_VLM_MODEL
+            model_service.QWEN_MODEL
+            if backend_name == "local"
+            else model_service.OPENAI_MODEL
         )
         # ----------------------------------------------------
         # RGB Capture
@@ -1078,7 +1079,9 @@ def describe_scene(
                 backend=
                     backend_name,
                 local_model=
-                    OLLAMA_VLM_MODEL,
+                    (model_name if backend_name == "local" else None),
+                openai_model=
+                    (model_name if backend_name == "openai" else None),
                 temperature=
                     0.0,
                 max_tokens=
@@ -1195,12 +1198,14 @@ def get_health() -> dict[str, Any]:
             "describe_scene",
         "default_backend":
             "local",
-        "remote_requires_explicit_selection":
-            True,
+        "supported_backends": [
+            "local",
+            "openai",
+        ],
         "local_model":
-            OLLAMA_VLM_MODEL,
-        "remote_model":
-            remote_vlm.REMOTE_VLM_MODEL,
+            model_service.QWEN_MODEL,
+        "openai_model":
+            model_service.OPENAI_MODEL,
         "skill":
             "agent/skills/describe_scene.md",
         "runs_yolo":

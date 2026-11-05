@@ -6,7 +6,7 @@ LLM instructions:
     agent/skills/runtime_task_interpreter.md
 
 Structured inference provider:
-    agent/runtime/structured_provider.py
+    agent/providers/structured.py (via services.model_service)
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from ..adapters.provider import chat_structured
+from agent.providers.structured import chat_structured
 from ..domain.world import WorldState
 from ..domain.task import (
     GoalCondition,
@@ -1033,7 +1033,6 @@ def interpret_task(
 
 RUNTIME_ALLOWED_PROVIDERS = {
     "local",
-    "remote",
     "openai",
 }
 

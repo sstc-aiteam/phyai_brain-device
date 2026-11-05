@@ -13,12 +13,11 @@ import io
 import re
 from copy import deepcopy
 from typing import Any
-
 from PIL import Image
+from services import model_service, perception_service
 
-from config import OLLAMA_VLM_MODEL
-from services import llm_service, vision_service
-
+#need to check
+OLLAMA_VLM_MODEL = "qwen3-vl:8b-instruct"
 
 _CONTAINER_SUBJECTS = {"trash_can", "second_drawer", "top_cabinet"}
 _SEMANTIC_PREDICATES = {"open_state", "semantic_relation", "visual_state"}
@@ -185,7 +184,7 @@ def _capture_snapshot_once(context: dict[str, Any]) -> dict[str, Any] | None:
     supplied = _snapshot_from_context(context)
     if supplied is not None:
         return supplied
-    getter = getattr(vision_service, "get_latest_scene_snapshot", None)
+    getter = getattr(perception_service, "get_latest_scene_snapshot", None)
     if not callable(getter):
         return None
     snapshot = getter(include_robot_xyz=True)
@@ -387,7 +386,7 @@ def observe_requirement(requirement: dict[str, Any], *, context: dict[str, Any])
             source="vlm",
         )
 
-    message = llm_service.chat(
+    message = model_service.qwen.chat(
         [
             {
                 "role": "system",
@@ -686,7 +685,7 @@ def inspect_visual_state(
         )
 
         if not has_image and not context.get("image_url"):
-            jpeg = vision_service.get_camera_rgb_jpeg(
+            jpeg = perception_service.get_camera_image(
                 camera_name=effective_camera
             )
             if (
