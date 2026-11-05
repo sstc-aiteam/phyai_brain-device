@@ -11,6 +11,14 @@ perception_bp = Blueprint(
 
 
 # ============================================================
+# Perception Cameras
+# ============================================================
+
+@perception_bp.route("/get_perception_cameras", methods=["GET"])
+def get_perception_cameras():
+    return jsonify(perception_service.get_perception_cameras())
+
+# ============================================================
 # Image
 # ============================================================
 
@@ -33,10 +41,7 @@ def get_camera_image():
 @perception_bp.route("/get_detection_image", methods=["GET"])
 def get_detection_image():
     camera_name = request.args.get("camera_name")
-    model_name = request.args.get(
-        "model_name",
-        "object_detector",
-    )
+    model_name = request.args.get("model_name", "yolo")
     include_robot_xyz = request.args.get(
         "include_robot_xyz",
         True,
@@ -90,10 +95,7 @@ def get_camera_stream():
 @perception_bp.route("/get_detection_stream", methods=["GET"])
 def get_detection_stream():
     camera_name = request.args.get("camera_name")
-    model_name = request.args.get(
-        "model_name",
-        "object_detector",
-    )
+    model_name = request.args.get("model_name", "yolo")
     include_robot_xyz = request.args.get(
         "include_robot_xyz",
         True,
@@ -128,10 +130,7 @@ def get_detection_stream():
 @perception_bp.route("/get_detections", methods=["GET"])
 def get_detections():
     camera_name = request.args.get("camera_name")
-    model_name = request.args.get(
-        "model_name",
-        "object_detector",
-    )
+    model_name = request.args.get("model_name", "yolo")
     include_robot_xyz = request.args.get(
         "include_robot_xyz",
         True,

@@ -1,3 +1,4 @@
+
 function buildQuery(params = {})
 {
     const query = new URLSearchParams();
@@ -15,6 +16,40 @@ function buildQuery(params = {})
 
 
 // ============================================================
+// Request Helper
+// ============================================================
+
+async function getJson(url)
+{
+    const response = await fetch(url);
+
+    if (!response.ok)
+    {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+
+    if (result?.status === "error" || result?.result === false)
+    {
+        throw new Error(result?.message || "Perception API failed");
+    }
+
+    return result;
+}
+
+
+// ============================================================
+// Cameras
+// ============================================================
+
+export async function get_perception_cameras()
+{
+    return getJson("/api/perception/get_perception_cameras");
+}
+
+
+// ============================================================
 // Image
 // ============================================================
 
@@ -22,7 +57,7 @@ export function get_camera_image(camera_name, options = {})
 {
     const query = buildQuery({
         camera_name: camera_name,
-        quality: options.quality ?? 90,
+        quality: options.quality ?? 90
     });
 
     return `/api/perception/get_camera_image?${query}`;
@@ -33,9 +68,9 @@ export function get_detection_image(camera_name, options = {})
 {
     const query = buildQuery({
         camera_name: camera_name,
-        model_name: options.model_name ?? "object_detector",
+        model_name: options.model_name ?? "yolo",
         include_robot_xyz: options.include_robot_xyz ?? true,
-        quality: options.quality ?? 90,
+        quality: options.quality ?? 90
     });
 
     return `/api/perception/get_detection_image?${query}`;
@@ -51,7 +86,7 @@ export function get_camera_stream(camera_name, options = {})
     const query = buildQuery({
         camera_name: camera_name,
         interval_sec: options.interval_sec ?? 0.03,
-        quality: options.quality ?? 85,
+        quality: options.quality ?? 85
     });
 
     return `/api/perception/get_camera_stream?${query}`;
@@ -62,10 +97,10 @@ export function get_detection_stream(camera_name, options = {})
 {
     const query = buildQuery({
         camera_name: camera_name,
-        model_name: options.model_name ?? "object_detector",
+        model_name: options.model_name ?? "yolo",
         include_robot_xyz: options.include_robot_xyz ?? true,
         interval_sec: options.interval_sec ?? 0.10,
-        quality: options.quality ?? 85,
+        quality: options.quality ?? 85
     });
 
     return `/api/perception/get_detection_stream?${query}`;
@@ -76,14 +111,13 @@ export function get_detection_stream(camera_name, options = {})
 // Detections
 // ============================================================
 
-export function get_detections(camera_name, options = {})
+export async function get_detections(camera_name, options = {})
 {
     const query = buildQuery({
         camera_name: camera_name,
-        model_name: options.model_name ?? "object_detector",
-        include_robot_xyz: options.include_robot_xyz ?? true,
+        model_name: options.model_name ?? "yolo",
+        include_robot_xyz: options.include_robot_xyz ?? true
     });
 
-    return fetch(`/api/perception/get_detections?${query}`)
-        .then(response => response.json());
+    return getJson(`/api/perception/get_detections?${query}`);
 }
