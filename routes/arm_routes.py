@@ -113,41 +113,6 @@ def reconnect_arm():
         )
     )
 
-
-# ============================================================
-# MOVE DEFAULT
-# ============================================================
-
-@arm_bp.route(
-    "/move_arm_default",
-    methods=["POST"],
-)
-def move_arm_default():
-    data = _get_json()
-
-    return jsonify(
-        arm_service.move_arm_default(
-            arm_name=
-                data.get(
-                    "arm_name"
-                ),
-            speed=
-                data.get(
-                    "speed"
-                ),
-            acceleration=
-                data.get(
-                    "acceleration"
-                ),
-            wait=
-                data.get(
-                    "wait",
-                    True,
-                ),
-        )
-    )
-
-
 # ============================================================
 # MOVE POSE
 # ============================================================
@@ -575,5 +540,25 @@ def stop_arm():
                 data.get(
                     "acceleration"
                 ),
+        )
+    )
+
+# ============================================================
+# MOVE GRIPPER XYZ
+# ============================================================
+
+@arm_bp.route("/move_gripper_xyz", methods=["POST"])
+def move_gripper_xyz():
+    data = _get_json()
+
+    return jsonify(
+        arm_service.move_gripper_xyz(
+            arm_name=data.get("arm_name"),
+            x=data.get("x"),
+            y=data.get("y"),
+            z=data.get("z"),
+            speed=data.get("speed"),
+            acceleration=data.get("acceleration"),
+            wait=data.get("wait", True),
         )
     )

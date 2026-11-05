@@ -1,12 +1,9 @@
 
-function buildQuery(params = {})
-{
+function buildQuery(params = {}) {
     const query = new URLSearchParams();
 
-    for (const [key, value] of Object.entries(params))
-    {
-        if (value !== undefined && value !== null)
-        {
+    for (const [key, value] of Object.entries(params)) {
+        if (value !== undefined && value !== null) {
             query.append(key, value);
         }
     }
@@ -19,19 +16,16 @@ function buildQuery(params = {})
 // Request Helper
 // ============================================================
 
-async function getJson(url)
-{
+async function getJson(url) {
     const response = await fetch(url);
 
-    if (!response.ok)
-    {
+    if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
     const result = await response.json();
 
-    if (result?.status === "error" || result?.result === false)
-    {
+    if (result?.status === "error" || result?.result === false) {
         throw new Error(result?.message || "Perception API failed");
     }
 
@@ -43,8 +37,7 @@ async function getJson(url)
 // Cameras
 // ============================================================
 
-export async function get_perception_cameras()
-{
+export async function get_perception_cameras() {
     return getJson("/api/perception/get_perception_cameras");
 }
 
@@ -53,8 +46,7 @@ export async function get_perception_cameras()
 // Image
 // ============================================================
 
-export function get_camera_image(camera_name, options = {})
-{
+export function get_camera_image(camera_name, options = {}) {
     const query = buildQuery({
         camera_name: camera_name,
         quality: options.quality ?? 90
@@ -64,8 +56,7 @@ export function get_camera_image(camera_name, options = {})
 }
 
 
-export function get_detection_image(camera_name, options = {})
-{
+export function get_detection_image(camera_name, options = {}) {
     const query = buildQuery({
         camera_name: camera_name,
         model_name: options.model_name ?? "yolo",
@@ -81,8 +72,7 @@ export function get_detection_image(camera_name, options = {})
 // Stream
 // ============================================================
 
-export function get_camera_stream(camera_name, options = {})
-{
+export function get_camera_stream(camera_name, options = {}) {
     const query = buildQuery({
         camera_name: camera_name,
         interval_sec: options.interval_sec ?? 0.03,
@@ -93,8 +83,7 @@ export function get_camera_stream(camera_name, options = {})
 }
 
 
-export function get_detection_stream(camera_name, options = {})
-{
+export function get_detection_stream(camera_name, options = {}) {
     const query = buildQuery({
         camera_name: camera_name,
         model_name: options.model_name ?? "yolo",
@@ -111,8 +100,7 @@ export function get_detection_stream(camera_name, options = {})
 // Detections
 // ============================================================
 
-export async function get_detections(camera_name, options = {})
-{
+export async function get_detections(camera_name, options = {}) {
     const query = buildQuery({
         camera_name: camera_name,
         model_name: options.model_name ?? "yolo",

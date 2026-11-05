@@ -1,193 +1,130 @@
-import {
-    getJson,
-    postJson,
-} from "./core.js";
+
+import { getJson, postJson } from "./core.js";
 
 
 // ============================================================
-// DESCRIBE SCENE
-// POST /api/worldmodel/describe_scene
+// Robot State
 // ============================================================
 
-export function describe_scene(
-    camera_name = null,
-    options = {}
-)
+export function get_arm_status(arm_name = null)
 {
-    return postJson(
-        "/api/worldmodel/describe_scene",
-        {
-            camera_name:
-                camera_name,
+    const query = new URLSearchParams();
 
-            vlm_backend:
-                options.vlm_backend,
-        }
-    );
-}
-
-
-// ============================================================
-// GET OBJECT STATE
-// POST /api/worldmodel/get_object_state
-// ============================================================
-
-export function get_object_state(
-    camera_names = null
-)
-{
-    const payload = {};
-
-    if (
-        Array.isArray(
-            camera_names
-        )
-    )
+    if (arm_name !== null)
     {
-        payload.camera_names =
-            camera_names;
+        query.set("arm_name", arm_name);
     }
 
-    return postJson(
-        "/api/worldmodel/get_object_state",
-        payload
-    );
+    const suffix = query.toString();
+    return getJson(`/api/worldmodel/get_arm_status${suffix ? `?${suffix}` : ""}`);
 }
 
 
-// ============================================================
-// GET OBJECT RELATIONS
-// POST /api/worldmodel/get_object_relations
-// ============================================================
-
-export function get_object_relations(
-    camera_names = null
-)
+export function get_arm_pose(arm_name = null)
 {
-    const payload = {};
+    const query = new URLSearchParams();
 
-    if (
-        Array.isArray(
-            camera_names
-        )
-    )
+    if (arm_name !== null)
     {
-        payload.camera_names =
-            camera_names;
+        query.set("arm_name", arm_name);
     }
 
-    return postJson(
-        "/api/worldmodel/get_object_relations",
-        payload
-    );
+    const suffix = query.toString();
+    return getJson(`/api/worldmodel/get_arm_pose${suffix ? `?${suffix}` : ""}`);
 }
 
 
-// ============================================================
-// INFER RELATIONS
-// POST /api/worldmodel/relations
-// ============================================================
-
-export function infer_relations(
-    camera_name,
-    entities
-)
+export function get_arm_joints(arm_name = null)
 {
-    return postJson(
-        "/api/worldmodel/relations",
-        {
-            camera_name:
-                camera_name,
+    const query = new URLSearchParams();
 
-            entities:
-                entities,
-        }
-    );
-}
-
-
-// ============================================================
-// HEALTH
-// GET /api/worldmodel/health
-// ============================================================
-
-export function get_worldmodel_health()
-{
-    return getJson(
-        "/api/worldmodel/health"
-    );
-}
-
-
-// ============================================================
-// WORLD STATE
-// POST /api/worldmodel/world_state
-// ============================================================
-
-export function get_world_state(
-    options = {}
-)
-{
-    return postJson(
-        "/api/worldmodel/world_state",
-        {
-            context:
-                options.context,
-
-            include_robot:
-                options.include_robot
-                ?? true,
-
-            include_cameras:
-                options.include_cameras
-                ?? true,
-
-            include_detections:
-                options.include_detections
-                ?? true,
-
-            include_materials:
-                options.include_materials
-                ?? false,
-
-            include_relations:
-                options.include_relations
-                ?? true,
-
-            include_grasp:
-                options.include_grasp
-                ?? true,
-
-            camera_names:
-                options.camera_names,
-        }
-    );
-}
-
-
-// ============================================================
-// GET OBJECT GRASP
-// POST /api/worldmodel/get_object_grasp
-// ============================================================
-
-export function get_object_grasp(
-    camera_names = null
-)
-{
-    const payload = {};
-
-    if (
-        Array.isArray(
-            camera_names
-        )
-    )
+    if (arm_name !== null)
     {
-        payload.camera_names =
-            camera_names;
+        query.set("arm_name", arm_name);
     }
 
-    return postJson(
-        "/api/worldmodel/get_object_grasp",
-        payload
-    );
+    const suffix = query.toString();
+    return getJson(`/api/worldmodel/get_arm_joints${suffix ? `?${suffix}` : ""}`);
+}
+
+
+// ============================================================
+// Scene Description
+// ============================================================
+
+export function describe_scene(camera_name = null, options = {})
+{
+    return postJson("/api/worldmodel/describe_scene", {
+        camera_name: camera_name,
+        vlm_backend: options.vlm_backend
+    });
+}
+
+
+// ============================================================
+// Object State
+// ============================================================
+
+export function get_object_state(camera_names = null)
+{
+    return postJson("/api/worldmodel/get_object_state", {
+        camera_names: camera_names
+    });
+}
+
+
+// ============================================================
+// Object Relation
+// ============================================================
+
+export function get_object_relation(camera_names = null)
+{
+    return postJson("/api/worldmodel/get_object_relation", {
+        camera_names: camera_names
+    });
+}
+
+
+// ============================================================
+// World State
+// ============================================================
+
+export function get_world_state(options = {})
+{
+    return postJson("/api/worldmodel/world_state", {
+        context: options.context,
+        active_region_id: options.active_region_id,
+        include_robot: options.include_robot ?? true,
+        include_cameras: options.include_cameras ?? true,
+        include_detections: options.include_detections ?? true,
+        include_materials: options.include_materials ?? false,
+        include_relations: options.include_relations ?? true,
+        include_grasp: options.include_grasp ?? true,
+        camera_names: options.camera_names
+    });
+}
+
+
+// ============================================================
+// Object Grasp
+// ============================================================
+
+export function get_object_grasp(camera_names = null)
+{
+    return postJson("/api/worldmodel/get_object_grasp", {
+        camera_names: camera_names
+    });
+}
+
+
+// ============================================================
+// Smoke / Fire State
+// ============================================================
+
+export function get_smoke_state(camera_name = null, observe_seconds = 4.0)
+{
+    return postJson("/api/worldmodel/get_smoke_state", {
+        camera_name: camera_name,
+        observe_seconds: observe_seconds
+    });
 }

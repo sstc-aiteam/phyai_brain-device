@@ -1,6 +1,5 @@
 import time
 import math
-import copy
 import threading
 import cv2
 import numpy as np
@@ -212,14 +211,22 @@ def get_perception_cameras():
     action = "get_perception_cameras"
 
     try:
-        cameras = [{"camera_name": camera_name} for camera_name in sorted(config.CAMERAS)]
+        result = camera_service.get_camera_status()
 
-        return response.success(
-            MODULE,
-            action,
-            result=True,
-            data={"cameras": cameras}
-        )
+        if not isinstance(result, dict) or result.get("result") is not True:
+            raise RuntimeError(f"Failed to get camera status: {result}")
+
+        data = result.get("data")
+
+        if not isinstance(data, dict):
+            raise RuntimeError("Invalid camera status response")
+
+        cameras = data.get("cameras")
+
+        if not isinstance(cameras, list):
+            raise RuntimeError("Invalid camera list")
+
+        return response.success(MODULE, action, result=True, data={"cameras": cameras})
 
     except Exception as exc:
         return response.error(MODULE, action, error=exc, error_type=type(exc).__name__)

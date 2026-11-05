@@ -1,535 +1,363 @@
+
 <!DOCTYPE html>
 <html lang="zh-Hant">
-
 <head>
-
     <meta charset="UTF-8">
-
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
-
-    <title>
-        Robot World Model
-    </title>
-
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robot World Model Demo</title>
 
     <style>
-
         * {
             box-sizing: border-box;
         }
 
-
-        html,
-        body {
+        html, body {
             margin: 0;
             padding: 0;
-
-            font-family:
-                Arial,
-                "Noto Sans TC",
-                sans-serif;
-
+            font-family: Arial, "Noto Sans TC", sans-serif;
             background: #f5f5f5;
-
             color: #222;
         }
 
-
         body {
-            padding: 12px;
+            padding: 20px;
         }
 
-
         .container {
-            max-width: 1100px;
-
+            max-width: 1200px;
             margin: 0 auto;
         }
 
-
         .card {
             background: white;
-
-            border:
-                1px solid #ddd;
-
+            border: 1px solid #ddd;
             border-radius: 8px;
-
-            padding: 14px;
-
-            margin-bottom: 12px;
+            padding: 18px;
+            margin-bottom: 16px;
         }
-
 
         h1 {
-            margin:
-                0
-                0
-                16px;
-
-            font-size: 24px;
+            margin: 0 0 8px;
+            font-size: 26px;
         }
-
 
         h2 {
-            margin:
-                0
-                0
-                12px;
-
-            font-size: 18px;
+            margin: 0 0 14px;
+            font-size: 19px;
         }
 
+        .description {
+            margin: 0 0 20px;
+            color: #666;
+            font-size: 14px;
+        }
 
         label {
             display: block;
-
-            margin-bottom: 5px;
-
+            margin-bottom: 6px;
             font-size: 13px;
-
             font-weight: bold;
         }
 
-
-        input,
-        button {
-            width: 100%;
-
-            padding: 10px;
-
+        input, select, button {
+            font-size: 14px;
             border-radius: 6px;
-
-            font-size: 15px;
         }
 
-
-        input {
-            border:
-                1px solid #bbb;
-
+        input[type="text"], input[type="number"], select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #bbb;
             background: white;
         }
 
-
         button {
-            border:
-                1px solid #aaa;
-
+            padding: 10px 14px;
+            border: 1px solid #aaa;
             background: #eee;
-
             cursor: pointer;
         }
-
 
         button:hover {
             background: #ddd;
         }
 
-
         button:disabled {
-            cursor: default;
-
             opacity: 0.6;
+            cursor: not-allowed;
         }
 
+        .api-button {
+            width: 100%;
+            text-align: center;
+        }
 
         .api-button.active {
             background: #d9f4df;
-
             border-color: #76aa82;
-
             font-weight: bold;
         }
-
 
         .grid-2 {
             display: grid;
-
-            grid-template-columns:
-                repeat(
-                    2,
-                    1fr
-                );
-
-            gap: 10px;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
         }
-
 
         .grid-4 {
             display: grid;
-
-            grid-template-columns:
-                repeat(
-                    4,
-                    1fr
-                );
-
-            gap: 10px;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
         }
 
+        .field {
+            min-width: 0;
+        }
 
         .options {
             display: flex;
-
             flex-wrap: wrap;
-
-            gap: 12px;
-
-            margin-top: 12px;
+            gap: 14px;
+            margin-top: 14px;
         }
 
-
-        .options label {
-            display: flex;
-
+        .options label, .camera-option {
+            display: inline-flex;
             align-items: center;
-
             gap: 6px;
-
+            margin: 0;
             font-weight: normal;
+            cursor: pointer;
         }
 
-
-        .options input {
-            width: auto;
+        .options input, .camera-option input {
+            margin: 0;
         }
 
-
-        .output {
-            background: #111;
-
-            color: #eee;
-
+        .camera-list {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 14px;
+            min-height: 44px;
             padding: 12px;
-
-            min-height: 180px;
-            max-height: 600px;
-
-            overflow: auto;
-
+            border: 1px solid #ddd;
             border-radius: 6px;
-
-            white-space: pre-wrap;
-
-            font-family: monospace;
-
-            font-size: 13px;
-        }
-
-
-        .status {
-            margin-top: 8px;
-
-            font-size: 13px;
-
-            color: #666;
-        }
-
-
-        .entity-list {
-            display: grid;
-
-            grid-template-columns:
-                repeat(
-                    2,
-                    minmax(
-                        0,
-                        1fr
-                    )
-                );
-
-            gap: 10px;
-        }
-
-
-        .entity {
-            border:
-                1px solid #ddd;
-
-            border-radius: 6px;
-
-            padding: 10px;
-
             background: #fafafa;
         }
 
-
-        .entity-title {
-            font-weight: bold;
-
-            margin-bottom: 6px;
-        }
-
-
-        .mono {
-            white-space: pre-wrap;
-
-            font-family: monospace;
-
+        .camera-status {
+            color: #777;
             font-size: 12px;
         }
 
-
-        @media (
-            max-width: 700px
-        ) {
-
-            .grid-4,
-            .grid-2,
-            .entity-list {
-                grid-template-columns:
-                    1fr;
-            }
-
+        .toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+            margin-top: 10px;
         }
 
+        .toolbar button {
+            padding: 7px 12px;
+            font-size: 13px;
+        }
+
+        .section-description {
+            margin: 0 0 12px;
+            color: #777;
+            font-size: 13px;
+        }
+
+        .status {
+            margin-top: 12px;
+            font-size: 13px;
+            color: #666;
+        }
+
+        .output {
+            margin: 0;
+            padding: 14px;
+            min-height: 180px;
+            max-height: 650px;
+            overflow: auto;
+            border-radius: 6px;
+            background: #111;
+            color: #eee;
+            font-family: monospace;
+            font-size: 13px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .entity-list {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .entity {
+            min-width: 0;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            background: #fafafa;
+        }
+
+        .entity-title {
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+
+        .mono {
+            margin: 0;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .muted {
+            color: #777;
+            font-size: 13px;
+        }
+
+        @media (max-width: 700px) {
+            body {
+                padding: 12px;
+            }
+
+            .grid-2, .grid-4, .entity-list {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 
-
-    <script
-        type="module"
-        src="/web/includes/library/JSFile/robotjs2026.js"
-    ></script>
-
+    <script type="module" src="/web/includes/library/JSFile/robotjs2026.js"></script>
 </head>
 
-
 <body>
-
-
 <div class="container">
 
+    <!-- ============================================================ -->
+    <!-- Header -->
+    <!-- ============================================================ -->
 
-    <!-- ====================================================== -->
-    <!-- WORLD MODEL SETTINGS -->
-    <!-- ====================================================== -->
+    <h1>Robot World Model</h1>
+    <p class="description">Robot Brain SDK — World Model API Demonstration</p>
+
+
+    <!-- ============================================================ -->
+    <!-- Settings -->
+    <!-- ============================================================ -->
 
     <div class="card">
+        <h2>World Model Settings</h2>
 
-        <h1>
-            World Model
-        </h1>
+        <label>Cameras</label>
 
+        <div id="cameraList" class="camera-list">
+            <span class="muted">讀取相機列表中...</span>
+        </div>
 
-        <label for="cameraNames">
-            Cameras
-        </label>
-
-
-        <input
-            id="cameraNames"
-            type="text"
-            value="left,right"
-            placeholder="left,right"
-        >
-
+        <div class="toolbar">
+            <button type="button" id="selectAllCamerasButton">全選相機</button>
+            <button type="button" id="clearCamerasButton">清除選取</button>
+            <button type="button" id="refreshCamerasButton">重新整理相機</button>
+        </div>
 
         <div class="options">
-
-            <label>
-
-                <input
-                    id="includeRobot"
-                    type="checkbox"
-                    checked
-                >
-
-                Robot
-
-            </label>
-
-
-            <label>
-
-                <input
-                    id="includeCameras"
-                    type="checkbox"
-                    checked
-                >
-
-                Cameras
-
-            </label>
-
-
-            <label>
-
-                <input
-                    id="includeDetections"
-                    type="checkbox"
-                    checked
-                >
-
-                Detections
-
-            </label>
-
-
-            <label>
-
-                <input
-                    id="includeMaterials"
-                    type="checkbox"
-                >
-
-                Materials
-
-            </label>
-
-
-            <label>
-
-                <input
-                    id="includeRelations"
-                    type="checkbox"
-                    checked
-                >
-
-                Relations
-
-            </label>
-
-
-            <label>
-
-                <input
-                    id="includeGrasp"
-                    type="checkbox"
-                    checked
-                >
-
-                Grasp
-
-            </label>
-
+            <label><input id="includeRobot" type="checkbox" checked>Robot</label>
+            <label><input id="includeCameras" type="checkbox" checked>Cameras</label>
+            <label><input id="includeDetections" type="checkbox" checked>Detections</label>
+            <label><input id="includeMaterials" type="checkbox">Materials</label>
+            <label><input id="includeRelations" type="checkbox" checked>Relations</label>
+            <label><input id="includeGrasp" type="checkbox" checked>Grasp</label>
         </div>
-
     </div>
 
 
-    <!-- ====================================================== -->
-    <!-- API -->
-    <!-- ====================================================== -->
+    <!-- ============================================================ -->
+    <!-- World Model APIs -->
+    <!-- ============================================================ -->
 
     <div class="card">
-
-        <h2>
-            World Model APIs
-        </h2>
-
+        <h2>World Model APIs</h2>
+        <div id="status" class="status" role="status">Ready</div>
 
         <div class="grid-4">
-
-            <button
-                id="worldStateButton"
-                class="api-button"
-            >
-                World State
-            </button>
-
-
-            <button
-                id="objectStateButton"
-                class="api-button"
-            >
-                Object State
-            </button>
-
-
-            <button
-                id="relationsButton"
-                class="api-button"
-            >
-                Object Relations
-            </button>
-
-
-            <button
-                id="graspButton"
-                class="api-button"
-            >
-                Object Grasp
-            </button>
-
+            <button type="button" id="worldStateButton" class="api-button">World State</button>
+            <button type="button" id="objectStateButton" class="api-button">Object State</button>
+            <button type="button" id="objectRelationButton" class="api-button">Object Relation</button>
+            <button type="button" id="objectGraspButton" class="api-button">Object Grasp</button>
         </div>
-
-
-        <div
-            id="status"
-            class="status"
-        >
-            Ready
-        </div>
-
     </div>
 
 
-    <!-- ====================================================== -->
-    <!-- OBJECTS -->
-    <!-- ====================================================== -->
+    <!-- ============================================================ -->
+    <!-- Scene Description -->
+    <!-- ============================================================ -->
 
     <div class="card">
+        <h2>Scene Description API</h2>
 
-        <h2>
-            Entities / Objects
-        </h2>
-
-
-        <div
-            id="entityList"
-            class="entity-list"
-        >
-
-            <div>
-                尚未取得 World Model
+        <div class="grid-2">
+            <div class="field">
+                <label for="sceneCamera">Camera</label>
+                <select id="sceneCamera">
+                    <option value="">Default Camera</option>
+                </select>
             </div>
 
+            <div class="field">
+                <label for="vlmBackend">VLM Backend</label>
+                <select id="vlmBackend">
+                    <option value="">Default</option>
+                    <option value="local">Local</option>
+                    <option value="remote">Remote</option>
+                </select>
+            </div>
         </div>
 
+        <div class="toolbar">
+            <button type="button" id="describeSceneButton" class="api-button">Describe Scene</button>
+        </div>
     </div>
 
 
-    <!-- ====================================================== -->
-    <!-- RAW OUTPUT -->
-    <!-- ====================================================== -->
+    <!-- ============================================================ -->
+    <!-- Entities / Objects -->
+    <!-- ============================================================ -->
 
     <div class="card">
+        <h2 id="entitySectionTitle">Entities / Objects</h2>
 
-        <h2>
-            Raw Output
-        </h2>
-
-
-        <pre
-            id="output"
-            class="output"
-        ></pre>
-
+        <div id="entityList" class="entity-list">
+            <div class="muted">請點擊上方 API 按鈕取得資料</div>
+        </div>
     </div>
 
+
+    <!-- ============================================================ -->
+    <!-- Raw Output -->
+    <!-- ============================================================ -->
+
+    <div class="card">
+        <h2>API Response</h2>
+        <pre id="output" class="output">-</pre>
+    </div>
 
 </div>
 
 
 <script>
-
     // ============================================================
     // Config
     // ============================================================
 
-    const REFRESH_INTERVAL_MS =
-        1000;
-
-
-    let activePolling = null;
-
-    let pollingTimer = null;
-
-    let polling = false;
+    let requestGeneration = 0;
+    let activeRequest = null;
 
 
     // ============================================================
@@ -540,9 +368,7 @@
     {
         if (!window.RobotAPI)
         {
-            throw new Error(
-                "RobotAPI 尚未載入"
-            );
+            throw new Error("RobotAPI 尚未載入");
         }
 
         return window.RobotAPI;
@@ -551,569 +377,440 @@
 
     function getCameraNames()
     {
-        return (
-            document
-            .getElementById(
-                "cameraNames"
-            )
-            .value
-            .split(",")
-            .map(
-                value =>
-                    value.trim()
-            )
-            .filter(Boolean)
-        );
+        return Array.from(document.querySelectorAll(".camera-checkbox:checked")).map(input => input.value);
     }
 
 
-    function setStatus(
-        message
-    )
+    function getSelectedCameraName(elementId)
     {
-        document
-        .getElementById(
-            "status"
-        )
-        .textContent =
-            message;
+        return document.getElementById(elementId).value || null;
     }
 
 
-    function showOutput(
-        data
-    )
+    function setStatus(message)
     {
-        document
-        .getElementById(
-            "output"
-        )
-        .textContent =
-            JSON.stringify(
-                data,
-                null,
-                2
-            );
+        document.getElementById("status").textContent = message;
+    }
+
+
+    function showOutput(data)
+    {
+        const output = JSON.stringify(data, null, 2);
+        document.getElementById("output").textContent = output ?? "-";
+    }
+
+
+    function showError(error)
+    {
+        showOutput({
+            status: "error",
+            message: error.message
+        });
+
+        setStatus(`ERROR: ${error.message}`);
+    }
+
+
+    function clearOutputs()
+    {
+        document.getElementById("entityList").innerHTML = '<div class="muted">讀取中...</div>';
+        document.getElementById("output").textContent = "-";
+    }
+
+
+    function validateResponse(result)
+    {
+        if (!result || result.status === "error" || result.result === false)
+        {
+            throw new Error(result?.message || "API request failed");
+        }
+
+        return result;
+    }
+
+
+    function setActiveButton(buttonId)
+    {
+        document.querySelectorAll(".api-button").forEach(button =>
+        {
+            button.classList.remove("active");
+        });
+
+        if (buttonId)
+        {
+            document.getElementById(buttonId).classList.add("active");
+        }
     }
 
 
     // ============================================================
-    // Render Entities
+    // Entity Rendering
     // ============================================================
 
-    function renderEntities(
-        entities
-    )
+    function renderObjects(objects)
     {
-        const container =
-            document
-            .getElementById(
-                "entityList"
-            );
-
-
+        const container = document.getElementById("entityList");
         container.innerHTML = "";
 
-
-        if (
-            !entities
-            || typeof entities
-                !== "object"
-        )
+        if (!Array.isArray(objects) || objects.length === 0)
         {
-            container.innerHTML =
-                "<div>沒有 entity</div>";
-
+            container.innerHTML = '<div class="muted">沒有 Object</div>';
             return;
         }
 
-
-        const rows =
-            Object.entries(
-                entities
-            );
-
-
-        if (
-            rows.length === 0
-        )
+        for (const object of objects)
         {
-            container.innerHTML =
-                "<div>沒有 entity</div>";
+            const card = document.createElement("div");
+            card.className = "entity";
 
-            return;
-        }
+            const title = document.createElement("div");
+            title.className = "entity-title";
+            title.textContent = object.object ?? object.object_id ?? object.class_name ?? "object";
 
+            const content = document.createElement("pre");
+            content.className = "mono";
+            content.textContent = JSON.stringify(object, null, 2);
 
-        for (
-            const [
-                entityId,
-                entity
-            ]
-            of rows
-        )
-        {
-            const card =
-                document
-                .createElement(
-                    "div"
-                );
-
-
-            card.className =
-                "entity";
-
-
-            const title =
-                document
-                .createElement(
-                    "div"
-                );
-
-
-            title.className =
-                "entity-title";
-
-
-            title.textContent =
-                entityId;
-
-
-            const content =
-                document
-                .createElement(
-                    "div"
-                );
-
-
-            content.className =
-                "mono";
-
-
-            content.textContent =
-                JSON.stringify(
-                    entity,
-                    null,
-                    2
-                );
-
-
-            card.appendChild(
-                title
-            );
-
-
-            card.appendChild(
-                content
-            );
-
-
-            container.appendChild(
-                card
-            );
+            card.appendChild(title);
+            card.appendChild(content);
+            container.appendChild(card);
         }
     }
 
 
-    // ============================================================
-    // Render Object List
-    // ============================================================
-
-    function renderObjectList(
-        objects
-    )
+    function renderEntities(entities)
     {
-        const container =
-            document
-            .getElementById(
-                "entityList"
-            );
-
-
+        const container = document.getElementById("entityList");
         container.innerHTML = "";
 
-
-        if (
-            !Array.isArray(
-                objects
-            )
-            || objects.length === 0
-        )
+        if (!entities || typeof entities !== "object" || Array.isArray(entities))
         {
-            container.innerHTML =
-                "<div>沒有 object</div>";
-
+            container.innerHTML = '<div class="muted">沒有 Entity</div>';
             return;
         }
 
+        const rows = Object.entries(entities);
 
-        for (
-            const object
-            of objects
-        )
+        if (rows.length === 0)
         {
-            const card =
-                document
-                .createElement(
-                    "div"
-                );
+            container.innerHTML = '<div class="muted">沒有 Entity</div>';
+            return;
+        }
 
+        for (const [entityId, entity] of rows)
+        {
+            const card = document.createElement("div");
+            card.className = "entity";
 
-            card.className =
-                "entity";
+            const title = document.createElement("div");
+            title.className = "entity-title";
+            title.textContent = entityId;
 
+            const content = document.createElement("pre");
+            content.className = "mono";
+            content.textContent = JSON.stringify(entity, null, 2);
 
-            const title =
-                document
-                .createElement(
-                    "div"
-                );
-
-
-            title.className =
-                "entity-title";
-
-
-            title.textContent =
-                object.object
-                ?? "object";
-
-
-            const content =
-                document
-                .createElement(
-                    "div"
-                );
-
-
-            content.className =
-                "mono";
-
-
-            content.textContent =
-                JSON.stringify(
-                    object,
-                    null,
-                    2
-                );
-
-
-            card.appendChild(
-                title
-            );
-
-
-            card.appendChild(
-                content
-            );
-
-
-            container.appendChild(
-                card
-            );
+            card.appendChild(title);
+            card.appendChild(content);
+            container.appendChild(card);
         }
     }
 
 
-    // ============================================================
-    // Polling Control
-    // ============================================================
-
-    function stopPolling()
+    function renderNoEntities()
     {
-        polling = false;
-
-        activePolling =
-            null;
+        document.getElementById("entityList").innerHTML = '<div class="muted">此 API 沒有 Entity / Object 資料，請查看 Raw API Response。</div>';
+    }
 
 
-        if (
-            pollingTimer
-            !== null
-        )
+    function renderResponse(name, result)
+    {
+        const data = result?.data ?? {};
+
+        if (name === "world_state")
         {
-            clearTimeout(
-                pollingTimer
-            );
-
-            pollingTimer =
-                null;
+            document.getElementById("entitySectionTitle").textContent = "World State Entities";
+            renderEntities(data.entities);
         }
+        else if (name === "object_state")
+        {
+            document.getElementById("entitySectionTitle").textContent = "Object States";
+            renderObjects(data.objects);
+        }
+        else if (name === "object_relation")
+        {
+            document.getElementById("entitySectionTitle").textContent = "Object Relations";
+            renderObjects(data.objects);
+        }
+        else if (name === "object_grasp")
+        {
+            document.getElementById("entitySectionTitle").textContent = "Object Grasp States";
+            renderObjects(data.objects);
+        }
+        else
+        {
+            document.getElementById("entitySectionTitle").textContent = "Entities / Objects";
 
-
-        document
-        .querySelectorAll(
-            ".api-button"
-        )
-        .forEach(
-            button =>
+            if (data.entities)
             {
-                button
-                .classList
-                .remove(
-                    "active"
-                );
+                renderEntities(data.entities);
             }
-        );
+            else if (Array.isArray(data.objects))
+            {
+                renderObjects(data.objects);
+            }
+            else
+            {
+                renderNoEntities();
+            }
+        }
     }
 
 
-    async function startPolling(
-        name,
-        callback,
-        button
-    )
+    // ============================================================
+    // Camera Selection
+    // ============================================================
+
+    async function loadCameras()
     {
-        stopPolling();
+        const container = document.getElementById("cameraList");
+        const refreshButton = document.getElementById("refreshCamerasButton");
+        const previousSelected = getCameraNames();
+        const previousAvailable = Array.from(document.querySelectorAll(".camera-checkbox")).map(input => input.value);
+        const firstLoad = previousAvailable.length === 0;
 
+        container.innerHTML = '<span class="muted">讀取相機列表中...</span>';
+        refreshButton.disabled = true;
 
-        activePolling =
-            name;
-
-
-        polling =
-            true;
-
-
-        button
-        .classList
-        .add(
-            "active"
-        );
-
-
-        async function run()
+        try
         {
-            if (
-                !polling
-                || activePolling
-                    !== name
-            )
+            const result = validateResponse(await getRobotAPI().get_perception_cameras());
+            const cameras = result?.data?.cameras;
+
+            if (!Array.isArray(cameras))
+            {
+                throw new Error("Invalid perception camera list");
+            }
+
+            container.innerHTML = "";
+
+            const validCameras = cameras.filter(camera => camera && typeof camera.camera_name === "string" && camera.camera_name.trim());
+
+            if (validCameras.length === 0)
+            {
+                container.innerHTML = '<span class="muted">沒有可用相機</span>';
+            }
+
+            for (const camera of validCameras)
+            {
+                const cameraName = camera.camera_name.trim();
+                const status = camera.status && typeof camera.status === "object" ? camera.status : {};
+
+                const label = document.createElement("label");
+                label.className = "camera-option";
+
+                const checkbox = document.createElement("input");
+                checkbox.type = "checkbox";
+                checkbox.className = "camera-checkbox";
+                checkbox.value = cameraName;
+                checkbox.checked = firstLoad || previousSelected.includes(cameraName);
+
+                const text = document.createElement("span");
+                text.textContent = cameraName;
+
+                const statusText = document.createElement("span");
+                statusText.className = "camera-status";
+
+                if (status.connected === false)
+                {
+                    statusText.textContent = "(Disconnected)";
+                }
+                else if (status.running === true)
+                {
+                    statusText.textContent = "(Running)";
+                }
+                else if (status.connected === true)
+                {
+                    statusText.textContent = "(Stopped)";
+                }
+                else
+                {
+                    statusText.textContent = "";
+                }
+
+                label.appendChild(checkbox);
+                label.appendChild(text);
+                label.appendChild(statusText);
+                container.appendChild(label);
+            }
+
+            for (const selectId of ["sceneCamera"])
+            {
+                const select = document.getElementById(selectId);
+                const previousValue = select.value;
+
+                select.innerHTML = "";
+
+                const defaultOption = document.createElement("option");
+                defaultOption.value = "";
+                defaultOption.textContent = "Default Camera";
+                select.appendChild(defaultOption);
+
+                for (const camera of validCameras)
+                {
+                    const option = document.createElement("option");
+                    option.value = camera.camera_name.trim();
+                    option.textContent = camera.camera_name.trim();
+                    select.appendChild(option);
+                }
+
+                if (Array.from(select.options).some(option => option.value === previousValue))
+                {
+                    select.value = previousValue;
+                }
+            }
+        }
+        catch (error)
+        {
+            container.innerHTML = '<span class="muted">相機列表讀取失敗</span>';
+            showError(error);
+        }
+        finally
+        {
+            refreshButton.disabled = false;
+        }
+    }
+
+
+    function setAllCameras(checked)
+    {
+        document.querySelectorAll(".camera-checkbox").forEach(checkbox =>
+        {
+            checkbox.checked = checked;
+        });
+    }
+
+
+    // ============================================================
+    // World Model APIs
+    // ============================================================
+
+    const WORLD_MODEL_APIS = {
+        world_state: {
+            buttonId: "worldStateButton",
+            label: "World State",
+
+            request: () => getRobotAPI().get_world_state({
+                include_robot: document.getElementById("includeRobot").checked,
+                include_cameras: document.getElementById("includeCameras").checked,
+                include_detections: document.getElementById("includeDetections").checked,
+                include_materials: document.getElementById("includeMaterials").checked,
+                include_relations: document.getElementById("includeRelations").checked,
+                include_grasp: document.getElementById("includeGrasp").checked,
+                camera_names: getCameraNames()
+            })
+        },
+
+        object_state: {
+            buttonId: "objectStateButton",
+            label: "Object State",
+
+            request: () => getRobotAPI().get_object_state(getCameraNames())
+        },
+
+        object_relation: {
+            buttonId: "objectRelationButton",
+            label: "Object Relation",
+
+            request: () => getRobotAPI().get_object_relation(getCameraNames())
+        },
+
+        object_grasp: {
+            buttonId: "objectGraspButton",
+            label: "Object Grasp",
+
+            request: () => getRobotAPI().get_object_grasp(getCameraNames())
+        },
+
+        describe_scene: {
+            buttonId: "describeSceneButton",
+            label: "Describe Scene",
+
+            request: () => getRobotAPI().describe_scene(getSelectedCameraName("sceneCamera"), {
+                vlm_backend: document.getElementById("vlmBackend").value || null
+            })
+        }
+    };
+
+
+    // ============================================================
+    // Request Management
+    // ============================================================
+
+    async function executeAPI(name)
+    {
+        const definition = WORLD_MODEL_APIS[name];
+
+        if (!definition)
+        {
+            throw new Error(`Unsupported World Model API: ${name}`);
+        }
+
+        if (activeRequest !== null)
+        {
+            setStatus("已有 API 正在執行，請等待目前請求完成。");
+            return;
+        }
+
+        const generation = ++requestGeneration;
+        activeRequest = name;
+
+        setActiveButton(definition.buttonId);
+        clearOutputs();
+        document.getElementById("entitySectionTitle").textContent = definition.label;
+        setStatus(`Calling ${definition.label}...`);
+
+        document.querySelectorAll(".api-button").forEach(button =>
+        {
+            button.disabled = true;
+        });
+
+        try
+        {
+            const result = validateResponse(await definition.request());
+
+            if (generation !== requestGeneration)
             {
                 return;
             }
 
-
-            try
+            showOutput(result);
+            renderResponse(name, result);
+            setStatus(`${definition.label} · Completed`);
+        }
+        catch (error)
+        {
+            if (generation !== requestGeneration)
             {
-                await callback();
-            }
-            catch (error)
-            {
-                console.error(
-                    error
-                );
-
-
-                setStatus(
-                    `ERROR: ${error}`
-                );
+                return;
             }
 
-
-            if (
-                polling
-                && activePolling
-                    === name
-            )
+            console.error(error);
+            showError(error);
+            renderNoEntities();
+        }
+        finally
+        {
+            if (generation === requestGeneration)
             {
-                pollingTimer =
-                    setTimeout(
-                        run,
-                        REFRESH_INTERVAL_MS
-                    );
+                activeRequest = null;
+
+                document.querySelectorAll(".api-button").forEach(button =>
+                {
+                    button.disabled = false;
+                });
             }
         }
-
-
-        await run();
-    }
-
-
-    // ============================================================
-    // World State
-    // ============================================================
-
-    async function loadWorldState()
-    {
-        setStatus(
-            "Updating World State..."
-        );
-
-
-        const result =
-            await getRobotAPI()
-            .get_world_state({
-                include_robot:
-                    document
-                    .getElementById(
-                        "includeRobot"
-                    )
-                    .checked,
-
-                include_cameras:
-                    document
-                    .getElementById(
-                        "includeCameras"
-                    )
-                    .checked,
-
-                include_detections:
-                    document
-                    .getElementById(
-                        "includeDetections"
-                    )
-                    .checked,
-
-                include_materials:
-                    document
-                    .getElementById(
-                        "includeMaterials"
-                    )
-                    .checked,
-
-                include_relations:
-                    document
-                    .getElementById(
-                        "includeRelations"
-                    )
-                    .checked,
-
-                include_grasp:
-                    document
-                    .getElementById(
-                        "includeGrasp"
-                    )
-                    .checked,
-
-                camera_names:
-                    getCameraNames(),
-            });
-
-
-        showOutput(
-            result
-        );
-
-
-        renderEntities(
-            result
-            ?.data
-            ?.entities
-        );
-
-
-        setStatus(
-            "World State · Auto refresh 1s"
-        );
-    }
-
-
-    // ============================================================
-    // Object State
-    // ============================================================
-
-    async function loadObjectState()
-    {
-        setStatus(
-            "Updating Object State..."
-        );
-
-
-        const result =
-            await getRobotAPI()
-            .get_object_state(
-                getCameraNames()
-            );
-
-
-        showOutput(
-            result
-        );
-
-
-        renderObjectList(
-            result
-            ?.data
-            ?.objects
-        );
-
-
-        setStatus(
-            "Object State · Auto refresh 1s"
-        );
-    }
-
-
-    // ============================================================
-    // Object Relations
-    // ============================================================
-
-    async function loadRelations()
-    {
-        setStatus(
-            "Updating Object Relations..."
-        );
-
-
-        const result =
-            await getRobotAPI()
-            .get_object_relations(
-                getCameraNames()
-            );
-
-
-        showOutput(
-            result
-        );
-
-
-        renderObjectList(
-            result
-            ?.data
-            ?.objects
-        );
-
-
-        setStatus(
-            "Object Relations · Auto refresh 1s"
-        );
-    }
-
-
-    // ============================================================
-    // Object Grasp
-    // ============================================================
-
-    async function loadGrasp()
-    {
-        setStatus(
-            "Updating Object Grasp..."
-        );
-
-
-        const result =
-            await getRobotAPI()
-            .get_object_grasp(
-                getCameraNames()
-            );
-
-
-        showOutput(
-            result
-        );
-
-
-        renderObjectList(
-            result
-            ?.data
-            ?.objects
-        );
-
-
-        setStatus(
-            "Object Grasp · Auto refresh 1s"
-        );
     }
 
 
@@ -1121,107 +818,19 @@
     // Events
     // ============================================================
 
-    window.addEventListener(
-        "load",
-        () =>
+    window.addEventListener("load", () =>
+    {
+        for (const [name, definition] of Object.entries(WORLD_MODEL_APIS))
         {
-            const worldStateButton =
-                document
-                .getElementById(
-                    "worldStateButton"
-                );
-
-
-            const objectStateButton =
-                document
-                .getElementById(
-                    "objectStateButton"
-                );
-
-
-            const relationsButton =
-                document
-                .getElementById(
-                    "relationsButton"
-                );
-
-
-            const graspButton =
-                document
-                .getElementById(
-                    "graspButton"
-                );
-
-
-            worldStateButton
-            .addEventListener(
-                "click",
-                () =>
-                {
-                    startPolling(
-                        "world_state",
-                        loadWorldState,
-                        worldStateButton
-                    );
-                }
-            );
-
-
-            objectStateButton
-            .addEventListener(
-                "click",
-                () =>
-                {
-                    startPolling(
-                        "object_state",
-                        loadObjectState,
-                        objectStateButton
-                    );
-                }
-            );
-
-
-            relationsButton
-            .addEventListener(
-                "click",
-                () =>
-                {
-                    startPolling(
-                        "object_relations",
-                        loadRelations,
-                        relationsButton
-                    );
-                }
-            );
-
-
-            graspButton
-            .addEventListener(
-                "click",
-                () =>
-                {
-                    startPolling(
-                        "object_grasp",
-                        loadGrasp,
-                        graspButton
-                    );
-                }
-            );
-
-
-            window
-            .addEventListener(
-                "beforeunload",
-                () =>
-                {
-                    stopPolling();
-                }
-            );
+            document.getElementById(definition.buttonId).addEventListener("click", () => executeAPI(name));
         }
-    );
 
+        document.getElementById("selectAllCamerasButton").addEventListener("click", () => setAllCameras(true));
+        document.getElementById("clearCamerasButton").addEventListener("click", () => setAllCameras(false));
+        document.getElementById("refreshCamerasButton").addEventListener("click", loadCameras);
+
+        loadCameras();
+    });
 </script>
-
-
 </body>
 </html>

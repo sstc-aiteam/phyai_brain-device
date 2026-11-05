@@ -4,9 +4,25 @@ from utils import response
 
 MODULE = "camera"
 
+import threading
+
+_camera_locks = {}
+_camera_locks_guard = threading.Lock()
+
 # ============================================================
 # Camera Context
 # ============================================================
+
+def _get_camera_lock(camera_name):
+    camera_name = _normalize_camera_name(camera_name)
+
+    with _camera_locks_guard:
+        if camera_name not in _camera_locks:
+            _camera_locks[camera_name] = threading.RLock()
+
+        return _camera_locks[camera_name]
+
+
 def _normalize_camera_name(
     camera_name,
 ):
@@ -211,10 +227,8 @@ def get_camera_status(
                     )
                 )
 
-                raw_status = (
-                    camera
-                    .get_camera_status()
-                )
+                with _get_camera_lock(current_name):
+                    raw_status = camera.get_camera_status()
 
                 if not isinstance(
                     raw_status,
@@ -286,206 +300,155 @@ def get_camera_status(
 # ============================================================
 # START CAMERA
 # ============================================================
-
-def start_camera(
-    camera_name,
-    width=None,
-    height=None,
-    fps=None,
-):
-    """
-    啟動指定 camera。
-    """
-
+def start_camera(camera_name, width=None, height=None, fps=None):
     action = "start_camera"
     driver = None
 
     try:
-        (
-            camera_name,
-            camera,
-            driver,
-            camera_config,
-        ) = (
-            _get_camera_context(
-                camera_name
-            )
-        )
+        camera_name = _normalize_camera_name(camera_name)
 
-        stream = (
-            _get_stream_config(
-                camera_config
-            )
-        )
+        with _get_camera_lock(camera_name):
+            camera_name, camera, driver, camera_config = _get_camera_context(camera_name)
+            stream = _get_stream_config(camera_config)
 
-        if width is None:
-            width = stream.get(
-                "width"
-            )
+            current_status = camera.get_camera_status()
 
-        if height is None:
-            height = stream.get(
-                "height"
-            )
+            if not isinstance(current_status, dict):
+                raise RuntimeError(f"Camera '{camera_name}' returned invalid status")
 
-        if fps is None:
-            fps = stream.get(
-                "fps"
-            )
+            if current_status.get("running") is True:
+                return response.success(
+                    MODULE,
+                    action,
+                    result=True,
+                    data={
+                        "camera_name": camera_name,
+                        "already_running": True,
+                        "width": current_status.get("width"),
+                        "height": current_status.get("height"),
+                        "fps": current_status.get("fps"),
+                        "image_size": current_status.get("image_size"),
+                    },
+                    driver=driver,
+                )
 
-        camera_options = {
-            "width": width,
-            "height": height,
-            "fps": fps,
-            "image_size": stream.get("image_size"),
-            "enable_color": stream.get("enable_color"),
-            "enable_depth": stream.get("enable_depth"),
-            "align_to": stream.get("align_to"),
-            "frame_timeout_ms": stream.get("frame_timeout_ms"),
-        }
+            if width is None:
+                width = stream.get("width")
 
-        result = camera.start_camera(**camera_options)
+            if height is None:
+                height = stream.get("height")
 
-        if not isinstance(result, bool):
-            raise RuntimeError(f"camera driver '{driver}' start_camera() must return bool")
+            if fps is None:
+                fps = stream.get("fps")
 
-        if result is False:
-            raise RuntimeError(f"Camera '{camera_name}' failed to start")
-
-
-        camera_status = camera.get_camera_status()
-
-        return response.success(
-            MODULE,
-            action,
-            result=result,
-            data={
-                "camera_name": camera_name,
-                "width": camera_status.get("width"),
-                "height": camera_status.get("height"),
-                "fps": camera_status.get("fps"),
+            camera_options = {
+                "width": width,
+                "height": height,
+                "fps": fps,
                 "image_size": stream.get("image_size"),
-            },
-            driver=driver,
-        )
+                "enable_color": stream.get("enable_color"),
+                "enable_depth": stream.get("enable_depth"),
+                "align_to": stream.get("align_to"),
+                "frame_timeout_ms": stream.get("frame_timeout_ms"),
+            }
 
+            result = camera.start_camera(**camera_options)
+
+            if not isinstance(result, bool):
+                raise RuntimeError(f"Camera driver '{driver}' start_camera() must return bool")
+
+            if result is False:
+                raise RuntimeError(f"Camera '{camera_name}' failed to start")
+
+            camera_status = camera.get_camera_status()
+
+            return response.success(
+                MODULE,
+                action,
+                result=True,
+                data={
+                    "camera_name": camera_name,
+                    "already_running": False,
+                    "width": camera_status.get("width"),
+                    "height": camera_status.get("height"),
+                    "fps": camera_status.get("fps"),
+                    "image_size": camera_status.get("image_size"),
+                },
+                driver=driver,
+            )
 
     except Exception as exc:
-        return response.error(
-            MODULE,
-            action,
-            error=exc,
-            driver=driver,
-            error_type=
-                type(exc).__name__,
-        )
-
+        return response.error(MODULE, action, error=exc, driver=driver, error_type=type(exc).__name__)
 
 # ============================================================
 # STOP CAMERA
 # ============================================================
-
-def stop_camera(
-    camera_name,
-):
+def stop_camera(camera_name):
     action = "stop_camera"
     driver = None
 
     try:
-        (
-            camera_name,
-            camera,
-            driver,
-            _,
-        ) = (
-            _get_camera_context(
-                camera_name
+        camera_name = _normalize_camera_name(camera_name)
+
+        with _get_camera_lock(camera_name):
+            camera_name, camera, driver, _ = _get_camera_context(camera_name)
+
+            camera_status = camera.get_camera_status()
+
+            if not isinstance(camera_status, dict):
+                raise RuntimeError(f"Camera '{camera_name}' returned invalid status")
+
+            if camera_status.get("running") is False:
+                return response.success(
+                    MODULE,
+                    action,
+                    result=True,
+                    data={"camera_name": camera_name, "already_stopped": True},
+                    driver=driver,
+                )
+
+            result = camera.stop_camera()
+
+            if not isinstance(result, bool):
+                raise RuntimeError(f"Camera driver '{driver}' stop_camera() must return bool")
+
+            if result is False:
+                raise RuntimeError(f"Camera '{camera_name}' failed to stop")
+
+            return response.success(
+                MODULE,
+                action,
+                result=True,
+                data={"camera_name": camera_name, "already_stopped": False},
+                driver=driver,
             )
-        )
-
-        result = (
-            camera.stop_camera()
-        )
-
-        if not isinstance(
-            result,
-            bool,
-        ):
-            raise RuntimeError(
-                f"camera driver "
-                f"'{driver}' "
-                f"stop_camera() "
-                f"must return bool"
-            )
-
-        return response.success(
-            MODULE,
-            action,
-            result=result,
-            data={
-                "camera_name":
-                    camera_name,
-            },
-            driver=driver,
-        )
 
     except Exception as exc:
-        return response.error(
-            MODULE,
-            action,
-            error=exc,
-            driver=driver,
-            error_type=
-                type(exc).__name__,
-        )
-
+        return response.error(MODULE, action, error=exc, driver=driver, error_type=type(exc).__name__)
 
 # ============================================================
 # GET FRAME
-# Internal Python API
 # ============================================================
 
-def get_frame(
-    camera_name,
-):
+def get_frame(camera_name):
     """
-    Standard frame contract:
+    取得相機影像。
 
-    {
-        "timestamp": float | None,
-        "color_image": numpy.ndarray | None,
-        "depth_image": numpy.ndarray | None
-    }
-
-    此 function 給其他 service 直接使用，
-    不包裝成 JSON response。
+    同一台相機的 start、stop、get_frame 使用相同 Lock，
+    確保同一時間只有一個操作執行。
     """
 
-    (
-        _,
-        camera,
-        _,
-        _,
-    ) = (
-        _get_camera_context(
-            camera_name
-        )
-    )
+    camera_name = _normalize_camera_name(camera_name)
 
-    frame = (
-        camera.get_frame()
-    )
+    with _get_camera_lock(camera_name):
+        _, camera, _, _ = _get_camera_context(camera_name)
 
-    if not isinstance(
-        frame,
-        dict,
-    ):
-        raise RuntimeError(
-            "camera get_frame() "
-            "must return dictionary"
-        )
+        frame = camera.get_frame()
 
-    return frame
+        if not isinstance(frame, dict):
+            raise RuntimeError("camera get_frame() must return dictionary")
+
+        return frame
 
 
 # ============================================================
