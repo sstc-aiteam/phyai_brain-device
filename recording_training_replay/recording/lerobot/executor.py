@@ -170,9 +170,12 @@ def _dataset_path(
 def _recording_arm_info(arm_name):
     data = _service_data(arm_service.get_arm_status(arm_name), "get_arm_status")
     arms = data.get("arms") or []
-    if not arms or not (arms[0].get("status") or {}).get("connected"):
-        raise RuntimeError(f"arm '{arm_name}' 未連線")
-    return arms[0]
+    matches = [arm for arm in arms if arm.get("arm_name") == arm_name]
+    if len(matches) != 1:
+        raise ValueError(f"找不到指定機械手臂：{arm_name}")
+    if not (matches[0].get("status") or {}).get("connected"):
+        raise RuntimeError(f"機械手臂尚未連線：{arm_name}")
+    return matches[0]
 
 
 def _capture_sample(arm_name, gripper_name, camera_names):

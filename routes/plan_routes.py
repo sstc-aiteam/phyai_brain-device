@@ -327,3 +327,43 @@ def runtime_manual_cancel():
                     exc
                 ),
         }), 400
+
+@plan_bp.post("/full")
+def plan_full_http():
+
+    data = request.get_json(silent=True)
+
+    if not isinstance(data, dict):
+        return jsonify({
+            "status": "error",
+            "module": "plan",
+            "action": "plan_full_task",
+            "result": False,
+            "message": "request body 必須是 JSON object",
+        }), 400
+
+    try:
+        plan = plan_service.plan_full_task(
+            user_text=data.get("user_text"),
+            provider=data.get("provider", "openai"),
+            camera_name=data.get("camera_name", "left"),
+            model=data.get("model"),
+        )
+
+        return jsonify({
+            "status": "success",
+            "module": "plan",
+            "action": "plan_full_task",
+            "result": True,
+            "data": plan,
+        }), 200
+
+    except (ValueError, RuntimeError) as exc:
+        return jsonify({
+            "status": "error",
+            "module": "plan",
+            "action": "plan_full_task",
+            "result": False,
+            "error_type": type(exc).__name__,
+            "message": str(exc),
+        }), 400

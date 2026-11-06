@@ -9,8 +9,9 @@ import threading
 import time
 import math
 import config
-from agent.runtime.domain.world import WorldState
-from agent.vlm import occultation, vlm_describe, vlm_world_observe, material, grasp, smoke
+from worldmodel.domain.world import WorldState
+from worldmodel.observation import occultation, vlm_describe, vlm_world_observe, material, smoke
+from worldmodel.reasoning import grasp
 from services import arm_service, perception_service
 from utils import response
 
@@ -1165,7 +1166,7 @@ def get_smoke_state(*, camera_name: str | None = None, observe_seconds: float = 
 # ============================================================
 
 def checkaction(action: str, camera_name: str | None = None, *, target_hint: str | None = None, backend: str | None = None, image_path: str | None = None) -> dict:
-    from agent.vlm.checkaction import checkaction as _checkaction
+    from agent.checkaction import checkaction as _checkaction
 
     camera_name = _resolve_camera_name(camera_name)
 

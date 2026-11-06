@@ -6,17 +6,17 @@ from threading import RLock, Thread
 from typing import Any
 from uuid import uuid4
 
-from agent.runtime.adapters.runtime_observation import (
+from plan.adapters.runtime_observation import (
     build_runtime_initial_world,
 )
-from agent.runtime.decision.interpreter import (
+from plan.next_step.interpreter import (
     RUNTIME_ALLOWED_PROVIDERS as _RUNTIME_ALLOWED_PROVIDERS,
     normalize_runtime_planning_options,
 )
-from agent.runtime.interfaces.manual_orchestrator import (
+from plan.interfaces.manual_orchestrator import (
     prepare_manual_runtime,
 )
-from agent.runtime.interfaces.manual_session import (
+from plan.interfaces.manual_session import (
     ManualRuntimeCancelled,
     _ManualRuntimeSession,
     _manual_short_error,
@@ -489,7 +489,7 @@ def get_health() -> dict[str, Any]:
             "physical_manipulation":
                 False,
             "task_interpreter_skill":
-                "agent/skills/runtime_task_interpreter.md",
+                "plan/skills/runtime_task_interpreter.md",
         },
     )
 
@@ -513,9 +513,9 @@ def plan_task(
     """
     import json
     import math
-    from agent.runtime.decision.prompt_loader import load_next_action_prompt
+    from plan.next_step.prompt_loader import load_next_action_prompt
     from agent.tools import get_tool, get_tools_for_prompt
-    from agent.providers.structured import chat_structured
+    from utils.llm.structured import chat_structured
     from services import worldmodel_service
 
     if not isinstance(user_text, str) or not user_text.strip():
@@ -737,3 +737,23 @@ def plan_task(
                                    if action_name == "observe_world" else False),
         "worldmodel": worldmodel_data,
     })
+
+
+#---
+# plan full
+#---
+def plan_full_task(
+    user_text: str,
+    *,
+    provider: str = "openai",
+    camera_name: str = "left",
+    model: str | None = None,
+):
+    from plan.full_task.planner import plan_full_task as workflow_plan
+
+    return workflow_plan(
+        user_text,
+        provider=provider,
+        camera_name=camera_name,
+        model=model,
+    )
